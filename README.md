@@ -7,6 +7,7 @@ Eine Web-App zur verständlichen Analyse von Homematic-, CCU3-, CCU2- und Raspbe
 Der Analyzer arbeitet modular:
 
 - **CCU-Zugang**: Basisanalyse für Geräte, Batterien, Servicemeldungen, Duty Cycle, Firmware und HmIP-Routing.
+- **XML-API**: Erste echte CCU-Datenquelle für Geräte, Datenpunkte und Servicemeldungen.
 - **SSH oder Collector-Script**: Systemwerte, Logs, Temperatur, Speicher, Backups und belegbare Systemauffälligkeiten.
 - **AskSin Analyzer XS**: optionale Funk-Tiefenanalyse für User mit vorhandenem Sniffer.
 - **Telegram**: optionale Benachrichtigungen für kritische Events.
@@ -45,10 +46,12 @@ curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001
 
 ## Dokumentation
 
-- Collector-Script: `docs/COLLECTOR_SCRIPT.md`
+- CCU-Stammdaten-Script: `docs/CCU_MASTERDATA_SCRIPT.md`
+- Optionaler System-Snapshot: `docs/COLLECTOR_SCRIPT.md`
+- XML-API Add-on: `docs/XML_API.md`
 - AskSin Analyzer XS: `docs/ASKSIN_ANALYZER_XS.md`
 - Proxmox USB-Durchreichung: `docs/PROXMOX_USB.md`
 
 ## GitHub
 
-Repository: https://github.com/Schello805/homematic-analyzer
+Repository: https://github.com/Schello805/Homematic-Analyzer

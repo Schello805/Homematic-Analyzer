@@ -1,0 +1,140 @@
+! Homematic Analyzer - tägliche Stammdatenmeldung
+! Einmal in ein CCU-Programm kopieren und z.B. täglich nachts ausführen.
+! Live-Werte holt der Analyzer weiterhin direkt über die XML-API.
+
+string analyzerUrl = "__ANALYZER_URL__";
+string analyzerToken = "__ANALYZER_TOKEN__";
+string endpoint = analyzerUrl # "/api/ccu-masterdata";
+
+WriteLine("Homematic Analyzer: Stammdaten-Script gestartet");
+WriteLine("Homematic Analyzer: Ziel " # endpoint);
+
+object lastRun = dom.GetObject("HomematicAnalyzer_LastRun");
+object systemVariables = dom.GetObject(ID_SYSTEM_VARIABLES);
+if (!lastRun) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_LastRun wird angelegt");
+  lastRun = dom.CreateObject(OT_VARDP);
+  lastRun.Name("HomematicAnalyzer_LastRun");
+  lastRun.ValueType(ivtString);
+  lastRun.ValueSubType(istChar8859);
+  systemVariables.Add(lastRun.ID());
+  dom.RTUpdate(0);
+}
+
+object status = dom.GetObject("HomematicAnalyzer_Status");
+if (!status) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_Status wird angelegt");
+  status = dom.CreateObject(OT_VARDP);
+  status.Name("HomematicAnalyzer_Status");
+  status.ValueType(ivtString);
+  status.ValueSubType(istChar8859);
+  systemVariables.Add(status.ID());
+  dom.RTUpdate(0);
+}
+
+object inventory = dom.GetObject("HomematicAnalyzer_DeviceInventory");
+if (!inventory) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_DeviceInventory wird angelegt");
+  inventory = dom.CreateObject(OT_VARDP);
+  inventory.Name("HomematicAnalyzer_DeviceInventory");
+  inventory.ValueType(ivtString);
+  inventory.ValueSubType(istChar8859);
+  systemVariables.Add(inventory.ID());
+  dom.RTUpdate(0);
+}
+
+object errorVar = dom.GetObject("HomematicAnalyzer_Error");
+if (!errorVar) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_Error wird angelegt");
+  errorVar = dom.CreateObject(OT_VARDP);
+  errorVar.Name("HomematicAnalyzer_Error");
+  errorVar.ValueType(ivtString);
+  errorVar.ValueSubType(istChar8859);
+  systemVariables.Add(errorVar.ID());
+  dom.RTUpdate(0);
+}
+
+string now = system.Date("%Y-%m-%dT%H:%M:%S");
+string devicesJson = "[";
+integer deviceCount = 0;
+boolean firstDevice = true;
+
+WriteLine("Homematic Analyzer: Geräte werden gesammelt");
+
+foreach(deviceId, root.Devices().EnumUsedIDs()) {
+  object device = dom.GetObject(deviceId);
+  if (device) {
+    if (!firstDevice) {
+      devicesJson = devicesJson # ",";
+    }
+    firstDevice = false;
+    deviceCount = deviceCount + 1;
+
+    string address = "";
+    string typeName = "";
+    string safeName = device.Name();
+
+    if (device.Address()) {
+      address = device.Address();
+    }
+    if (device.HssType()) {
+      typeName = device.HssType();
+    }
+
+    safeName = safeName.Replace("\\", "\\\\");
+    safeName = safeName.Replace("\"", "\\\"");
+    safeName = safeName.Replace("'", " ");
+    safeName = safeName.Replace("\n", " ");
+    safeName = safeName.Replace("\r", " ");
+
+    address = address.Replace("\\", "\\\\");
+    address = address.Replace("\"", "\\\"");
+    address = address.Replace("'", " ");
+
+    typeName = typeName.Replace("\\", "\\\\");
+    typeName = typeName.Replace("\"", "\\\"");
+    typeName = typeName.Replace("'", " ");
+
+    devicesJson = devicesJson # "{";
+    devicesJson = devicesJson # "\"name\":\"" # safeName # "\",";
+    devicesJson = devicesJson # "\"address\":\"" # address # "\",";
+    devicesJson = devicesJson # "\"type\":\"" # typeName # "\"";
+    devicesJson = devicesJson # "}";
+  }
+}
+
+devicesJson = devicesJson # "]";
+WriteLine("Homematic Analyzer: " # deviceCount.ToString() # " Geräte gefunden");
+
+string payload = "{";
+payload = payload # "\"token\":\"" # analyzerToken # "\",";
+payload = payload # "\"source\":\"rega-daily-masterdata\",";
+payload = payload # "\"collectedAt\":\"" # now # "\",";
+payload = payload # "\"deviceCount\":" # deviceCount.ToString() # ",";
+payload = payload # "\"devices\":" # devicesJson;
+payload = payload # "}";
+
+inventory.State(deviceCount.ToString() # " Geräte, zuletzt " # now);
+lastRun.State(now);
+status.State("OK - " # deviceCount.ToString() # " Geräte gemeldet");
+errorVar.State("");
+
+string command = "curl -fsS --connect-timeout 5 --max-time 20 -H 'Content-Type: application/json' -X POST --data-binary '" # payload # "' '" # endpoint # "'";
+string stdout;
+string stderr;
+
+WriteLine("Homematic Analyzer: Daten werden an Analyzer gesendet");
+system.Exec(command, &stdout, &stderr);
+
+if (stderr.Length() > 0) {
+  status.State("Fehler beim Senden");
+  errorVar.State(stderr);
+  WriteLine("Homematic Analyzer: Fehler beim Senden");
+  WriteLine(stderr);
+} else {
+  status.State("OK - gesendet " # now);
+  WriteLine("Homematic Analyzer: erfolgreich gesendet");
+  if (stdout.Length() > 0) {
+    WriteLine(stdout);
+  }
+}

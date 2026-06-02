@@ -1,6 +1,8 @@
-# Collector-Script
+# Optionaler System-Snapshot
 
-Das Collector-Script ist der einfache Copy-Paste-Weg, um Systemwerte der Zentrale an Homematic Analyzer zu senden.
+Dieses Shell-Script ist optional. Es sammelt Systemwerte der Zentrale oder des Raspberry und sendet sie an Homematic Analyzer.
+
+Für tägliche CCU-Stammdaten gibt es ein eigenes WebUI/ReGa-Script: `docs/CCU_MASTERDATA_SCRIPT.md`.
 
 ## Was wird gesammelt?
 

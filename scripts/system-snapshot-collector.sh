@@ -1,12 +1,19 @@
 #!/bin/sh
 set -eu
+umask 077
 
 ANALYZER_URL="${ANALYZER_URL:-__ANALYZER_URL__}"
 ANALYZER_TOKEN="${ANALYZER_TOKEN:-__ANALYZER_TOKEN__}"
 ENDPOINT="$ANALYZER_URL/api/collector"
 HOSTNAME_VALUE="$(hostname 2>/dev/null || echo unknown)"
 COLLECTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date)"
-TMP_FILE="/tmp/homematic-analyzer-payload.json"
+TMP_FILE="$(mktemp /tmp/homematic-analyzer-payload.XXXXXX.json)"
+
+cleanup() {
+  rm -f "$TMP_FILE"
+}
+
+trap cleanup EXIT INT TERM
 
 json_escape() {
   sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/ /g'
@@ -60,8 +67,9 @@ LOG_LINES="$(
 } > "$TMP_FILE"
 
 if command -v curl >/dev/null 2>&1; then
-  curl -fsS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" "$ENDPOINT"
+  curl --connect-timeout 5 --max-time 20 -fsS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" "$ENDPOINT"
 else
   echo "curl wurde nicht gefunden. Payload liegt hier: $TMP_FILE"
+  trap - EXIT INT TERM
   exit 1
 fi

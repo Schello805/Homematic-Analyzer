@@ -2,10 +2,10 @@
   "name": "homematic-analyzer",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://github.com/Schello805/homematic-analyzer",
+  "homepage": "https://github.com/Schello805/Homematic-Analyzer",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Schello805/homematic-analyzer.git"
+    "url": "https://github.com/Schello805/Homematic-Analyzer.git"
   },
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "fast-xml-parser": "^5.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^3.25.30"
