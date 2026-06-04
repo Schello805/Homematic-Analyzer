@@ -1,4 +1,4 @@
-import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuSnapshot, CollectorPayload, Evidence } from "./types.js";
+import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck } from "./types.js";
 
 const now = () => new Date().toISOString();
 const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
@@ -74,17 +74,138 @@ function dutyCycleText(value: number | undefined): string {
   return value === undefined ? "kein belegter Wert" : `${value}%`;
 }
 
-export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot): AnalysisCheck[] {
+const ccuServicePorts = new Set(["80", "443", "8181", "2001", "2010", "9292", "42001", "42010", "8700", "8701"]);
+
+const ccuServiceLabels: Record<string, string> = {
+  "80": "WebUI/HTTP",
+  "443": "WebUI/HTTPS",
+  "8181": "XML-API/ReGa",
+  "2001": "BidCos-RPC",
+  "2010": "HmIP-RPC",
+  "9292": "CUxD/XML-API",
+  "42001": "HmIPServer",
+  "42010": "HmIPServer",
+  "8700": "ReGa/XML-RPC",
+  "8701": "ReGa/XML-RPC"
+};
+
+type ExternalAccessCandidate = {
+  host: string;
+  count: number;
+  ports: string[];
+  isPublic: boolean;
+  lines: string[];
+};
+
+type FirmwareDifference = {
+  type: string;
+  versions: string[];
+  devices: string[];
+};
+
+type LogAnalysis = {
+  relevantLines: string[];
+  noisyLines: string[];
+  status: AnalysisCheck["status"];
+};
+
+function analyzeLogLines(logs: string[] | undefined): LogAnalysis {
+  const lines = logs?.map((line) => line.trim()).filter(Boolean) ?? [];
+  const noisyLines = lines.filter((line) => /\b(debug|verbose)\b/i.test(line));
+  const relevantLines = lines.filter((line) => {
+    const isNoise = /\b(debug|verbose)\b/i.test(line);
+    const isRelevant = /\b(error|err|fatal|panic|warn|warning|failed|failure|timeout|unreach|sticky_unreach|lowbat|service unavailable|segfault|restart|crash|critical)\b/i.test(line);
+    return isRelevant && !isNoise;
+  });
+  const criticalLines = relevantLines.filter((line) => /\b(fatal|panic|segfault|crash|critical|service unavailable)\b/i.test(line));
+
+  return {
+    relevantLines,
+    noisyLines,
+    status: criticalLines.length > 0 ? "critical" : relevantLines.length > 0 ? "warning" : lines.length > 0 ? "ok" : "unavailable"
+  };
+}
+
+function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?: string): ExternalAccessCandidate[] {
+  const lines = collector?.network?.connections ?? [];
+  const ownHost = normalizeHostForSecurity(ccuHost);
+  const grouped = new Map<string, { ports: Set<string>; lines: string[] }>();
+
+  for (const line of lines) {
+    const endpointMatches = [...line.matchAll(/((?:\d{1,3}\.){3}\d{1,3}|localhost):(\d{1,5})/g)];
+    if (endpointMatches.length < 2) continue;
+
+    const localPort = endpointMatches[0]?.[2];
+    const remoteHost = endpointMatches[1]?.[1];
+    if (!localPort || !remoteHost || !ccuServicePorts.has(localPort)) continue;
+    if (remoteHost === "0.0.0.0" || remoteHost === "127.0.0.1" || remoteHost === "localhost" || remoteHost === ownHost) continue;
+
+    const current = grouped.get(remoteHost) ?? { ports: new Set<string>(), lines: [] };
+    current.ports.add(localPort);
+    current.lines.push(line);
+    grouped.set(remoteHost, current);
+  }
+
+  return [...grouped.entries()]
+    .map(([host, value]) => ({
+      host,
+      count: value.lines.length,
+      ports: [...value.ports].sort((firstPort, secondPort) => Number(firstPort) - Number(secondPort)),
+      isPublic: !isLocalOrPrivateHost(host),
+      lines: value.lines.slice(0, 4)
+    }))
+    .sort((firstCandidate, secondCandidate) => secondCandidate.count - firstCandidate.count);
+}
+
+function findFirmwareDifferences(masterdata: CcuMasterdataPayload | undefined, ccu: CcuSnapshot | undefined): FirmwareDifference[] {
+  const devices = masterdata?.devices?.length
+    ? masterdata.devices
+    : ccu?.devices.map((device) => ({
+      name: device.name,
+      address: device.address,
+      type: device.type,
+      firmware: device.firmware
+    })) ?? [];
+
+  const byType = new Map<string, Array<{ name?: string; firmware?: string }>>();
+
+  for (const device of devices) {
+    if (!device.type || !device.firmware) continue;
+    const current = byType.get(device.type) ?? [];
+    current.push({ name: device.name ?? device.address, firmware: device.firmware });
+    byType.set(device.type, current);
+  }
+
+  return [...byType.entries()]
+    .map(([type, typeDevices]) => ({
+      type,
+      versions: [...new Set(typeDevices.map((device) => device.firmware).filter(Boolean) as string[])].sort(),
+      devices: typeDevices.slice(0, 6).map((device) => `${device.name ?? "Unbenannt"} (${device.firmware})`)
+    }))
+    .filter((entry) => entry.versions.length > 1)
+    .slice(0, 8);
+}
+
+export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
   const hasSniffer = Boolean(config.snifferPort);
-  const hasExternal = Boolean(config.externalSystems?.length);
+  const hasNotifications = Boolean(config.notificationSettings?.telegram?.enabled || config.notificationSettings?.email?.enabled || config.telegramEnabled);
   const ccuHostLooksPublic = Boolean(config.ccuHost && !isLocalOrPrivateHost(config.ccuHost));
+  const externalAccesses = parseExternalAccesses(collector, config.ccuHost);
+  const publicExternalAccesses = externalAccesses.filter((access) => access.isPublic);
+  const busyExternalAccesses = externalAccesses.filter((access) => access.count >= 8);
+  const masterdataDeviceCount = masterdata?.deviceCount ?? masterdata?.devices?.length ?? 0;
+  const inventoryDevices = masterdata?.devices?.length ? masterdata.devices : ccu?.devices ?? [];
+  const hmipDevices = inventoryDevices.filter((device) => /^HmIP-/i.test(device.type ?? ""));
+  const hmipRouterCandidates = hmipDevices.filter((device) => /(HAP|DRAP|WLAN|PSM|FSM|BSM|PCBS|WRC|MOD)/i.test(device.type ?? ""));
+  const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
   const configPendingDevices = ccu?.devices.filter((device) => device.configPending) ?? [];
   const dutyStatus = dutyCycleStatus(ccu?.dutyCycle);
+  const logAnalysis = analyzeLogLines(collector?.logs);
 
   const checks: AnalysisCheck[] = [
     {
@@ -167,6 +288,26 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         "Download: https://github.com/homematic-community/XML-API/releases",
         "Installation: WebUI öffnen, Systemsteuerung → Zusatzsoftware, Add-on-Datei hochladen und installieren.",
         "Nach der Installation die Zentrale neu starten und die Analyse erneut ausführen."
+      ]
+    },
+    {
+      id: "ccu-masterdata",
+      title: "CCU-Stammdaten",
+      category: "Grundlage",
+      status: masterdataDeviceCount > 0 ? "ok" : "improvement",
+      summary: masterdataDeviceCount > 0
+        ? `${masterdataDeviceCount} Geräte wurden vom täglichen CCU-Script gemeldet.`
+        : "Das tägliche CCU-Stammdaten-Script wurde noch nicht empfangen.",
+      recommendation: masterdataDeviceCount > 0
+        ? "Gut: Gerätenamen, Adressen und Typen stehen unabhängig von Live-Abfragen bereit."
+        : "CCU-Script einmal aus der App kopieren, in der WebUI ausführen und danach täglich laufen lassen.",
+      access: ["ccu"],
+      evidence: masterdataDeviceCount > 0
+        ? [{ source: "CCU WebUI-Script", detail: `${masterdataDeviceCount} Geräte gemeldet.`, timestamp: masterdata?.collectedAt ?? now() }]
+        : [],
+      details: [
+        "Stammdaten ändern sich selten und müssen nicht bei jeder Analyse live zusammengesucht werden.",
+        "Live-Zustände wie Batterie, Erreichbarkeit und Duty Cycle holt der Analyzer weiter bei Bedarf direkt."
       ]
     },
     {
@@ -315,20 +456,59 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "routing-topology",
       title: "HmIP Routing",
       category: "Topologie",
-      status: hasCcuData ? "improvement" : "unavailable",
-      summary: hasCcuData
-        ? "Gerätedaten liegen vor; Routing-Topologie wird als nächster Datenpunkt ergänzt."
-        : "HmIP-Routing kann ohne CCU-Zugang nicht geprüft werden.",
-      recommendation: hasCcuData
-        ? "Router sollten bewusst platziert sein; auffällige Geräte werden mit nachvollziehbarem Beleg markiert."
-        : "CCU-Zugang einrichten, um Routing-Informationen auszulesen.",
+      status: hmipDevices.length > 0 ? "improvement" : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
+      summary: hmipDevices.length > 0
+        ? `${hmipDevices.length} HmIP-Geräte gefunden, davon ${hmipRouterCandidates.length} mögliche Router-/Repeater-Kandidaten.`
+        : hasCcuData || masterdataDeviceCount > 0
+          ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
+          : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
+      recommendation: hmipDevices.length > 0
+        ? "Das ist noch kein Fehler: Aktive Routing-Pfade werden erst markiert, wenn HmIPServer-Daten oder Logs sie belegen."
+        : hasCcuData || masterdataDeviceCount > 0
+          ? "Kein Handlungsbedarf."
+          : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
       access: ["ccu"],
-      evidence: hasCcuData
-        ? [{ source: "CCU XML-API", detail: `${ccu?.counters.devices ?? 0} Geräte als Grundlage gelesen.`, timestamp: ccu?.collectedAt }]
+      evidence: hmipDevices.length > 0
+        ? [{
+          source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
+          detail: `${hmipDevices.length} HmIP-Geräte, mögliche Router-Kandidaten: ${hmipRouterCandidates.slice(0, 8).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine"}.`,
+          timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
+        }]
         : [],
       details: [
-        "Diese Analyse erklärt, welche Geräte als Router dienen und wo Routing aktiv ist.",
-        "Ein Problem wird nur markiert, wenn Daten oder Logs es stützen."
+        "Diese Analyse unterscheidet bewusst zwischen möglichen Router-Geräten und wirklich aktivem Routing.",
+        "Ein aktiver Routing-Pfad wird erst als Problem markiert, wenn HmIPServer-Daten oder Logs ihn belegen."
+      ]
+    },
+    {
+      id: "firmware-overview",
+      title: "Geräte-Firmware",
+      category: "Wartung",
+      status: masterdataDeviceCount > 0 || hasCcuData
+        ? firmwareDifferences.length > 0
+          ? "warning"
+          : "ok"
+        : "unavailable",
+      summary: masterdataDeviceCount > 0 || hasCcuData
+        ? firmwareDifferences.length > 0
+          ? `${firmwareDifferences.length} Gerätetypen laufen mit unterschiedlichen Firmwareständen.`
+          : "Keine unterschiedlichen Firmwarestände innerhalb gleicher Gerätetypen gefunden."
+        : "Firmware kann ohne CCU-Daten oder Stammdaten-Script nicht verglichen werden.",
+      recommendation: masterdataDeviceCount > 0 || hasCcuData
+        ? firmwareDifferences.length > 0
+          ? "Prüfe die genannten Gerätetypen in der WebUI. Unterschiedliche Stände sind nicht immer falsch, aber ein guter Wartungshinweis."
+          : "Kein Handlungsbedarf. Später ergänzt der Analyzer zusätzlich den Vergleich gegen verfügbare Hersteller-/Zentralen-Releases."
+        : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
+      access: ["ccu"],
+      evidence: firmwareDifferences.map((difference) => ({
+        source: "Firmware-Vergleich",
+        detail: `${difference.type}: Versionen ${difference.versions.join(", ")}; Beispiele: ${difference.devices.join(", ")}.`,
+        timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
+      })),
+      details: [
+        "Dieser Check vergleicht nur Geräte gleichen Typs innerhalb deiner Installation.",
+        "Ein Online-Vergleich gegen neueste Hersteller-Firmware folgt separat, damit nichts geraten wird.",
+        "Unterschiedliche Versionen sind ein Hinweis, aber nicht automatisch ein Fehler."
       ]
     },
     {
@@ -357,56 +537,102 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "logs",
       title: "Log-Auswertung",
       category: "Belege",
-      status: collector?.logs?.length ? "warning" : hasSsh ? "improvement" : "unavailable",
+      status: collector?.logs?.length ? logAnalysis.status : hasSsh ? "improvement" : "unavailable",
       summary: collector?.logs?.length
-        ? "Es liegen Logdaten vor. Auffälligkeiten können belegbar markiert werden."
+        ? logAnalysis.relevantLines.length > 0
+          ? `${logAnalysis.relevantLines.length} auffällige Logzeilen wurden gefunden.`
+          : "Es liegen Logdaten vor, aber keine belegbaren Fehler-/Warnmuster."
         : hasSsh
           ? "Loganalyse ist vorbereitet und wartet auf echte Logdaten."
           : "Loganalyse ist ohne SSH oder Collector-Script nicht möglich.",
       recommendation: collector?.logs?.length
-        ? "Kommunikationsfehler, Neustarts und Dienstprobleme werden in den Details mit Quelle angezeigt."
+        ? logAnalysis.relevantLines.length > 0
+          ? "Prüfe die genannten Logzeilen. Nur diese werden als Auffälligkeit gewertet."
+          : "Kein Handlungsbedarf aus diesen Logzeilen. Debug/Verbose-Ausgaben sind normale technische Protokolleinträge."
         : "Collector-Script ausführen, damit Logbelege in die Analyse einfließen.",
       access: ["ssh"],
       evidence: collector?.logs?.length
-        ? collector.logs.slice(0, 5).map((line) => ({ source: "Log", detail: line, timestamp: collector.collectedAt ?? now() }))
+        ? (logAnalysis.relevantLines.length > 0 ? logAnalysis.relevantLines : logAnalysis.noisyLines).slice(0, 5).map((line) => ({
+          source: logAnalysis.relevantLines.length > 0 ? "Auffällige Logzeile" : "Unauffällige Debug-/Verbose-Logzeile",
+          detail: line,
+          timestamp: collector.collectedAt ?? now()
+        }))
         : [],
       details: [
         "Die App soll niemals aus Bauchgefühl urteilen: Jeder Fehler bekommt eine Quelle.",
-        "Später werden bekannte Muster wie Kommunikationsstörung, Scriptfehler oder Dienstneustart automatisch gruppiert."
+        "Debug- und Verbose-Zeilen werden nicht als Fehler gewertet.",
+        "Bekannte Muster wie Kommunikationsstörung, Scriptfehler oder Dienstneustart werden nur bei passenden Logbegriffen markiert."
       ]
     },
     {
-      id: "external-systems",
-      title: "ioBroker / Home Assistant",
+      id: "external-access",
+      title: "Externe Zugriffe auf die CCU",
       category: "Anbindungen",
-      status: hasExternal ? "improvement" : "unavailable",
-      summary: hasExternal
-        ? "Externe Systeme sind eingetragen und können später auf auffällige Zugriffe geprüft werden."
-        : "Keine externen Systeme eingetragen.",
-      recommendation: hasExternal
-        ? "Bei Lastproblemen werden nur belegbare Hinweise aus Logs, Zugriffszahlen oder Systemlast angezeigt."
-        : "Optional ioBroker oder Home Assistant eintragen, wenn sie mit der CCU sprechen.",
-      access: ["external"],
-      evidence: hasExternal
-        ? [{ source: "Setup", detail: `Eingetragen: ${config.externalSystems?.join(", ")}`, timestamp: now() }]
-        : [],
+      status: collector
+        ? publicExternalAccesses.length > 0
+          ? "critical"
+          : busyExternalAccesses.length > 0
+            ? "warning"
+            : externalAccesses.length > 0
+              ? "improvement"
+              : "ok"
+        : hasSsh
+          ? "improvement"
+          : "unavailable",
+      summary: collector
+        ? publicExternalAccesses.length > 0
+          ? publicExternalAccesses.length === 1
+            ? "1 öffentliche Gegenstelle ist aktiv mit CCU-Diensten verbunden."
+            : `${publicExternalAccesses.length} öffentliche Gegenstellen sind aktiv mit CCU-Diensten verbunden.`
+          : busyExternalAccesses.length > 0
+            ? busyExternalAccesses.length === 1
+              ? "1 lokales System hat viele gleichzeitige CCU-Verbindungen."
+              : `${busyExternalAccesses.length} lokale Systeme haben viele gleichzeitige CCU-Verbindungen.`
+            : externalAccesses.length > 0
+              ? externalAccesses.length === 1
+                ? "1 lokales System greift aktuell auf CCU-Dienste zu."
+                : `${externalAccesses.length} lokale Systeme greifen aktuell auf CCU-Dienste zu.`
+              : "Keine aktiven externen Zugriffe auf typische CCU-Dienste gefunden."
+        : hasSsh
+          ? "Der Check ist vorbereitet; dafür braucht der Analyzer Verbindungsdaten vom Collector."
+          : "Ohne SSH oder Collector können externe Zugriffe nicht belegbar erkannt werden.",
+      recommendation: collector
+        ? publicExternalAccesses.length > 0
+          ? "CCU nicht per Portweiterleitung veröffentlichen. Verbindung sofort prüfen und künftig VPN verwenden."
+          : busyExternalAccesses.length > 0
+            ? "Prüfe die genannten IPs: Häufig sind das ioBroker, Home Assistant oder eigene Scripts. Polling-Intervalle reduzieren und unnötige Schreibzugriffe vermeiden."
+            : externalAccesses.length > 0
+              ? "Ordne die IPs den Systemen zu. Erst wenn viele Verbindungen, Logs oder Lastspitzen zusammenpassen, wird daraus ein echtes Problem."
+              : "Kein Handlungsbedarf."
+        : "Collector-Script ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
+      access: ["ssh", "external"],
+      evidence: externalAccesses.flatMap((access) => [
+        {
+          source: "Aktive Verbindung",
+          detail: `${access.host}: ${access.count} Verbindung(en) zu ${access.ports.map((port) => ccuServiceLabels[port] ?? `Port ${port}`).join(", ")}.`,
+          timestamp: collector?.collectedAt ?? now()
+        },
+        ...access.lines.map((line) => ({ source: "Verbindungszeile", detail: line, timestamp: collector?.collectedAt ?? now() }))
+      ]).slice(0, 10),
       details: [
-        "Ziel ist: sichtbar machen, ob externe Systeme sehr häufig lesen oder schreiben.",
-        "Ohne Beleg bleibt der Punkt neutral."
+        "Dieser Check rät nicht, ob eine IP ioBroker oder Home Assistant ist.",
+        "Er zeigt aktive Gegenstellen zu typischen CCU-Ports wie WebUI, XML-API, BidCos-RPC und HmIP-RPC.",
+        "Viele gleichzeitige Verbindungen sind ein Hinweis, aber erst zusammen mit Logs oder hoher Last ein belastbarer Fehler.",
+        "Öffentliche Gegenstellen sind kritisch: Die CCU sollte nicht per Portforwarding erreichbar sein."
       ]
     },
     {
       id: "notifications",
-      title: "Telegram Hinweise",
+      title: "Benachrichtigungen",
       category: "Benachrichtigung",
-      status: config.telegramEnabled ? "ok" : "improvement",
-      summary: config.telegramEnabled
-        ? "Telegram-Benachrichtigungen sind für kritische Ereignisse vorgesehen."
-        : "Telegram ist optional und noch nicht eingerichtet.",
+      status: hasNotifications ? "ok" : "improvement",
+      summary: hasNotifications
+        ? "Benachrichtigungen sind für ausgewählte Ereignisse vorbereitet."
+        : "Telegram und E-Mail sind optional und noch nicht eingerichtet.",
       recommendation: "Sinnvolle Events: Duty Cycle kritisch, Batterie niedrig, Gerät nicht erreichbar, Konfiguration ausstehend, Sniffer getrennt, neue Releases.",
       access: ["telegram"],
-      evidence: config.telegramEnabled
-        ? [{ source: "Setup", detail: "Telegram aktiviert.", timestamp: now() }]
+      evidence: hasNotifications
+        ? [{ source: "Settings", detail: "Mindestens ein Benachrichtigungskanal ist aktiviert.", timestamp: now() }]
         : [],
       details: [
         "Benachrichtigungen sollten selten und relevant sein.",
@@ -414,6 +640,38 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       ]
     }
   ];
+
+  if (release) {
+    checks.push({
+      id: "app-release",
+      title: "Analyzer Update",
+      category: "Wartung",
+      status: release.available ? "warning" : release.error ? "improvement" : "ok",
+      summary: release.available
+        ? `Neue Analyzer-Version verfügbar: ${release.latestVersion}.`
+        : release.error
+          ? "Release-Check konnte nicht vollständig durchgeführt werden."
+          : "Keine neuere Analyzer-Version gefunden.",
+      recommendation: release.available
+        ? "Repository öffnen, Änderungen prüfen und Update bewusst installieren."
+        : release.error
+          ? "Internetverbindung oder GitHub-Erreichbarkeit prüfen."
+          : "Kein Handlungsbedarf.",
+      access: ["ccu"],
+      evidence: [{
+        source: "GitHub Release-Check",
+        detail: release.available
+          ? `Installiert: ${release.currentVersion}, neu: ${release.latestVersion}.`
+          : release.error ?? `Installiert: ${release.currentVersion}.`,
+        timestamp: release.checkedAt,
+        url: release.url
+      }],
+      details: [
+        "Dieser Check bezieht sich auf den Homematic Analyzer selbst.",
+        "Zentralen-Releases für RaspberryMatic/CCU werden separat ergänzt, sobald eine zuverlässige Quelle angebunden ist."
+      ]
+    });
+  }
 
   return checks;
 }

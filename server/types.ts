@@ -25,6 +25,7 @@ export type AnalyzeRequest = {
   ccuHost?: string;
   ccuUser?: string;
   ccuPassword?: string;
+  xmlApiToken?: string;
   hasCcuPassword?: boolean;
   sshHost?: string;
   sshUser?: string;
@@ -33,6 +34,44 @@ export type AnalyzeRequest = {
   snifferPort?: string;
   telegramEnabled?: boolean;
   externalSystems?: string[];
+  notificationSettings?: NotificationSettings;
+};
+
+export type NotificationSettings = {
+  telegram?: {
+    enabled?: boolean;
+    botToken?: string;
+    chatId?: string;
+  };
+  email?: {
+    enabled?: boolean;
+    host?: string;
+    port?: number;
+    secure?: boolean;
+    user?: string;
+    password?: string;
+    from?: string;
+    to?: string;
+  };
+  events?: {
+    critical?: boolean;
+    warning?: boolean;
+    dutyCycle?: boolean;
+    battery?: boolean;
+    unreachable?: boolean;
+    configPending?: boolean;
+    externalAccess?: boolean;
+    sniffer?: boolean;
+    releases?: boolean;
+  };
+  ai?: {
+    enabled?: boolean;
+    provider?: "openai" | "gemini";
+    openaiApiKey?: string;
+    openaiModel?: string;
+    geminiApiKey?: string;
+    geminiModel?: string;
+  };
 };
 
 export type CcuEvidence = {
@@ -76,6 +115,9 @@ export type CollectorPayload = {
   collectedAt?: string;
   system?: Record<string, unknown>;
   logs?: string[];
+  network?: {
+    connections?: string[];
+  };
   backups?: Record<string, unknown>;
 };
 
@@ -90,4 +132,13 @@ export type CcuMasterdataPayload = {
     type?: string;
     firmware?: string;
   }>;
+};
+
+export type ReleaseCheck = {
+  available: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  url?: string;
+  checkedAt: string;
+  error?: string;
 };

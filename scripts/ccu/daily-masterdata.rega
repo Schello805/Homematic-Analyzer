@@ -57,29 +57,26 @@ if (!errorVar) {
 string now = system.Date("%Y-%m-%dT%H:%M:%S");
 string devicesJson = "[";
 integer deviceCount = 0;
-boolean firstDevice = true;
+integer firstDevice = 1;
+string deviceId;
 
 WriteLine("Homematic Analyzer: Geräte werden gesammelt");
 
-foreach(deviceId, root.Devices().EnumUsedIDs()) {
+foreach(deviceId, dom.GetObject(ID_DEVICES).EnumUsedIDs()) {
   object device = dom.GetObject(deviceId);
   if (device) {
-    if (!firstDevice) {
+    if (firstDevice == 0) {
       devicesJson = devicesJson # ",";
     }
-    firstDevice = false;
+    firstDevice = 0;
     deviceCount = deviceCount + 1;
 
     string address = "";
     string typeName = "";
     string safeName = device.Name();
 
-    if (device.Address()) {
-      address = device.Address();
-    }
-    if (device.HssType()) {
-      typeName = device.HssType();
-    }
+    address = device.Address();
+    typeName = device.HssType();
 
     safeName = safeName.Replace("\\", "\\\\");
     safeName = safeName.Replace("\"", "\\\"");

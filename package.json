@@ -13,14 +13,16 @@
     "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
-    "start": "node dist-server/index.js",
+    "start": "tsx server/index.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/nodemailer": "^8.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "fast-xml-parser": "^5.8.0",
+    "nodemailer": "^8.0.10",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^3.25.30"
