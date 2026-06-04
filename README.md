@@ -20,11 +20,27 @@ Wichtig: Die App soll keine Fehler raten. Jede kritische Aussage braucht einen B
 
 Auf einem leeren Debian- oder Ubuntu-System kann der Analyzer automatisch installiert werden:
 
+Falls `curl` noch nicht installiert ist:
+
+```bash
+sudo apt update
+sudo apt install -y curl
+```
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Schello805/Homematic-Analyzer/main/scripts/install/install-linux.sh | sudo bash
 ```
 
 Das Script installiert Node.js, klont dieses Repository nach `/opt/homematic-analyzer`, baut die App und richtet einen `systemd`-Service ein.
+
+Während der Installation fragt das Script optional nach:
+
+- CCU-IP oder Host
+- CCU-Benutzer
+- XML-API Token-ID / `sid`
+- AskSin Analyzer XS USB-Port
+
+Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
 
 Nach der Installation ist die Web-App unter `http://SERVER-IP:3001` erreichbar.
 
@@ -36,7 +52,7 @@ sudo journalctl -u homematic-analyzer -f
 sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh
 ```
 
-Für Proxmox LXC reicht ein normaler Debian-/Ubuntu-Container. Für die CCU bitte keine Portweiterleitung verwenden; von außen besser per VPN zugreifen.
+Für Proxmox LXC reicht ein normaler Debian-/Ubuntu-Container. Wenn ein AskSin Analyzer XS Sniffer genutzt werden soll, muss der USB-Port vorher vom Proxmox-Host in den Container durchgereicht werden. Für die CCU bitte keine Portweiterleitung verwenden; von außen besser per VPN zugreifen.
 
 ## Entwicklung starten
 
@@ -93,15 +109,28 @@ curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001
 
 Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
 
-## Nächste sinnvolle Schritte
+## Aktueller Funktionsstand
 
-- ReGa-Script auf echter CCU/RaspberryMatic gegenprüfen.
-- Telegram-Events verfeinern, z. B. Batterie niedrig, Gerät nicht erreichbar, Sniffer getrennt und neue Zentralen-Releases.
-- Firmware- und Zentralen-Releasevergleich ausbauen.
-- HmIP-Routing-Topologie aus echten CCU-Daten ableiten.
-- Externe Zugriffe mit Logs/Systemlast korrelieren und auffällige ioBroker/Home-Assistant-Pollingmuster verständlich erklären.
-- AskSin Analyzer XS über seriellen Port anbinden.
-- Proxmox-Anleitung für USB-Durchreichung dokumentieren.
+Bereits umgesetzt:
+
+- CCU/XML-API-Anbindung mit Token-ID/`sid`, Geräteauswertung und Servicemeldungen.
+- CCU-WebUI/ReGa-Script für tägliche Stammdatenmeldung.
+- Collector-Script für Systemwerte, Logs, Backups und aktive CCU-Verbindungen; einmalig oder per Cronjob.
+- Lokale Datenbank unter `.data/homematic-analyzer-db.json`.
+- Telegram- und E-Mail-Benachrichtigungen inklusive auswählbarer Events.
+- KI-Logauswertung mit OpenAI oder Google Gemini.
+- Firmware-Hinweise innerhalb der eigenen Installation, wenn gleiche Gerätetypen unterschiedliche Firmwarestände melden.
+- HmIP-Routing-Hinweis auf Basis vorhandener Gerätedaten und möglicher Router-/Repeater-Kandidaten.
+- Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
+- Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
+
+Noch offen bzw. bewusst nur vorbereitet:
+
+- Echte AskSin Analyzer XS Live-Anbindung über seriellen Port; aktuell wird der Port nur erfasst/vorbereitet.
+- Echte HmIP-Routing-Topologie aus HmIPServer-Daten oder belastbaren Logquellen ableiten.
+- Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
+- Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
+- Sniffer-getriebene Funkanalyse mit Telegrammzählung, Signalstärken und Carrier-Sense-Verlauf.
 
 ## Dokumentation
 

@@ -55,6 +55,8 @@ type MasterdataStatus = {
   deviceCount: number;
 };
 
+type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort">>;
+
 type CollectorStatus = {
   available: boolean;
   collectedAt?: string;
@@ -451,6 +453,39 @@ function App() {
   useEffect(() => {
     let isActive = true;
 
+    async function loadSetupDefaults() {
+      try {
+        if (window.localStorage.getItem(setupStorageKey)) return;
+
+        const response = await fetch("/api/setup/defaults");
+        if (!response.ok) return;
+
+        const defaults = (await response.json()) as SetupDefaults;
+        if (!isActive || Object.keys(defaults).length === 0) return;
+
+        setForm((currentForm) => {
+          const nextForm = {
+            ...currentForm,
+            ccuHost: currentForm.ccuHost || defaults.ccuHost || "",
+            ccuUser: currentForm.ccuUser || defaults.ccuUser || "",
+            xmlApiToken: currentForm.xmlApiToken || defaults.xmlApiToken || "",
+            snifferPort: currentForm.snifferPort || defaults.snifferPort || ""
+          };
+          try {
+            window.localStorage.setItem(setupStorageKey, JSON.stringify(nextForm));
+          } catch {
+          }
+          return nextForm;
+        });
+        showToast({
+          type: "success",
+          title: "Setup übernommen",
+          message: "Installer-Vorgaben wurden aus der lokalen Datenbank geladen."
+        });
+      } catch {
+      }
+    }
+
     async function loadNotificationSettings() {
       try {
         const response = await fetch("/api/settings/notifications");
@@ -548,6 +583,7 @@ function App() {
       }
     }
 
+    void loadSetupDefaults();
     void loadNotificationSettings();
     void checkForUpdates();
 

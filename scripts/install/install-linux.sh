@@ -9,6 +9,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/homematic-analyzer}"
 SERVICE_USER="${SERVICE_USER:-homematic-analyzer}"
 PORT="${PORT:-3001}"
 NODE_MAJOR="${NODE_MAJOR:-20}"
+SETUP_DEFAULTS_WRITTEN=0
 
 info() { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
@@ -49,7 +50,7 @@ run_apt_update_once() {
 install_base_packages() {
   run_apt_update_once
   info "Basis-Pakete werden installiert ..."
-  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git gnupg
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git gnupg util-linux
 }
 
 node_major_version() {
@@ -86,6 +87,16 @@ ensure_service_user() {
   fi
 }
 
+run_as_service_user() {
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u "$SERVICE_USER" -- "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -u "$SERVICE_USER" "$@"
+  else
+    fail "Weder runuser noch sudo gefunden. Kann Befehle nicht als $SERVICE_USER ausführen."
+  fi
+}
+
 sync_repository() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     info "Vorhandene Installation wird aktualisiert: $INSTALL_DIR"
@@ -102,11 +113,191 @@ sync_repository() {
 
 install_app() {
   info "Node-Abhängigkeiten werden installiert ..."
-  sudo -u "$SERVICE_USER" npm --prefix "$INSTALL_DIR" ci
+  run_as_service_user npm --prefix "$INSTALL_DIR" ci
   info "Frontend und Analyzer werden gebaut ..."
-  sudo -u "$SERVICE_USER" npm --prefix "$INSTALL_DIR" run build
+  run_as_service_user npm --prefix "$INSTALL_DIR" run build
   mkdir -p "$INSTALL_DIR/.data"
   chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.data"
+}
+
+has_tty() {
+  [ -r /dev/tty ] && [ -w /dev/tty ]
+}
+
+ask_text() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local answer
+
+  if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
+    printf '%s' "$default_value"
+    return
+  fi
+
+  if [ -n "$default_value" ]; then
+    printf '%s [%s]: ' "$prompt" "$default_value" > /dev/tty
+  else
+    printf '%s: ' "$prompt" > /dev/tty
+  fi
+
+  IFS= read -r answer < /dev/tty || answer=""
+  printf '%s' "${answer:-$default_value}"
+}
+
+ask_yes_no() {
+  local prompt="$1"
+  local default_value="${2:-n}"
+  local answer
+
+  if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
+    [ "$default_value" = "j" ] || [ "$default_value" = "y" ]
+    return
+  fi
+
+  printf '%s [%s]: ' "$prompt" "$default_value" > /dev/tty
+  IFS= read -r answer < /dev/tty || answer=""
+  answer="${answer:-$default_value}"
+
+  case "$answer" in
+    j|J|y|Y|ja|Ja|yes|Yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+scan_usb_ports() {
+  {
+    find /dev/serial/by-id -maxdepth 1 -type l 2>/dev/null
+    find /dev -maxdepth 1 \( -name 'ttyUSB*' -o -name 'ttyACM*' \) 2>/dev/null
+  } | awk 'NF && !seen[$0]++'
+}
+
+choose_usb_port() {
+  local ports=()
+  local index=1
+  local choice
+
+  while IFS= read -r port; do
+    ports+=("$port")
+  done < <(scan_usb_ports)
+
+  if [ "${#ports[@]}" -eq 0 ]; then
+    printf '\033[1;33m[HINWEIS]\033[0m Kein USB-Seriell-Port gefunden. In Proxmox LXC muss der USB-Stick vorher in den Container durchgereicht werden.\n' > /dev/tty
+    ask_text "Sniffer-Port manuell eintragen oder leer lassen" ""
+    return
+  fi
+
+  printf '\033[1;34m[INFO]\033[0m Gefundene USB-/Seriell-Ports:\n' > /dev/tty
+  for port in "${ports[@]}"; do
+    printf '  %s) %s\n' "$index" "$port" > /dev/tty
+    index=$((index + 1))
+  done
+  printf '  0) Kein Sniffer / später eintragen\n' > /dev/tty
+
+  choice="$(ask_text "Welcher Port ist der AskSin Analyzer XS Sniffer?" "0")"
+  if [ "$choice" = "0" ] || [ -z "$choice" ]; then
+    printf ''
+    return
+  fi
+
+  if printf '%s' "$choice" | grep -Eq '^[0-9]+$' && [ "$choice" -ge 1 ] && [ "$choice" -le "${#ports[@]}" ]; then
+    printf '%s' "${ports[$((choice - 1))]}"
+  else
+    printf '%s' "$choice"
+  fi
+}
+
+grant_serial_permissions() {
+  local sniffer_port="$1"
+
+  [ -n "$sniffer_port" ] || return
+
+  if getent group dialout >/dev/null 2>&1; then
+    usermod -aG dialout "$SERVICE_USER" || true
+    success "$SERVICE_USER wurde zur Gruppe dialout hinzugefügt."
+  fi
+
+  if [ -e "$sniffer_port" ]; then
+    chgrp dialout "$sniffer_port" 2>/dev/null || true
+    chmod g+rw "$sniffer_port" 2>/dev/null || true
+  fi
+}
+
+write_setup_defaults() {
+  local ccu_host="$1"
+  local ccu_user="$2"
+  local xml_api_token="$3"
+  local sniffer_port="$4"
+  local db_file="$INSTALL_DIR/.data/homematic-analyzer-db.json"
+  local temp_file="${db_file}.tmp"
+
+  mkdir -p "$INSTALL_DIR/.data"
+
+  CCU_HOST="$ccu_host" \
+  CCU_USER="$ccu_user" \
+  XML_API_TOKEN="$xml_api_token" \
+  SNIFFER_PORT="$sniffer_port" \
+  DB_FILE="$db_file" \
+  TEMP_FILE="$temp_file" \
+  node <<'NODE'
+const fs = require("node:fs");
+const dbFile = process.env.DB_FILE;
+const tempFile = process.env.TEMP_FILE;
+let db = { version: 1 };
+
+try {
+  db = JSON.parse(fs.readFileSync(dbFile, "utf8"));
+} catch {
+}
+
+const setupDefaults = {};
+if (process.env.CCU_HOST) setupDefaults.ccuHost = process.env.CCU_HOST;
+if (process.env.CCU_USER) setupDefaults.ccuUser = process.env.CCU_USER;
+if (process.env.XML_API_TOKEN) setupDefaults.xmlApiToken = process.env.XML_API_TOKEN;
+if (process.env.SNIFFER_PORT) setupDefaults.snifferPort = process.env.SNIFFER_PORT;
+
+db.version = 1;
+db.updatedAt = new Date().toISOString();
+db.setupDefaults = setupDefaults;
+
+fs.writeFileSync(tempFile, JSON.stringify(db, null, 2));
+fs.renameSync(tempFile, dbFile);
+NODE
+
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.data"
+  SETUP_DEFAULTS_WRITTEN=1
+}
+
+configure_initial_setup() {
+  local ccu_host=""
+  local ccu_user=""
+  local xml_api_token=""
+  local sniffer_port=""
+
+  if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
+    warn "Kein interaktives Terminal erkannt. Setup-Vorgaben werden übersprungen."
+    return
+  fi
+
+  printf '\n' > /dev/tty
+  info "Optionales Erstsetup: Du kannst alles leer lassen und später in der Web-App eintragen."
+
+  if ask_yes_no "CCU-IP/Host jetzt eintragen?" "j"; then
+    ccu_host="$(ask_text "CCU-IP oder Host" "")"
+    ccu_user="$(ask_text "CCU-Benutzer" "Admin")"
+    xml_api_token="$(ask_text "XML-API Token-ID / sid (ohne @, optional)" "")"
+  fi
+
+  if ask_yes_no "USB-Ports nach AskSin Analyzer XS Sniffer scannen?" "j"; then
+    sniffer_port="$(choose_usb_port)"
+    grant_serial_permissions "$sniffer_port"
+  fi
+
+  if [ -n "$ccu_host" ] || [ -n "$ccu_user" ] || [ -n "$xml_api_token" ] || [ -n "$sniffer_port" ]; then
+    write_setup_defaults "$ccu_host" "$ccu_user" "$xml_api_token" "$sniffer_port"
+    success "Setup-Vorgaben wurden in der lokalen Analyzer-Datenbank gespeichert."
+  else
+    warn "Keine Setup-Vorgaben gespeichert. Du kannst alles später in der Web-App eintragen."
+  fi
 }
 
 write_service() {
@@ -162,6 +353,7 @@ main() {
   ensure_service_user
   sync_repository
   install_app
+  configure_initial_setup
   write_service
   show_result
 }

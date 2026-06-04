@@ -272,6 +272,11 @@ app.get("/api/health", (_request, response) => {
   response.json({ ok: true, service: "Homematic Analyzer API" });
 });
 
+app.get("/api/setup/defaults", async (_request, response) => {
+  const database = await readLocalDatabase(localDatabaseFile);
+  response.json(database.setupDefaults ?? {});
+});
+
 app.post("/api/analyze", async (request, response) => {
   try {
     const parsed = analyzeSchema.safeParse(request.body);
