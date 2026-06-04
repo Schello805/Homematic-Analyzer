@@ -400,8 +400,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       access: ["ccu"],
       evidence: evidenceFromDevices(ccu?.devices ?? [], (device) => device.unreachable),
       details: [
-        "Ausgewertet werden UNREACH/STICKY_UNREACH-Datenpunkte und passende Servicemeldungen.",
-        "Ein Funkproblem wird daraus noch nicht automatisch geraten; dafür braucht es weitere Belege."
+        "Als aktueller Fehler zählen aktive Servicemeldungen und echte UNREACH-Datenpunkte.",
+        "STICKY_UNREACH ist ein alter Merker und wird nicht mehr allein als aktuell nicht erreichbar gewertet."
       ]
     },
     {

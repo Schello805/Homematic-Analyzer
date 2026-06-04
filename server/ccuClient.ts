@@ -48,6 +48,13 @@ function numberValue(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
 function firstDatapointName(device: UnknownRecord): string | undefined {
   const channels = asArray(device.channel);
   const datapoints = channels.flatMap((channel) => asArray(asRecord(channel).datapoint).map((datapoint) => asRecord(datapoint)));
@@ -255,7 +262,7 @@ function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
 
     const unreachableDatapoint = datapoints.find((datapoint) => {
       const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();
-      return /(UNREACH|STICKY_UNREACH)/.test(marker) && booleanValue(datapoint.value);
+      return /(^|[^A-Z])UNREACH([^A-Z]|$)/.test(marker) && !marker.includes("STICKY_UNREACH") && booleanValue(datapoint.value);
     });
 
     if (unreachableDatapoint) {
@@ -336,7 +343,11 @@ function enrichFromServiceMessages(devices: CcuDevice[], serviceMessages: CcuEvi
     if (relatedMessages.length === 0) return device;
 
     const lowBattery = device.lowBattery || relatedMessages.some((message) => /(lowbat|battery|batter)/i.test(message.detail));
-    const unreachable = device.unreachable || relatedMessages.some((message) => /(unreach|nicht erreichbar|communication)/i.test(message.detail));
+    const hasUnreachServiceMessage = relatedMessages.some((message) => {
+      const detail = normalizeText(message.detail);
+      return /unreach|nicht erreichbar|kommunikation|communication|geratekommunikation gestort/.test(detail);
+    });
+    const unreachable = device.unreachable || hasUnreachServiceMessage;
     const configPending = device.configPending || relatedMessages.some((message) => /(config|konfig)/i.test(message.detail));
 
     return {

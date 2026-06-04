@@ -93,6 +93,8 @@ Das Script erhöht die Patch-Version, baut die App, erstellt einen Commit `Relea
 
 Für Proxmox LXC reicht ein normaler Debian-/Ubuntu-Container. Wenn ein AskSin Analyzer XS Sniffer genutzt werden soll, muss der USB-Port vorher vom Proxmox-Host in den Container durchgereicht werden. Für die CCU bitte keine Portweiterleitung verwenden; von außen besser per VPN zugreifen.
 
+Ausführliche Anleitung: [`docs/PROXMOX_USB.md`](docs/PROXMOX_USB.md)
+
 ## Entwicklung starten
 
 ```bash
