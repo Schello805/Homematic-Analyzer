@@ -19,11 +19,13 @@ make_tmp_file() {
 
 TMP_FILE="$(make_tmp_file payload)"
 RESPONSE_FILE="$(make_tmp_file response)"
+BACKUP_LIST_FILE="$(make_tmp_file backups)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
+: > "$BACKUP_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -120,7 +122,13 @@ MEMORY_VALUE="$(value_or_empty "free -m")"
 DISK_VALUE="$(value_or_empty "df -h /")"
 TEMP_VALUE="$(value_or_empty "cat /sys/class/thermal/thermal_zone0/temp")"
 CPU_VALUE="$(value_or_empty "top -bn1 | head -n 5")"
-BACKUP_COUNT="$(find /usr/local/backup /media/usb0/backup /backup -type f 2>/dev/null | wc -l | tr -d ' ')"
+for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
+  if [ -d "$backup_dir" ]; then
+    find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|backup|sicherung)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
+  fi
+done
+sort -u "$BACKUP_LIST_FILE" -o "$BACKUP_LIST_FILE" 2>/dev/null || true
+BACKUP_COUNT="$(wc -l < "$BACKUP_LIST_FILE" 2>/dev/null | tr -d ' ')"
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
@@ -152,7 +160,18 @@ CONNECTION_LINES="$(
   printf '    "temperatureRaw": "%s",\n' "$TEMP_VALUE"
   printf '    "cpu": "%s"\n' "$CPU_VALUE"
   printf '  },\n'
-  printf '  "backups": { "count": "%s" },\n' "$BACKUP_COUNT"
+  printf '  "backups": { "count": "%s", "paths": [\n' "$BACKUP_COUNT"
+  FIRST=1
+  tail -n 8 "$BACKUP_LIST_FILE" 2>/dev/null | while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
+  done
+  printf '\n  ] },\n'
   printf '  "logs": [\n'
   FIRST=1
   printf '%s\n' "$LOG_LINES" | while IFS= read -r line; do

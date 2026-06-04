@@ -260,19 +260,6 @@ function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
       });
     }
 
-    const unreachableDatapoint = datapoints.find((datapoint) => {
-      const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();
-      return /(^|[^A-Z])UNREACH([^A-Z]|$)/.test(marker) && !marker.includes("STICKY_UNREACH") && booleanValue(datapoint.value);
-    });
-
-    if (unreachableDatapoint) {
-      evidence.push({
-        source: "CCU Gerätekanal",
-        detail: `${name}: Gerät meldet nicht erreichbar.`,
-        timestamp: stringValue(unreachableDatapoint.timestamp)
-      });
-    }
-
     const configPendingDatapoint = datapoints.find((datapoint) => {
       const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();
       return /(CONFIG_PENDING|PENDING_CONFIG)/.test(marker) && booleanValue(datapoint.value);
@@ -295,11 +282,19 @@ function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
       type,
       firmware: stringValue(device.firmware),
       lowBattery: Boolean(lowBatteryDatapoint),
-      unreachable: Boolean(unreachableDatapoint),
+      unreachable: false,
       configPending: Boolean(configPendingDatapoint || readyConfigPending),
       evidence
     };
   });
+}
+
+function readableServiceMessageType(type: string): string {
+  const normalizedType = normalizeText(type);
+  if (normalizedType.includes("unreach")) return "Gerätekommunikation gestört";
+  if (normalizedType.includes("lowbat")) return "Batterie niedrig";
+  if (normalizedType.includes("config")) return "Konfiguration ausstehend";
+  return type;
 }
 
 function collectServiceMessages(parsedNotifications: UnknownRecord): CcuEvidence[] {
@@ -309,11 +304,19 @@ function collectServiceMessages(parsedNotifications: UnknownRecord): CcuEvidence
   return notifications.map((notificationValue) => {
     const notification = asRecord(notificationValue);
     const type = stringValue(notification.type) ?? "Servicemeldung";
-    const message = stringValue(notification.message) ?? stringValue(notification.text) ?? "Keine Meldungsdetails";
+    const readableType = readableServiceMessageType(type);
+    const name = stringValue(notification.name)
+      ?? stringValue(notification.device)
+      ?? stringValue(notification.channel)
+      ?? stringValue(notification.object);
+    const message = stringValue(notification.message)
+      ?? stringValue(notification.text)
+      ?? stringValue(notification.value)
+      ?? readableType;
 
     return {
       source: "CCU Servicemeldung",
-      detail: `${type}: ${message}`,
+      detail: name ? `${name}: ${message}` : `${readableType}: ${message}`,
       timestamp: stringValue(notification.timestamp)
     };
   });

@@ -351,6 +351,18 @@ h2 {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.usb-port-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.usb-port-picker .ghost-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
 .inline-help {
   border: 1px solid #e0e7f2;
   border-radius: 16px;
@@ -1356,7 +1368,8 @@ pre {
   .form-grid,
   .event-grid,
   .summary-grid,
-  .metric-grid {
+  .metric-grid,
+  .usb-port-picker {
     grid-template-columns: 1fr;
   }
 

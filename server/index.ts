@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -150,6 +150,12 @@ function stringFromRecord(record: Record<string, unknown> | undefined, key: stri
   return value === undefined || value === null ? undefined : String(value);
 }
 
+function stringArrayFromRecord(record: Record<string, unknown> | undefined, key: string): string[] | undefined {
+  const value = record?.[key];
+  if (!Array.isArray(value)) return undefined;
+  return value.map((entry) => String(entry)).filter(Boolean);
+}
+
 function createSystemDashboard(collector: CollectorPayload | undefined) {
   if (!collector) {
     return { available: false, logs: 0, connections: 0 };
@@ -165,9 +171,58 @@ function createSystemDashboard(collector: CollectorPayload | undefined) {
     temperature: stringFromRecord(collector.system, "temperatureRaw"),
     cpu: stringFromRecord(collector.system, "cpu"),
     backups: stringFromRecord(collector.backups, "count"),
+    backupPaths: stringArrayFromRecord(collector.backups, "paths"),
     logs: collector.logs?.length ?? 0,
     connections: collector.network?.connections?.length ?? 0
   };
+}
+
+async function readUsbSerialPorts() {
+  const candidates: Array<{ path: string; label: string; stable: boolean; target?: string }> = [];
+  const seenPaths = new Set<string>();
+
+  async function addPort(path: string, stable: boolean, label?: string) {
+    if (seenPaths.has(path)) return;
+    seenPaths.add(path);
+
+    let target: string | undefined;
+    try {
+      const stats = await lstat(path);
+      if (stats.isSymbolicLink()) {
+        target = await realpath(path);
+      }
+    } catch {
+    }
+
+    candidates.push({
+      path,
+      label: label ?? (target ? `${path} → ${target}` : path),
+      stable,
+      target
+    });
+  }
+
+  try {
+    const byIdEntries = await readdir("/dev/serial/by-id");
+    await Promise.all(byIdEntries.map((entry) => addPort(join("/dev/serial/by-id", entry), true)));
+  } catch {
+  }
+
+  try {
+    const devEntries = await readdir("/dev");
+    const serialNamePattern = /^(ttyUSB|ttyACM|ttyAMA|serial|cu\.usb|tty\.usb|cu\.wchusb|tty\.wchusb|cu\.SLAB|tty\.SLAB)/i;
+    await Promise.all(
+      devEntries
+        .filter((entry) => serialNamePattern.test(entry))
+        .map((entry) => addPort(join("/dev", entry), false))
+    );
+  } catch {
+  }
+
+  return candidates.sort((left, right) => {
+    if (left.stable !== right.stable) return left.stable ? -1 : 1;
+    return left.path.localeCompare(right.path);
+  });
 }
 
 async function loadPersistedCcuMasterdata() {
@@ -297,6 +352,13 @@ app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true, service: "Homematic Analyzer API" });
+});
+
+app.get("/api/system/usb-ports", async (_request, response) => {
+  response.json({
+    checkedAt: new Date().toISOString(),
+    ports: await readUsbSerialPorts()
+  });
 });
 
 app.get("/api/setup/defaults", async (_request, response) => {

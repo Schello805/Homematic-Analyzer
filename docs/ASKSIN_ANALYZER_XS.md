@@ -27,4 +27,6 @@ Mit Sniffer zeigt die App:
 
 > Funk-Tiefenanalyse aktiv.
 
+Der USB-Port kann in der Web-App per Dropdown ausgewählt werden. Bevorzugt werden stabile Pfade wie `/dev/serial/by-id/...`; falls Proxmox/LXC den Port anders durchreicht, bleibt eine manuelle Eingabe möglich.
+
 Technische Details bleiben optional sichtbar.

@@ -186,6 +186,14 @@ function findFirmwareDifferences(masterdata: CcuMasterdataPayload | undefined, c
     .slice(0, 8);
 }
 
+function isReachabilityEvidence(evidence: Evidence): boolean {
+  const detail = evidence.detail
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+  return /unreach|nicht erreichbar|kommunikation|communication|geratekommunikation gestort/.test(detail);
+}
+
 export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
@@ -203,6 +211,11 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
+  const unreachableServiceMessages = ccu?.serviceMessages.filter(isReachabilityEvidence) ?? [];
+  const unreachableEvidence = unreachableDevices.length > 0
+    ? evidenceFromDevices(ccu?.devices ?? [], (device) => device.unreachable)
+    : unreachableServiceMessages.slice(0, 8);
+  const unreachableCount = unreachableDevices.length || unreachableServiceMessages.length;
   const configPendingDevices = ccu?.devices.filter((device) => device.configPending) ?? [];
   const dutyStatus = dutyCycleStatus(ccu?.dutyCycle);
   const logAnalysis = analyzeLogLines(collector?.logs);
@@ -386,22 +399,24 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "reachability",
       title: "Erreichbarkeit",
       category: "Geräte",
-      status: hasCcuData ? statusForCount(unreachableDevices.length) : "unavailable",
+      status: hasCcuData ? statusForCount(unreachableCount) : "unavailable",
       summary: hasCcuData
         ? unreachableDevices.length
           ? `${unreachableDevices.length} Geräte sind auffällig: ${deviceNames(ccu?.devices ?? [], (device) => device.unreachable)}.`
+          : unreachableServiceMessages.length
+            ? `${unreachableServiceMessages.length} Erreichbarkeits-Servicemeldungen wurden gefunden.`
           : "Keine nicht erreichbaren Geräte gefunden."
         : "Erreichbarkeit kann ohne CCU-Daten nicht geprüft werden.",
       recommendation: hasCcuData
-        ? unreachableDevices.length
+        ? unreachableCount
           ? "Betroffene Geräte auf Strom/Batterie, Entfernung und Funkhindernisse prüfen."
           : "Kein Handlungsbedarf."
         : "CCU-Zugang einrichten, um nicht erreichbare Geräte nachweisbar zu erkennen.",
       access: ["ccu"],
-      evidence: evidenceFromDevices(ccu?.devices ?? [], (device) => device.unreachable),
+      evidence: unreachableEvidence,
       details: [
-        "Als aktueller Fehler zählen aktive Servicemeldungen und echte UNREACH-Datenpunkte.",
-        "STICKY_UNREACH ist ein alter Merker und wird nicht mehr allein als aktuell nicht erreichbar gewertet."
+        "Als aktueller Fehler zählen aktive Servicemeldungen der Zentrale und zuordenbare Gerätebelege.",
+        "Historische UNREACH-/STICKY_UNREACH-Rohkanäle werden nicht mehr allein als aktueller Fehler gezählt."
       ]
     },
     {

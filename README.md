@@ -42,6 +42,7 @@ Während der Installation fragt das Script optional nach:
 - ob Systemdaten per Collector gar nicht, einmalig, täglich oder stündlich an den Analyzer gesendet werden sollen
 
 Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
+Auch in der Web-App kann der Sniffer-Port später per Dropdown neu gesucht und ausgewählt werden. Falls der Port nicht sichtbar ist, kann er weiterhin manuell eingetragen werden.
 
 Wenn der Collector während der Installation aktiviert wird, wartet das Script auf die lokale Analyzer-API und sendet direkt einen ersten System-Snapshot. Bei regelmäßiger Übertragung wird zusätzlich ein Cronjob auf dem System angelegt.
 

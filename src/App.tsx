@@ -47,6 +47,7 @@ type SystemDashboard = {
   temperature?: string;
   cpu?: string;
   backups?: string;
+  backupPaths?: string[];
   logs: number;
   connections: number;
 };
@@ -69,6 +70,13 @@ type MasterdataStatus = {
   available: boolean;
   collectedAt?: string;
   deviceCount: number;
+};
+
+type UsbPort = {
+  path: string;
+  label: string;
+  stable: boolean;
+  target?: string;
 };
 
 type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort">>;
@@ -231,7 +239,11 @@ function getApiBaseUrl() {
 }
 
 function firstLine(value?: string) {
-  return value?.split("\n").map((line) => line.trim()).filter(Boolean)[0];
+  return splitMetricLines(value)[0];
+}
+
+function splitMetricLines(value?: string) {
+  return value?.replaceAll("\\n", "\n").split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
 }
 
 function formatTemperature(raw?: string) {
@@ -241,28 +253,42 @@ function formatTemperature(raw?: string) {
 }
 
 function formatMemory(raw?: string) {
-  const lines = raw?.split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
+  const lines = splitMetricLines(raw);
   const memoryLine = lines.find((line) => /^Mem:/i.test(line));
-  if (!memoryLine) return firstLine(raw) ?? "—";
-  const parts = memoryLine.split(/\s+/);
-  return parts.length >= 4 ? `${parts[2]} / ${parts[1]} MB` : memoryLine;
+  const fallbackLine = lines.find((line) => !/^total\s+used\s+free/i.test(line));
+  const line = memoryLine ?? fallbackLine;
+  if (!line) return "—";
+  const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
+  return parts.length >= 3 ? `${parts[1]} / ${parts[0]} MB genutzt` : line;
 }
 
 function formatDisk(raw?: string) {
-  const lines = raw?.split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
-  const diskLine = lines.find((line) => /\s\/$/.test(line));
-  if (!diskLine) return lines[1] ?? firstLine(raw) ?? "—";
+  const lines = splitMetricLines(raw);
+  const diskLine = lines.find((line) => /\s\/$/.test(line) || /\/dev\/|overlay|rootfs/i.test(line));
+  if (!diskLine) return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "—";
   const parts = diskLine.split(/\s+/);
   return parts.length >= 5 ? `${parts[4]} belegt · ${parts[3]} frei` : diskLine;
 }
 
 function formatCpu(raw?: string) {
-  const line = raw?.split("\n").find((entry) => /load average|load/i.test(entry)) ?? firstLine(raw);
+  const line = splitMetricLines(raw).find((entry) => /load average|load/i.test(entry)) ?? firstLine(raw);
   return line?.replace(/^.*load average:\s*/i, "Load ") ?? "—";
 }
 
 function formatUptime(raw?: string) {
-  return firstLine(raw)?.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "") ?? "—";
+  const line = firstLine(raw);
+  if (!line) return "—";
+  const uptime = line.match(/\bup\s+(.+?),\s+\d+\s+users?/i)?.[1]
+    ?? line.match(/\bup\s+(.+?),\s+load average/i)?.[1]
+    ?? line.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "");
+  return uptime.replace(/,\s*load average:.*$/i, "").trim();
+}
+
+function formatBackups(count?: string, paths?: string[]) {
+  if (!count) return "—";
+  const backupCount = Number(count);
+  const label = Number.isFinite(backupCount) ? `${backupCount} gefunden` : `${count} gefunden`;
+  return paths?.length ? `${label} · ${paths[paths.length - 1]}` : label;
 }
 
 function App() {
@@ -284,6 +310,9 @@ function App() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [updatingApp, setUpdatingApp] = useState(false);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
+  const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
+  const [usbPortsLoading, setUsbPortsLoading] = useState(false);
+  const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
     label: "Update wird geprüft",
@@ -318,6 +347,17 @@ function App() {
     return window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost";
   }, []);
 
+  const selectedSnifferPortIsKnown = useMemo(
+    () => usbPorts.some((usbPort) => usbPort.path === form.snifferPort),
+    [form.snifferPort, usbPorts]
+  );
+  const showManualSnifferPort = manualSnifferPort || (Boolean(form.snifferPort) && !selectedSnifferPortIsKnown);
+  const snifferPortSelectValue = form.snifferPort && selectedSnifferPortIsKnown
+    ? form.snifferPort
+    : showManualSnifferPort
+      ? "__manual__"
+      : "";
+
   function removeToast(id: number) {
     setToasts((currentToasts) => currentToasts.filter((toast) => toast.id !== id));
   }
@@ -343,6 +383,50 @@ function App() {
 
   function toggleSecret(name: string) {
     setVisibleSecrets((current) => ({ ...current, [name]: !current[name] }));
+  }
+
+  async function loadUsbPorts(showSuccessToast = false) {
+    setUsbPortsLoading(true);
+    try {
+      const response = await fetch("/api/system/usb-ports");
+      if (!response.ok) throw new Error("USB-Port-Scan fehlgeschlagen.");
+
+      const result = (await response.json()) as { ports?: UsbPort[] };
+      const ports = result.ports ?? [];
+      setUsbPorts(ports);
+
+      if (form.snifferPort && !ports.some((usbPort) => usbPort.path === form.snifferPort)) {
+        setManualSnifferPort(true);
+      }
+
+      if (showSuccessToast) {
+        showToast({
+          type: ports.length > 0 ? "success" : "info",
+          title: "USB-Ports geprüft",
+          message: ports.length > 0 ? `${ports.length} möglicher Port gefunden.` : "Kein USB-Seriell-Port sichtbar."
+        });
+      }
+    } catch {
+      if (showSuccessToast) {
+        showToast({
+          type: "warning",
+          title: "USB-Ports nicht lesbar",
+          message: "Du kannst den Port weiterhin manuell eintragen."
+        });
+      }
+    } finally {
+      setUsbPortsLoading(false);
+    }
+  }
+
+  function selectSnifferPort(value: string) {
+    if (value === "__manual__") {
+      setManualSnifferPort(true);
+      return;
+    }
+
+    setManualSnifferPort(false);
+    updateForm({ ...form, snifferPort: value });
   }
 
   async function copyText(text: string) {
@@ -672,6 +756,7 @@ function App() {
     void loadSetupDefaults();
     void loadNotificationSettings();
     void checkForUpdates();
+    void loadUsbPorts(false);
 
     return () => {
       isActive = false;
@@ -961,13 +1046,35 @@ function App() {
 
             <fieldset className="setup-card setup-card-optional">
               <legend>Optionale Erweiterungen</legend>
-              <p>Nur ausfüllen, wenn vorhanden.</p>
-              <div className="form-grid form-grid-1">
+              <p>Nur nötig, wenn ein AskSin Analyzer XS Sniffer am Analyzer-System steckt.</p>
+              <div className="usb-port-picker">
                 <label>
                   AskSin Analyzer XS USB-Port
-                  <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/ttyUSB0" />
+                  <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
+                    <option value="">Kein Sniffer / später einrichten</option>
+                    {usbPorts.map((usbPort) => (
+                      <option value={usbPort.path} key={usbPort.path}>
+                        {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
+                      </option>
+                    ))}
+                    <option value="__manual__">Manuell eintragen</option>
+                  </select>
                 </label>
+                <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
+                  {usbPortsLoading ? "Suche läuft ..." : "Ports neu suchen"}
+                </button>
               </div>
+              {showManualSnifferPort && (
+                <label>
+                  Manueller USB-Port
+                  <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
+                </label>
+              )}
+              <p className={usbPorts.length > 0 ? "setup-note setup-note-ok" : "setup-note"}>
+                {usbPorts.length > 0
+                  ? "Gefundene Ports werden bevorzugt als stabile /dev/serial/by-id Pfade angezeigt."
+                  : "Wenn hier nichts erscheint: Sniffer anstecken oder in Proxmox/LXC erst den USB-Port durchreichen."}
+              </p>
             </fieldset>
           </div>
 
@@ -1139,7 +1246,7 @@ function App() {
                   ["RAM", formatMemory(analysis.systemDashboard.memory)],
                   ["Temperatur", formatTemperature(analysis.systemDashboard.temperature)],
                   ["Speicher", formatDisk(analysis.systemDashboard.disk)],
-                  ["Backups", analysis.systemDashboard.backups ? `${analysis.systemDashboard.backups} gefunden` : "—"],
+                  ["Backups", formatBackups(analysis.systemDashboard.backups, analysis.systemDashboard.backupPaths)],
                   ["Uptime", formatUptime(analysis.systemDashboard.uptime)],
                   ["Logzeilen", `${analysis.systemDashboard.logs}`],
                   ["Verbindungen", `${analysis.systemDashboard.connections}`]
@@ -1572,9 +1679,11 @@ function App() {
           <span>{updateStatus.label}</span>
           <small>{updateStatus.detail}</small>
         </a>
-        <button type="button" className="footer-update-button" onClick={() => void runAppUpdate()} disabled={updatingApp}>
-          {updatingApp ? "Update läuft ..." : "Update starten"}
-        </button>
+        {updateStatus.state === "update" && (
+          <button type="button" className="footer-update-button" onClick={() => void runAppUpdate()} disabled={updatingApp}>
+            {updatingApp ? "Update läuft ..." : "Update starten"}
+          </button>
+        )}
       </footer>
     </main>
   );
