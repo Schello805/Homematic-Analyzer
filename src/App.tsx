@@ -249,7 +249,8 @@ function splitMetricLines(value?: string) {
 function formatTemperature(raw?: string) {
   const value = Number(firstLine(raw));
   if (!Number.isFinite(value)) return firstLine(raw) ?? "—";
-  return `${Math.round(value / 100) / 10} °C`;
+  const celsius = value > 1000 ? value / 1000 : value;
+  return `${Math.round(celsius * 10) / 10} °C`;
 }
 
 function formatMemory(raw?: string) {
@@ -258,6 +259,10 @@ function formatMemory(raw?: string) {
   const fallbackLine = lines.find((line) => !/^total\s+used\s+free/i.test(line));
   const line = memoryLine ?? fallbackLine;
   if (!line) return "—";
+
+  const busyboxMatch = line.match(/Mem:\s*([0-9.]+\s*[KMGT]?B?)\s+used,?\s+([0-9.]+\s*[KMGT]?B?)\s+free/i);
+  if (busyboxMatch) return `${busyboxMatch[1]} genutzt · ${busyboxMatch[2]} frei`;
+
   const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
   return parts.length >= 3 ? `${parts[1]} / ${parts[0]} MB genutzt` : line;
 }
@@ -271,8 +276,12 @@ function formatDisk(raw?: string) {
 }
 
 function formatCpu(raw?: string) {
-  const line = splitMetricLines(raw).find((entry) => /load average|load/i.test(entry)) ?? firstLine(raw);
-  return line?.replace(/^.*load average:\s*/i, "Load ") ?? "—";
+  const lines = splitMetricLines(raw);
+  const loadLine = lines.find((entry) => /load average|load:/i.test(entry));
+  const cpuLine = lines.find((entry) => /^(cpu|%cpu)/i.test(entry));
+  const line = loadLine ?? cpuLine;
+  if (!line) return "—";
+  return line.replace(/^.*load average:\s*/i, "Load ").replace(/^Load:\s*/i, "Load ");
 }
 
 function formatUptime(raw?: string) {

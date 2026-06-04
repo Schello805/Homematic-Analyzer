@@ -10,6 +10,7 @@ SERVICE_USER="${SERVICE_USER:-homematic-analyzer}"
 PORT="${PORT:-3001}"
 NODE_MAJOR="${NODE_MAJOR:-20}"
 SETUP_DEFAULTS_WRITTEN=0
+EXISTING_INSTALL=0
 
 info() { printf '\033[1;34m[INFO]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
@@ -99,6 +100,7 @@ run_as_service_user() {
 
 sync_repository() {
   if [ -d "$INSTALL_DIR/.git" ]; then
+    EXISTING_INSTALL=1
     info "Vorhandene Installation wird aktualisiert: $INSTALL_DIR"
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
     git -C "$INSTALL_DIR" fetch --all --prune
@@ -275,6 +277,11 @@ configure_initial_setup() {
   local xml_api_token=""
   local sniffer_port=""
 
+  if [ "$EXISTING_INSTALL" = "1" ]; then
+    info "Update erkannt: Erstsetup-Fragen werden übersprungen."
+    return
+  fi
+
   if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
     warn "Kein interaktives Terminal erkannt. Setup-Vorgaben werden übersprungen."
     return
@@ -353,6 +360,11 @@ configure_collector_delivery() {
   local mode=""
   local interval="daily"
   local script_url
+
+  if [ "$EXISTING_INSTALL" = "1" ]; then
+    info "Update erkannt: Collector-Einrichtung bleibt unverändert."
+    return
+  fi
 
   if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
     warn "Kein interaktives Terminal erkannt. System-Snapshot wird nicht automatisch eingerichtet."

@@ -118,13 +118,13 @@ value_or_empty() {
 }
 
 UPTIME_VALUE="$(value_or_empty "uptime")"
-MEMORY_VALUE="$(value_or_empty "free -m")"
-DISK_VALUE="$(value_or_empty "df -h /")"
-TEMP_VALUE="$(value_or_empty "cat /sys/class/thermal/thermal_zone0/temp")"
-CPU_VALUE="$(value_or_empty "top -bn1 | head -n 5")"
+MEMORY_VALUE="$(value_or_empty "free -m || top -bn1 | grep '^Mem:' | head -n 1")"
+DISK_VALUE="$(value_or_empty "df -h / 2>/dev/null || df -h | head -n 2")"
+TEMP_VALUE="$(value_or_empty "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'")"
+CPU_VALUE="$(value_or_empty "uptime")"
 for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
   if [ -d "$backup_dir" ]; then
-    find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|backup|sicherung)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
+    find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
   fi
 done
 sort -u "$BACKUP_LIST_FILE" -o "$BACKUP_LIST_FILE" 2>/dev/null || true

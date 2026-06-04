@@ -235,6 +235,47 @@ function hasStateList(parsedStateList: UnknownRecord): boolean {
   return getStateListDevices(parsedStateList).length > 0;
 }
 
+function addNameAlias(nameMap: Map<string, string>, key: unknown, name: string | undefined) {
+  const normalizedKey = stringValue(key)?.trim();
+  if (!normalizedKey || !name) return;
+  nameMap.set(normalizedKey, name);
+}
+
+function collectNameMap(parsedStateList: UnknownRecord): Map<string, string> {
+  const nameMap = new Map<string, string>();
+  const devices = getStateListDevices(parsedStateList);
+
+  for (const deviceValue of devices) {
+    const device = asRecord(deviceValue);
+    const deviceName = stringValue(device.name) ?? stringValue(device.address);
+    const deviceAddress = inferAddress(device);
+    addNameAlias(nameMap, device.ise_id, deviceName);
+    addNameAlias(nameMap, deviceAddress, deviceName);
+    addNameAlias(nameMap, device.name, deviceName);
+
+    for (const channelValue of asArray(device.channel)) {
+      const channel = asRecord(channelValue);
+      const channelName = stringValue(channel.name) ?? deviceName;
+      const channelAddress = stringValue(channel.address);
+      addNameAlias(nameMap, channel.ise_id, channelName);
+      addNameAlias(nameMap, channelAddress, channelName);
+      addNameAlias(nameMap, channel.name, channelName);
+
+      for (const datapointValue of asArray(channel.datapoint)) {
+        const datapoint = asRecord(datapointValue);
+        const datapointName = stringValue(datapoint.name);
+        addNameAlias(nameMap, datapoint.ise_id, channelName);
+        addNameAlias(nameMap, datapointName, channelName);
+        if (datapointName?.includes(".")) {
+          addNameAlias(nameMap, datapointName.split(".").slice(0, -1).join("."), channelName);
+        }
+      }
+    }
+  }
+
+  return nameMap;
+}
+
 function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
   const devices = getStateListDevices(parsedStateList);
 
@@ -297,7 +338,51 @@ function readableServiceMessageType(type: string): string {
   return type;
 }
 
-function collectServiceMessages(parsedNotifications: UnknownRecord): CcuEvidence[] {
+function identifierCandidates(value: unknown): string[] {
+  const text = stringValue(value)?.trim();
+  if (!text) return [];
+
+  const candidates = new Set<string>([text]);
+  if (text.includes(".")) {
+    candidates.add(text.split(".").slice(0, -1).join("."));
+  }
+
+  const addressMatches = text.match(/[A-Z]{2,}[A-Z0-9]{5,}(?::\d+)?/gi) ?? [];
+  for (const match of addressMatches) {
+    candidates.add(match);
+    if (match.includes(":")) {
+      candidates.add(match.split(":")[0]);
+    }
+  }
+
+  return [...candidates];
+}
+
+function resolveServiceMessageName(notification: UnknownRecord, nameMap: Map<string, string>): string | undefined {
+  const preferredFields = ["name", "device", "channel", "object", "ise_id", "device_id", "channel_id", "object_id", "datapoint_id"];
+  for (const field of preferredFields) {
+    for (const candidate of identifierCandidates(notification[field])) {
+      const resolvedName = nameMap.get(candidate);
+      if (resolvedName) return resolvedName;
+    }
+  }
+
+  for (const value of Object.values(notification)) {
+    for (const candidate of identifierCandidates(value)) {
+      const resolvedName = nameMap.get(candidate);
+      if (resolvedName) return resolvedName;
+    }
+  }
+
+  const directName = stringValue(notification.name) ?? stringValue(notification.device) ?? stringValue(notification.channel) ?? stringValue(notification.object);
+  if (directName && !/[A-Z]{2,}[A-Z0-9]{5,}(?::\d+)?/i.test(directName)) {
+    return directName;
+  }
+
+  return undefined;
+}
+
+function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>): CcuEvidence[] {
   const root = asRecord(parsedNotifications.systemNotifications ?? parsedNotifications.systemNotification ?? parsedNotifications);
   const notifications = asArray(root.notification);
 
@@ -305,10 +390,7 @@ function collectServiceMessages(parsedNotifications: UnknownRecord): CcuEvidence
     const notification = asRecord(notificationValue);
     const type = stringValue(notification.type) ?? "Servicemeldung";
     const readableType = readableServiceMessageType(type);
-    const name = stringValue(notification.name)
-      ?? stringValue(notification.device)
-      ?? stringValue(notification.channel)
-      ?? stringValue(notification.object);
+    const name = resolveServiceMessageName(notification, nameMap);
     const message = stringValue(notification.message)
       ?? stringValue(notification.text)
       ?? stringValue(notification.value)
@@ -515,7 +597,8 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       throw new CcuRequestError("XML-API wurde erreicht, lieferte aber keine Geräteliste. Bitte stelle sicher, dass Geräte in der CCU angelernt sind.");
     }
 
-    const serviceMessages = collectServiceMessages(notifications);
+    const nameMap = collectNameMap(stateList);
+    const serviceMessages = collectServiceMessages(notifications, nameMap);
     const datapoints = collectDatapoints(stateList);
     const devices = enrichFromServiceMessages(collectDevices(stateList), serviceMessages);
     const dutyCycle = findDutyCycle(datapoints, serviceMessages);
