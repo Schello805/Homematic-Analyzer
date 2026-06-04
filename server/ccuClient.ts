@@ -48,11 +48,27 @@ function numberValue(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function replacementCount(value: string) {
+  return (value.match(/\uFFFD/g) ?? []).length;
+}
+
+function decodeXmlBuffer(buffer: Buffer): { text: string; encoding: "utf8" | "latin1" } {
+  const utf8Text = buffer.toString("utf8");
+  const latin1Text = buffer.toString("latin1");
+  return replacementCount(utf8Text) > replacementCount(latin1Text)
+    ? { text: latin1Text, encoding: "latin1" }
+    : { text: utf8Text, encoding: "utf8" };
+}
+
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
+}
+
+function stripInterfacePrefix(value: string): string {
+  return value.replace(/^[A-Za-z]+(?:-[A-Za-z]+)?\./, "");
 }
 
 function firstDatapointName(device: UnknownRecord): string | undefined {
@@ -66,7 +82,7 @@ function inferAddress(device: UnknownRecord): string | undefined {
   if (explicitAddress) return explicitAddress;
 
   const datapointName = firstDatapointName(device);
-  return datapointName?.split(":")[0];
+  return datapointName ? stripInterfacePrefix(datapointName).split(":")[0] : undefined;
 }
 
 function inferDeviceType(device: UnknownRecord): string | undefined {
@@ -74,7 +90,7 @@ function inferDeviceType(device: UnknownRecord): string | undefined {
   if (explicitType) return explicitType;
 
   const datapointName = firstDatapointName(device);
-  const address = datapointName?.split(":")[0];
+  const address = datapointName ? stripInterfacePrefix(datapointName).split(":")[0] : undefined;
   return address?.split(".")[0];
 }
 
@@ -208,7 +224,9 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
       throw new CcuRequestError(`${path} antwortet mit HTTP ${response.status}`, response.status);
     }
 
-    return asRecord(parser.parse(await response.text()));
+    const decoded = decodeXmlBuffer(Buffer.from(await response.arrayBuffer()));
+    console.info(`[CCU DEBUG] XML ${path}: encoding=${decoded.encoding}, chars=${decoded.text.length}, replacements=${replacementCount(decoded.text)}`);
+    return asRecord(parser.parse(decoded.text));
   } finally {
     clearTimeout(timeout);
   }
@@ -238,7 +256,9 @@ function hasStateList(parsedStateList: UnknownRecord): boolean {
 function addNameAlias(nameMap: Map<string, string>, key: unknown, name: string | undefined) {
   const normalizedKey = stringValue(key)?.trim();
   if (!normalizedKey || !name) return;
-  nameMap.set(normalizedKey, name);
+  for (const alias of identifierCandidates(normalizedKey)) {
+    nameMap.set(alias, name);
+  }
 }
 
 function collectNameMap(parsedStateList: UnknownRecord): Map<string, string> {
@@ -272,6 +292,16 @@ function collectNameMap(parsedStateList: UnknownRecord): Map<string, string> {
       }
     }
   }
+
+  console.info("[CCU DEBUG] NameMap", JSON.stringify({
+    devices: devices.length,
+    aliases: nameMap.size,
+    sampleDeviceNames: devices.slice(0, 8).map((deviceValue) => stringValue(asRecord(deviceValue).name)),
+    replacementNames: devices
+      .map((deviceValue) => stringValue(asRecord(deviceValue).name) ?? "")
+      .filter((name) => name.includes("\uFFFD"))
+      .slice(0, 8)
+  }));
 
   return nameMap;
 }
@@ -343,13 +373,28 @@ function identifierCandidates(value: unknown): string[] {
   if (!text) return [];
 
   const candidates = new Set<string>([text]);
+
+  const withoutInterface = stripInterfacePrefix(text);
+  candidates.add(withoutInterface);
+
   if (text.includes(".")) {
     candidates.add(text.split(".").slice(0, -1).join("."));
   }
+  if (withoutInterface.includes(".")) {
+    candidates.add(withoutInterface.split(".").slice(0, -1).join("."));
+  }
+
+  const normalizedUnreach = text.replace(/\.STICKY_UNREACH$/i, ".UNREACH");
+  candidates.add(normalizedUnreach);
+  candidates.add(stripInterfacePrefix(normalizedUnreach));
+  const stickyUnreach = text.replace(/\.UNREACH$/i, ".STICKY_UNREACH");
+  candidates.add(stickyUnreach);
+  candidates.add(stripInterfacePrefix(stickyUnreach));
 
   const addressMatches = text.match(/[A-Z]{2,}[A-Z0-9]{5,}(?::\d+)?/gi) ?? [];
   for (const match of addressMatches) {
     candidates.add(match);
+    candidates.add(stripInterfacePrefix(match));
     if (match.includes(":")) {
       candidates.add(match.split(":")[0]);
     }
@@ -386,7 +431,7 @@ function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map
   const root = asRecord(parsedNotifications.systemNotifications ?? parsedNotifications.systemNotification ?? parsedNotifications);
   const notifications = asArray(root.notification);
 
-  return notifications.map((notificationValue) => {
+  return notifications.map((notificationValue, index) => {
     const notification = asRecord(notificationValue);
     const type = stringValue(notification.type) ?? "Servicemeldung";
     const readableType = readableServiceMessageType(type);
@@ -395,6 +440,22 @@ function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map
       ?? stringValue(notification.text)
       ?? stringValue(notification.value)
       ?? readableType;
+    const debugCandidates = [
+      ...new Set(Object.values(notification).flatMap((value) => identifierCandidates(value)).filter(Boolean))
+    ].slice(0, 12);
+
+    if (index < 12) {
+      console.info("[CCU DEBUG] ServiceMessage", JSON.stringify({
+        index,
+        rawType: type,
+        rawName: notification.name,
+        rawIseId: notification.ise_id ?? notification.object_id ?? notification.channel_id,
+        message,
+        resolvedName: name ?? null,
+        candidates: debugCandidates,
+        matched: debugCandidates.filter((candidate) => nameMap.has(candidate)).slice(0, 5)
+      }));
+    }
 
     return {
       source: "CCU Servicemeldung",
@@ -405,15 +466,24 @@ function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map
 }
 
 function findDutyCycle(datapoints: UnknownRecord[], serviceMessages: CcuEvidence[]): number | undefined {
-  const dutyDatapoint = datapoints.find((datapoint) => {
+  const dutyCandidates = datapoints.filter((datapoint) => {
     const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();
-    return marker.includes("DUTY_CYCLE") || marker.includes("DUTYCYCLE");
+    return marker.includes("DUTY_CYCLE") || marker.includes("DUTYCYCLE") || marker.includes("DUTY");
   });
+  console.info("[CCU DEBUG] Duty candidates", JSON.stringify(dutyCandidates.slice(0, 10).map((datapoint) => ({
+    name: datapoint.name,
+    type: datapoint.type,
+    value: datapoint.value,
+    valueUnit: datapoint.valueunit,
+    timestamp: datapoint.timestamp
+  }))));
 
+  const dutyDatapoint = dutyCandidates.find((datapoint) => numberValue(datapoint.value) !== undefined);
   const dutyValue = numberValue(dutyDatapoint?.value);
   if (dutyValue !== undefined) return dutyValue;
 
   const dutyMessage = serviceMessages.find((message) => /duty/i.test(message.detail));
+  console.info("[CCU DEBUG] Duty service message", JSON.stringify(dutyMessage ?? null));
   const fromMessage = dutyMessage?.detail.match(/(\d+(?:[.,]\d+)?)\s*%?/);
   return fromMessage ? numberValue(fromMessage[1]) : undefined;
 }

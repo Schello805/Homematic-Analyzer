@@ -91,8 +91,6 @@ type CollectorStatus = {
 
 const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
-const releasesApiUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/releases?per_page=1";
-const commitsApiUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/commits?per_page=1";
 const setupStorageKey = "homematic-analyzer.setup.v1";
 
 const statusLabel: Record<CheckStatus, string> = {
@@ -303,7 +301,7 @@ function formatBackups(count?: string, paths?: string[]) {
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
-  const [currentPage, setCurrentPage] = useState<"analysis" | "settings">("analysis");
+  const [currentPage, setCurrentPage] = useState<"analysis" | "setup" | "settings">("analysis");
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeCheck, setActiveCheck] = useState<string | null>(null);
@@ -366,6 +364,22 @@ function App() {
     : showManualSnifferPort
       ? "__manual__"
       : "";
+  const setupProgress = useMemo(() => {
+    const steps = [
+      Boolean(form.ccuHost.trim()),
+      Boolean(form.ccuUser.trim() && form.ccuPassword),
+      Boolean((form.xmlApiToken ?? "").trim()),
+      Boolean(form.sshUser.trim() && form.sshPassword),
+      Boolean(form.snifferPort.trim())
+    ];
+    const completed = steps.filter(Boolean).length;
+    return {
+      completed,
+      total: steps.length,
+      percent: Math.round((completed / steps.length) * 100),
+      complete: completed === steps.length
+    };
+  }, [form]);
 
   function removeToast(id: number) {
     setToasts((currentToasts) => currentToasts.filter((toast) => toast.id !== id));
@@ -622,12 +636,18 @@ function App() {
     if (visibleChecks.length > 0) {
       const isActiveVisible = visibleChecks.some((check) => check.id === activeCheck);
       if (!isActiveVisible) {
-        setActiveCheck(visibleChecks[0].id);
+        setActiveCheck(visibleChecks.find((check) => check.status !== "ok")?.id ?? visibleChecks[0].id);
       }
     } else {
       setActiveCheck(null);
     }
   }, [selectedStatusFilter, analysis, activeCheck]);
+
+  useEffect(() => {
+    if (setupProgress.complete && currentPage === "setup") {
+      setCurrentPage("analysis");
+    }
+  }, [setupProgress.complete, currentPage]);
 
   useEffect(() => {
     let isActive = true;
@@ -684,80 +704,33 @@ function App() {
 
     async function checkForUpdates() {
       try {
-        const releaseResponse = await fetch(releasesApiUrl);
-
-        if (releaseResponse.ok) {
-          const releases = (await releaseResponse.json()) as Array<{ tag_name?: string; html_url?: string; name?: string }>;
-          const release = releases[0];
-
-          if (!release) {
-            throw new Error("Noch keine Release-Version vorhanden");
-          }
-
-          const latestVersion = release.tag_name?.replace(/^v/i, "");
-
-          if (!latestVersion) {
-            throw new Error("Release ohne Versionsnummer");
-          }
-
-          if (!isActive) return;
-
-          setUpdateStatus({
-            state: latestVersion === appVersion ? "current" : "update",
-            label: latestVersion === appVersion ? "Aktuell" : "Update verfügbar",
-            detail:
-              latestVersion === appVersion
-                ? `Installierte Version ${appVersion} ist die neueste Release-Version.`
-                : `Installiert: ${appVersion}. Neu auf GitHub: ${release.tag_name}${release.name ? ` (${release.name})` : ""}.`,
-            url: release.html_url ?? repositoryUrl
-          });
-          if (latestVersion !== appVersion) {
-            showToast({
-              type: "warning",
-              title: "Update verfügbar",
-              message: `Auf GitHub liegt ${release.tag_name}.`
-            });
-          }
-          return;
-        }
-
-        const commitResponse = await fetch(commitsApiUrl);
-
-        if (!commitResponse.ok) {
-          throw new Error("GitHub nicht erreichbar");
-        }
-
-        const commits = (await commitResponse.json()) as Array<{ html_url?: string; sha?: string; commit?: { message?: string; author?: { date?: string } } }>;
-        const latestCommit = commits[0];
+        const response = await fetch("/api/system/update-status");
+        if (!response.ok) throw new Error("Lokale API nicht erreichbar");
+        const status = (await response.json()) as UpdateStatus;
 
         if (!isActive) return;
 
-        setUpdateStatus({
-          state: "unknown",
-          label: "Keine Release-Version gefunden",
-          detail: latestCommit?.commit?.author?.date
-            ? `Letzter Repository-Stand: ${new Date(latestCommit.commit.author.date).toLocaleDateString("de-DE")}.`
-            : "Das Repository ist erreichbar, aber es gibt noch keine Release-Version zum Vergleichen.",
-          url: latestCommit?.html_url ?? repositoryUrl
-        });
-        showToast({
-          type: "info",
-          title: "Update-Check erledigt",
-          message: "Repository erreichbar, aber noch ohne Release-Version."
-        });
+        setUpdateStatus(status);
+        if (status.state === "update") {
+          showToast({
+            type: "warning",
+            title: "Update verfügbar",
+            message: status.detail
+          });
+        }
       } catch {
         if (!isActive) return;
 
         setUpdateStatus({
           state: "unknown",
           label: "Update-Check nicht möglich",
-          detail: "GitHub konnte gerade nicht geprüft werden. Die App funktioniert trotzdem.",
+          detail: "Der lokale Analyzer konnte den Update-Status gerade nicht laden. Die App funktioniert trotzdem.",
           url: repositoryUrl
         });
         showToast({
           type: "warning",
           title: "Update-Check nicht möglich",
-          message: "GitHub konnte gerade nicht geprüft werden."
+          message: "Der lokale Update-Status konnte gerade nicht geladen werden."
         });
       }
     }
@@ -845,7 +818,7 @@ function App() {
       const criticalCount = data.checks.filter((check) => check.status === "critical").length;
       const unavailableCount = data.checks.filter((check) => check.status === "unavailable").length;
       setAnalysis(data);
-      setActiveCheck(data.checks[0]?.id ?? null);
+      setActiveCheck(data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null);
       showToast({
         type: criticalCount > 0 ? "warning" : "success",
         title: "Analyse abgeschlossen",
@@ -934,35 +907,34 @@ function App() {
         ))}
       </div>
 
-      <section className="hero">
-        <div className="hero__content">
-          <p className="eyebrow">Homematic Analyzer</p>
-          <h1>Smarthome prüfen. Belegbar. Verständlich.</h1>
-          <p className="hero__text">
-            Eine Analyse für Homematic-Installationen — ohne Rätselraten, mit klaren Handlungsempfehlungen.
-          </p>
-          <div className="hero__badges">
-            <span>Belege statt Vermutungen</span>
-            <span>Sniffer optional</span>
+      <header className="app-topbar">
+        <div className="app-brand">
+          <img src="/logo.png" alt="" aria-hidden="true" />
+          <div>
+            <strong>Homematic Analyzer</strong>
+            <span>Belegbare Smarthome-Analyse</span>
           </div>
         </div>
-        <div className="hero__card">
-          <span className="hero__status">MVP</span>
-          <strong>Je mehr Zugriff, desto genauer.</strong>
-          <p>CCU reicht für den Start. SSH, Collector und AskSin Analyzer XS liefern mehr Details.</p>
-        </div>
-      </section>
+        <nav className="page-tabs" aria-label="Bereiche">
+          <div className="page-tabs__left">
+            <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => setCurrentPage("analysis")}>
+              Analyse
+            </button>
+            <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
+              Settings
+            </button>
+          </div>
+          {!setupProgress.complete && (
+            <div className="page-tabs__right">
+              <button type="button" className={currentPage === "setup" ? "is-active" : ""} onClick={() => setCurrentPage("setup")}>
+                Setup <span className="tab-badge">{setupProgress.percent}%</span>
+              </button>
+            </div>
+          )}
+        </nav>
+      </header>
 
-      <nav className="page-tabs" aria-label="Bereiche">
-        <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => setCurrentPage("analysis")}>
-          Analyse
-        </button>
-        <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
-          Settings
-        </button>
-      </nav>
-
-      {currentPage === "analysis" && (
+      {currentPage === "setup" && (
         <>
       <form className="setup" onSubmit={runAnalysis}>
         <section className="panel">
@@ -1195,6 +1167,29 @@ function App() {
           </div>
         </details>
       </section>
+        </>
+      )}
+
+      {currentPage === "analysis" && (
+        <>
+      <form className="analysis-start panel" onSubmit={runAnalysis}>
+        <div>
+          <p className="eyebrow">Analyse</p>
+          <h2>{analysis ? "Ergebnisse prüfen" : "Analyse starten"}</h2>
+          <p>
+            {analysis
+              ? "Die letzte Analyse bleibt sichtbar. Starte neu, wenn du frische CCU- oder Collector-Daten prüfen möchtest."
+              : "Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse."}
+          </p>
+          {!setupProgress.complete && (
+            <p className="setup-note">Setup {setupProgress.percent}% vollständig · fehlende Punkte optional ergänzen.</p>
+          )}
+        </div>
+        <button className="analyze-button analyze-button-compact" disabled={loading}>
+          {loading ? "Analyse läuft ..." : analysis ? "Neu analysieren" : "Analyse starten"}
+        </button>
+        {error && <p className="error">{error}</p>}
+      </form>
 
       {analysis && summary && (
         <section className="results">
@@ -1271,25 +1266,41 @@ function App() {
 
           <div className="check-layout">
             <div className="check-list">
-              {groupedChecks.map((group) => (
-                <div key={group.status} className="check-group">
-                  <h3>{statusLabel[group.status]}</h3>
-                  {group.checks.map((check) => (
-                    <button
-                      type="button"
-                      className={`check-item status-${check.status} ${activeCheck === check.id ? "is-active" : ""}`}
-                      onClick={() => setActiveCheck(check.id)}
-                      key={check.id}
-                    >
-                      <div className="check-item-head">
-                        {getStatusIcon(check.status, "check-item-icon")}
-                        <span>{check.title}</span>
-                      </div>
-                      <small>{check.category}</small>
-                    </button>
-                  ))}
-                </div>
-              ))}
+              {groupedChecks.map((group) => {
+                const items = group.checks.map((check) => (
+                  <button
+                    type="button"
+                    className={`check-item status-${check.status} ${activeCheck === check.id ? "is-active" : ""}`}
+                    onClick={() => setActiveCheck(check.id)}
+                    key={check.id}
+                  >
+                    <div className="check-item-head">
+                      {getStatusIcon(check.status, "check-item-icon")}
+                      <span>{check.title}</span>
+                    </div>
+                    <small>{check.category}</small>
+                  </button>
+                ));
+
+                if (group.status === "ok" && !selectedStatusFilter) {
+                  return (
+                    <details key={group.status} className="check-group check-group-collapsible">
+                      <summary>
+                        <span>{statusLabel[group.status]}</span>
+                        <small>{group.checks.length} Punkte eingeklappt</small>
+                      </summary>
+                      {items}
+                    </details>
+                  );
+                }
+
+                return (
+                  <div key={group.status} className="check-group">
+                    <h3>{statusLabel[group.status]}</h3>
+                    {items}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="check-detail">

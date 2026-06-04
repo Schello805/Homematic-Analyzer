@@ -23,6 +23,22 @@ require_root() {
   fi
 }
 
+detect_existing_installation() {
+  if [ "${FORCE_FIRST_SETUP:-0}" = "1" ]; then
+    EXISTING_INSTALL=0
+    warn "FORCE_FIRST_SETUP=1 gesetzt: Erstsetup-Fragen werden erzwungen."
+    return
+  fi
+
+  if [ -d "$INSTALL_DIR/.git" ] \
+    || [ -f "$INSTALL_DIR/package.json" ] \
+    || [ -f "$INSTALL_DIR/.data/homematic-analyzer-db.json" ] \
+    || [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+    EXISTING_INSTALL=1
+    info "Bestehende Installation erkannt: Setup-Fragen werden bei diesem Lauf übersprungen."
+  fi
+}
+
 detect_os() {
   if [ ! -f /etc/os-release ]; then
     fail "Dieses Script unterstützt Debian/Ubuntu Systeme. /etc/os-release wurde nicht gefunden."
@@ -433,6 +449,7 @@ show_result() {
 
 main() {
   require_root
+  detect_existing_installation
   detect_os
   install_base_packages
   install_node

@@ -453,6 +453,23 @@ app.get("/api/settings/notifications", (_request, response) => {
   response.json(mergeNotificationSettings(persistedNotificationSettings));
 });
 
+app.get("/api/system/update-status", async (_request, response) => {
+  const releaseCheck = await checkRepositoryRelease(appVersion);
+  response.json({
+    state: releaseCheck.error ? "unknown" : releaseCheck.available ? "update" : "current",
+    label: releaseCheck.error ? "Update-Check nicht möglich" : releaseCheck.available ? "Update verfügbar" : "Aktuell",
+    detail: releaseCheck.error
+      ? `${releaseCheck.error} Die App funktioniert trotzdem.`
+      : releaseCheck.available
+        ? `Installiert: ${releaseCheck.currentVersion}. Neu auf GitHub: ${releaseCheck.latestVersion}.`
+        : releaseCheck.latestVersion
+          ? `Installierte Version ${releaseCheck.currentVersion} ist aktuell.`
+          : `Installierte Version ${releaseCheck.currentVersion}. Es wurde noch kein GitHub-Release gefunden.`,
+    url: releaseCheck.url ?? "https://github.com/Schello805/Homematic-Analyzer",
+    checkedAt: releaseCheck.checkedAt
+  });
+});
+
 app.post("/api/settings/notifications", async (request, response) => {
   const parsed = notificationSettingsSchema.safeParse(request.body);
 
