@@ -98,11 +98,21 @@ echo "Homematic Analyzer: System-Snapshot wird vorbereitet."
 echo "Homematic Analyzer: Ziel $ENDPOINT"
 
 json_escape() {
-  sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/ /g'
+  awk 'BEGIN { first = 1 }
+    {
+      gsub(/\\/, "\\\\");
+      gsub(/"/, "\\\"");
+      gsub(/\t/, " ");
+      if (!first) {
+        printf "\\n";
+      }
+      first = 0;
+      printf "%s", $0;
+    }'
 }
 
 value_or_empty() {
-  sh -c "$1" 2>/dev/null | head -n 1 | json_escape || true
+  sh -c "$1" 2>/dev/null | json_escape || true
 }
 
 UPTIME_VALUE="$(value_or_empty "uptime")"

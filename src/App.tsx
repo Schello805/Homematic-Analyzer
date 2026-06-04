@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import packageInfo from "../package.json";
 
 type CheckStatus = "ok" | "improvement" | "warning" | "critical" | "unavailable";
 
@@ -23,6 +24,7 @@ type AnalysisCheck = {
 type AnalysisResponse = {
   generatedAt: string;
   checks: AnalysisCheck[];
+  systemDashboard?: SystemDashboard;
   notifications?: {
     telegram?: {
       state: "disabled" | "not-configured" | "skipped" | "sent" | "failed";
@@ -33,6 +35,20 @@ type AnalysisResponse = {
       message: string;
     };
   };
+};
+
+type SystemDashboard = {
+  available: boolean;
+  host?: string;
+  collectedAt?: string;
+  uptime?: string;
+  memory?: string;
+  disk?: string;
+  temperature?: string;
+  cpu?: string;
+  backups?: string;
+  logs: number;
+  connections: number;
 };
 
 type UpdateStatus = {
@@ -65,7 +81,7 @@ type CollectorStatus = {
   connections: number;
 };
 
-const appVersion = "0.1.0";
+const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const releasesApiUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/releases?per_page=1";
 const commitsApiUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/commits?per_page=1";
@@ -214,6 +230,41 @@ function getApiBaseUrl() {
   return origin;
 }
 
+function firstLine(value?: string) {
+  return value?.split("\n").map((line) => line.trim()).filter(Boolean)[0];
+}
+
+function formatTemperature(raw?: string) {
+  const value = Number(firstLine(raw));
+  if (!Number.isFinite(value)) return firstLine(raw) ?? "—";
+  return `${Math.round(value / 100) / 10} °C`;
+}
+
+function formatMemory(raw?: string) {
+  const lines = raw?.split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
+  const memoryLine = lines.find((line) => /^Mem:/i.test(line));
+  if (!memoryLine) return firstLine(raw) ?? "—";
+  const parts = memoryLine.split(/\s+/);
+  return parts.length >= 4 ? `${parts[2]} / ${parts[1]} MB` : memoryLine;
+}
+
+function formatDisk(raw?: string) {
+  const lines = raw?.split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
+  const diskLine = lines.find((line) => /\s\/$/.test(line));
+  if (!diskLine) return lines[1] ?? firstLine(raw) ?? "—";
+  const parts = diskLine.split(/\s+/);
+  return parts.length >= 5 ? `${parts[4]} belegt · ${parts[3]} frei` : diskLine;
+}
+
+function formatCpu(raw?: string) {
+  const line = raw?.split("\n").find((entry) => /load average|load/i.test(entry)) ?? firstLine(raw);
+  return line?.replace(/^.*load average:\s*/i, "Load ") ?? "—";
+}
+
+function formatUptime(raw?: string) {
+  return firstLine(raw)?.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "") ?? "—";
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -231,6 +282,7 @@ function App() {
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly">("daily");
   const [savingSettings, setSavingSettings] = useState(false);
+  const [updatingApp, setUpdatingApp] = useState(false);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
@@ -380,6 +432,40 @@ function App() {
         title: "Test nicht möglich",
         message: "Bitte Settings und lokale API prüfen."
       });
+    }
+  }
+
+  async function runAppUpdate() {
+    if (!window.confirm("Update jetzt starten? Die App lädt Änderungen von GitHub, baut neu und startet danach neu.")) {
+      return;
+    }
+
+    setUpdatingApp(true);
+    try {
+      const response = await fetch("/api/system/update", { method: "POST" });
+      if (!response.ok) throw new Error("Update konnte nicht gestartet werden.");
+
+      const result = (await response.json()) as { message?: string; log?: string };
+      showToast({
+        type: "success",
+        title: "Update gestartet",
+        message: result.message ?? "Die App aktualisiert sich im Hintergrund."
+      });
+      if (result.log) {
+        showToast({
+          type: "info",
+          title: "Update-Log",
+          message: `Details stehen serverseitig in ${result.log}.`
+        });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "Update nicht gestartet",
+        message: "Bitte per SSH mit sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh aktualisieren."
+      });
+    } finally {
+      window.setTimeout(() => setUpdatingApp(false), 5000);
     }
   }
 
@@ -1034,6 +1120,39 @@ function App() {
             })}
           </div>
 
+          {analysis.systemDashboard?.available && (
+            <div className="system-dashboard">
+              <div className="system-dashboard__header">
+                <div>
+                  <p className="eyebrow">System-Dashboard</p>
+                  <h3>{analysis.systemDashboard.host ?? "Zentrale"}</h3>
+                </div>
+                <span>
+                  {analysis.systemDashboard.collectedAt
+                    ? `Zuletzt ${new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}`
+                    : "Aktueller Snapshot"}
+                </span>
+              </div>
+              <div className="metric-grid">
+                {[
+                  ["CPU", formatCpu(analysis.systemDashboard.cpu)],
+                  ["RAM", formatMemory(analysis.systemDashboard.memory)],
+                  ["Temperatur", formatTemperature(analysis.systemDashboard.temperature)],
+                  ["Speicher", formatDisk(analysis.systemDashboard.disk)],
+                  ["Backups", analysis.systemDashboard.backups ? `${analysis.systemDashboard.backups} gefunden` : "—"],
+                  ["Uptime", formatUptime(analysis.systemDashboard.uptime)],
+                  ["Logzeilen", `${analysis.systemDashboard.logs}`],
+                  ["Verbindungen", `${analysis.systemDashboard.connections}`]
+                ].map(([label, value]) => (
+                  <div className="metric-card" key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="check-layout">
             <div className="check-list">
               {groupedChecks.map((group) => (
@@ -1453,6 +1572,9 @@ function App() {
           <span>{updateStatus.label}</span>
           <small>{updateStatus.detail}</small>
         </a>
+        <button type="button" className="footer-update-button" onClick={() => void runAppUpdate()} disabled={updatingApp}>
+          {updatingApp ? "Update läuft ..." : "Update starten"}
+        </button>
       </footer>
     </main>
   );

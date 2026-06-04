@@ -100,6 +100,7 @@ run_as_service_user() {
 sync_repository() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     info "Vorhandene Installation wird aktualisiert: $INSTALL_DIR"
+    git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
     git -C "$INSTALL_DIR" fetch --all --prune
     git -C "$INSTALL_DIR" checkout "$BRANCH"
     git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
@@ -108,6 +109,7 @@ sync_repository() {
     mkdir -p "$(dirname "$INSTALL_DIR")"
     git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   fi
+  git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
   chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 }
 
@@ -328,6 +330,78 @@ SERVICE
   systemctl restart "$SERVICE_NAME"
 }
 
+wait_for_analyzer() {
+  local health_url="http://127.0.0.1:${PORT}/api/health"
+  local attempt=1
+
+  info "Warte kurz, bis der Analyzer erreichbar ist ..."
+  while [ "$attempt" -le 20 ]; do
+    if curl -fsS "$health_url" >/dev/null 2>&1; then
+      success "Analyzer API ist erreichbar."
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  warn "Analyzer API war noch nicht erreichbar. Collector kann später in der Web-App ausgeführt werden."
+  return 1
+}
+
+configure_collector_delivery() {
+  local choice
+  local mode=""
+  local interval="daily"
+  local script_url
+
+  if ! has_tty || [ "${NONINTERACTIVE:-0}" = "1" ]; then
+    warn "Kein interaktives Terminal erkannt. System-Snapshot wird nicht automatisch eingerichtet."
+    return
+  fi
+
+  printf '\n' > /dev/tty
+  info "Optionaler System-Snapshot: CPU, RAM, Temperatur, Speicher, Backups, Logs und Verbindungen."
+  printf '  0) Gar nicht, später in der Web-App einrichten\n' > /dev/tty
+  printf '  1) Einmalig jetzt an den Analyzer senden\n' > /dev/tty
+  printf '  2) Regelmäßig täglich nachts senden (empfohlen)\n' > /dev/tty
+  printf '  3) Regelmäßig stündlich senden (nur temporär für Fehlersuche)\n' > /dev/tty
+
+  choice="$(ask_text "Wie sollen Systemdaten an den Analyzer übertragen werden?" "2")"
+
+  case "$choice" in
+    0|"")
+      warn "System-Snapshot übersprungen."
+      return
+      ;;
+    1)
+      mode="once"
+      interval="daily"
+      ;;
+    2)
+      mode="install"
+      interval="daily"
+      ;;
+    3)
+      mode="install"
+      interval="hourly"
+      ;;
+    *)
+      warn "Unbekannte Auswahl. System-Snapshot wird übersprungen."
+      return
+      ;;
+  esac
+
+  wait_for_analyzer || return
+
+  script_url="http://127.0.0.1:${PORT}/api/collector/script?url=http%3A%2F%2F127.0.0.1%3A${PORT}&token=homematic-analyzer-demo-token&mode=${mode}&interval=${interval}"
+  info "Collector-Script wird ausgeführt ..."
+  if curl -fsSL "$script_url" | sh; then
+    success "System-Snapshot wurde verarbeitet."
+  else
+    warn "System-Snapshot konnte nicht ausgeführt werden. Du kannst ihn später in der Web-App erneut kopieren."
+  fi
+}
+
 show_result() {
   local ip_address
   ip_address="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -355,6 +429,7 @@ main() {
   install_app
   configure_initial_setup
   write_service
+  configure_collector_delivery
   show_result
 }
 

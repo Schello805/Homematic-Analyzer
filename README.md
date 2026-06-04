@@ -39,8 +39,11 @@ Während der Installation fragt das Script optional nach:
 - CCU-Benutzer
 - XML-API Token-ID / `sid`
 - AskSin Analyzer XS USB-Port
+- ob Systemdaten per Collector gar nicht, einmalig, täglich oder stündlich an den Analyzer gesendet werden sollen
 
 Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
+
+Wenn der Collector während der Installation aktiviert wird, wartet das Script auf die lokale Analyzer-API und sendet direkt einen ersten System-Snapshot. Bei regelmäßiger Übertragung wird zusätzlich ein Cronjob auf dem System angelegt.
 
 Nach der Installation ist die Web-App unter `http://SERVER-IP:3001` erreichbar.
 
@@ -51,6 +54,42 @@ sudo systemctl status homematic-analyzer
 sudo journalctl -u homematic-analyzer -f
 sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh
 ```
+
+## Updates
+
+Die App prüft im Footer, ob auf GitHub ein neuer Stand verfügbar ist. Über `Update starten` kann eine lokale Installation aktualisiert werden. Dabei werden GitHub-Änderungen geladen, Abhängigkeiten installiert, die App neu gebaut und der Analyzer-Prozess neu gestartet.
+
+Falls der Button nicht funktioniert oder du per SSH aktualisieren möchtest:
+
+```bash
+sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh
+```
+
+Alternativ direkt per GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Schello805/Homematic-Analyzer/main/scripts/install/install-linux.sh | sudo bash
+```
+
+Falls Git auf einem bestehenden System `dubious ownership` meldet:
+
+```bash
+sudo git config --global --add safe.directory /opt/homematic-analyzer
+```
+
+Danach den Update-Befehl erneut ausführen.
+
+Das Update-Log des Buttons liegt lokal unter `.data/update.log`.
+
+## Versionierung
+
+Die Version im Footer kommt automatisch aus `package.json`. Für Änderungen, die nach GitHub gepusht werden sollen, kann die Patch-Version automatisch erhöht werden:
+
+```bash
+npm run release:push
+```
+
+Das Script erhöht die Patch-Version, baut die App, erstellt einen Commit `Release x.y.z` und pusht anschließend nach GitHub.
 
 Für Proxmox LXC reicht ein normaler Debian-/Ubuntu-Container. Wenn ein AskSin Analyzer XS Sniffer genutzt werden soll, muss der USB-Port vorher vom Proxmox-Host in den Container durchgereicht werden. Für die CCU bitte keine Portweiterleitung verwenden; von außen besser per VPN zugreifen.
 

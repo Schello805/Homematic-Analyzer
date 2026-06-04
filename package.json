@@ -1,6 +1,6 @@
 {
   "name": "homematic-analyzer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "homepage": "https://github.com/Schello805/Homematic-Analyzer",
   "repository": {
@@ -14,7 +14,8 @@
     "dev:web": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "start": "tsx server/index.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "release:push": "node scripts/release/push-with-version.mjs"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.0",

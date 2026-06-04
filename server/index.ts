@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,10 +11,11 @@ import { readCcuSnapshot } from "./ccuClient.js";
 import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
+import packageInfo from "../package.json" with { type: "json" };
 import type { CcuMasterdataPayload, CollectorPayload, NotificationSettings } from "./types.js";
 
 const app = express();
-const appVersion = "0.1.0";
+const appVersion = packageInfo.version;
 const port = Number(process.env.PORT ?? 3001);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -141,6 +143,31 @@ function decodeJsonBuffer(buffer: Buffer): unknown {
   const latin1Text = buffer.toString("latin1");
   const preferredText = replacementCount(latin1Text) < replacementCount(utf8Text) ? latin1Text : utf8Text;
   return JSON.parse(preferredText);
+}
+
+function stringFromRecord(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function createSystemDashboard(collector: CollectorPayload | undefined) {
+  if (!collector) {
+    return { available: false, logs: 0, connections: 0 };
+  }
+
+  return {
+    available: true,
+    host: collector.host,
+    collectedAt: collector.collectedAt,
+    uptime: stringFromRecord(collector.system, "uptime"),
+    memory: stringFromRecord(collector.system, "memory"),
+    disk: stringFromRecord(collector.system, "disk"),
+    temperature: stringFromRecord(collector.system, "temperatureRaw"),
+    cpu: stringFromRecord(collector.system, "cpu"),
+    backups: stringFromRecord(collector.backups, "count"),
+    logs: collector.logs?.length ?? 0,
+    connections: collector.network?.connections?.length ?? 0
+  };
 }
 
 async function loadPersistedCcuMasterdata() {
@@ -303,6 +330,7 @@ app.post("/api/analyze", async (request, response) => {
     response.json({
       generatedAt: new Date().toISOString(),
       checks,
+      systemDashboard: createSystemDashboard(latestCollector),
       notifications: {
         telegram: notificationResult.telegram,
         email: notificationResult.email
@@ -386,6 +414,27 @@ app.post("/api/settings/notifications/test", async (request, response) => {
   const settings = mergeNotificationSettings(parsed.data.settings ?? persistedNotificationSettings);
   const result = await sendTestNotification(parsed.data.channel, settings);
   response.json(result);
+});
+
+app.post("/api/system/update", (_request, response) => {
+  const updateScript = join(root, "scripts", "install", "update-local.sh");
+  const child = spawn("bash", [updateScript], {
+    cwd: root,
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      ANALYZER_PID: String(process.pid)
+    }
+  });
+
+  child.unref();
+
+  response.json({
+    ok: true,
+    message: "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
+    log: ".data/update.log"
+  });
 });
 
 app.get("/api/collector/script", async (request, response) => {
