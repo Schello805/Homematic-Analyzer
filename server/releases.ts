@@ -2,16 +2,36 @@ import type { ReleaseCheck } from "./types.js";
 
 const repositoryReleasesUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/releases?per_page=1";
 const repositoryTagsUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/tags?per_page=1";
+const repositoryPackageUrl = "https://raw.githubusercontent.com/Schello805/Homematic-Analyzer/main/package.json";
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 
 function normalizeVersion(version: string | undefined) {
   return version?.replace(/^v/i, "").trim();
 }
 
+function versionParts(version: string | undefined) {
+  return normalizeVersion(version)?.split(".").map((part) => Number(part.replace(/\D.*$/, ""))) ?? [];
+}
+
+function compareVersions(left: string | undefined, right: string | undefined) {
+  const leftParts = versionParts(left);
+  const rightParts = versionParts(right);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] ?? 0;
+    const rightPart = rightParts[index] ?? 0;
+    if (leftPart !== rightPart) return leftPart - rightPart;
+  }
+
+  return 0;
+}
+
 export async function checkRepositoryRelease(currentVersion: string): Promise<ReleaseCheck> {
   const checkedAt = new Date().toISOString();
 
   try {
+    const candidates: Array<{ version?: string; source: ReleaseCheck["source"]; url?: string }> = [];
     const releaseResponse = await fetch(repositoryReleasesUrl, {
       headers: { Accept: "application/vnd.github+json" }
     });
@@ -30,14 +50,7 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
     const latestVersion = normalizeVersion(latestRelease?.tag_name);
 
     if (latestVersion) {
-      return {
-        available: latestVersion !== normalizeVersion(currentVersion),
-        currentVersion,
-        latestVersion,
-        source: "release",
-        url: latestRelease?.html_url,
-        checkedAt
-      };
+      candidates.push({ version: latestVersion, source: "release", url: latestRelease?.html_url });
     }
 
     const tagResponse = await fetch(repositoryTagsUrl, {
@@ -57,12 +70,32 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
     const latestTag = tags[0];
     const latestTagVersion = normalizeVersion(latestTag?.name);
 
+    if (latestTagVersion) {
+      candidates.push({ version: latestTagVersion, source: "tag", url: `${repositoryUrl}/releases/tag/${latestTag?.name}` });
+    }
+
+    const packageResponse = await fetch(repositoryPackageUrl, {
+      headers: { Accept: "application/json" }
+    });
+
+    if (packageResponse.ok) {
+      const packageJson = (await packageResponse.json()) as { version?: string };
+      const mainVersion = normalizeVersion(packageJson.version);
+      if (mainVersion) {
+        candidates.push({ version: mainVersion, source: "main", url: `${repositoryUrl}/tree/main` });
+      }
+    }
+
+    const latestCandidate = candidates
+      .filter((candidate) => candidate.version)
+      .sort((left, right) => compareVersions(right.version, left.version))[0];
+
     return {
-      available: Boolean(latestTagVersion && latestTagVersion !== normalizeVersion(currentVersion)),
+      available: Boolean(latestCandidate?.version && compareVersions(latestCandidate.version, currentVersion) > 0),
       currentVersion,
-      latestVersion: latestTagVersion,
-      source: latestTagVersion ? "tag" : undefined,
-      url: latestTagVersion ? `${repositoryUrl}/releases/tag/${latestTag?.name}` : repositoryUrl,
+      latestVersion: latestCandidate?.version,
+      source: latestCandidate?.source,
+      url: latestCandidate?.url ?? repositoryUrl,
       checkedAt
     };
   } catch {

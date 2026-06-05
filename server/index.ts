@@ -503,16 +503,17 @@ app.get("/api/settings/notifications", (_request, response) => {
 
 app.get("/api/system/update-status", async (_request, response) => {
   const releaseCheck = await checkRepositoryRelease(appVersion);
+  const sourceLabel = releaseCheck.source === "tag" ? "Tag" : releaseCheck.source === "main" ? "main" : "Release";
   response.json({
     state: releaseCheck.error ? "unknown" : releaseCheck.available ? "update" : "current",
     label: releaseCheck.error ? "Update-Check nicht möglich" : releaseCheck.available ? "Update verfügbar" : "Aktuell",
     detail: releaseCheck.error
       ? `${releaseCheck.error} Die App funktioniert trotzdem.`
       : releaseCheck.available
-        ? `Installiert: ${releaseCheck.currentVersion}. Neu auf GitHub (${releaseCheck.source === "tag" ? "Tag" : "Release"}): ${releaseCheck.latestVersion}.`
+        ? `Installiert: ${releaseCheck.currentVersion}. Neu auf GitHub (${sourceLabel}): ${releaseCheck.latestVersion}.`
         : releaseCheck.latestVersion
-          ? `Installierte Version ${releaseCheck.currentVersion} ist aktuell (${releaseCheck.source === "tag" ? "Git-Tag" : "GitHub-Release"} geprüft).`
-          : `Installierte Version ${releaseCheck.currentVersion}. Kein versioniertes Release/Tag gefunden; Updates laufen über main.`,
+          ? `Installierte Version ${releaseCheck.currentVersion} ist aktuell (${sourceLabel} geprüft).`
+          : `Installierte Version ${releaseCheck.currentVersion}. Keine neuere Version auf GitHub gefunden.`,
     url: releaseCheck.url ?? "https://github.com/Schello805/Homematic-Analyzer",
     checkedAt: releaseCheck.checkedAt
   });

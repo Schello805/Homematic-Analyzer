@@ -148,7 +148,7 @@ export type ReleaseCheck = {
   available: boolean;
   currentVersion: string;
   latestVersion?: string;
-  source?: "release" | "tag";
+  source?: "release" | "tag" | "main";
   url?: string;
   checkedAt: string;
   error?: string;
