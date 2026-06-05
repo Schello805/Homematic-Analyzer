@@ -498,6 +498,19 @@ function historyTimeLabels(history?: SystemDashboard["history"]) {
   };
 }
 
+function hasShellSystemData(systemDashboard?: SystemDashboard) {
+  if (!systemDashboard?.available) return false;
+
+  return Boolean(
+    parseCpuUsagePercent(systemDashboard.cpu) !== undefined
+    || parseMemoryUsagePercent(systemDashboard.memory) !== undefined
+    || parseTemperature(systemDashboard.temperature) !== undefined
+    || parseDiskInfo(systemDashboard.disk)
+    || parseDiskInfo(systemDashboard.backupDisk)
+    || Number(systemDashboard.backups ?? 0) > 0
+  );
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -1656,8 +1669,38 @@ function App() {
                     : "Aktueller Snapshot"}
                 </span>
               </div>
-              <div className="metric-grid">
-                {(() => {
+              {!hasShellSystemData(analysis.systemDashboard) ? (
+                <div className="system-collector-empty">
+                  <div>
+                    <p className="eyebrow">Systemdaten fehlen</p>
+                    <h3>CPU, RAM, Temperatur, Speicher und Backups brauchen das Shell-Script</h3>
+                    <p>
+                      Die Homematic-Analyse funktioniert bereits. Für das System-Dashboard muss die CCU/RaspberryMatic
+                      aber regelmäßig Messwerte an den Analyzer senden.
+                    </p>
+                  </div>
+                  <ol>
+                    <li>Per SSH auf der CCU/RaspberryMatic anmelden: <code>ssh root@{analysis.systemDashboard.ccuHost ?? (form.ccuHost.trim() || "CCU-IP")}</code></li>
+                    <li>Den folgenden Befehl einfügen und ausführen.</li>
+                    <li>Danach die Analyse neu starten oder kurz warten — die Werte aktualisieren sich minütlich.</li>
+                  </ol>
+                  <div className="script-copy-row">
+                    <code>{collectorCommand}</code>
+                    <button type="button" onClick={() => void copyCollectorCommand()}>
+                      Kopieren
+                    </button>
+                  </div>
+                  <details className="system-collector-empty__help">
+                    <summary>Wie aktiviere ich SSH?</summary>
+                    <p>
+                      WebUI öffnen → Einstellungen → Systemsteuerung → Sicherheit → SSH aktivieren und Passwort setzen.
+                      Der Benutzer ist bei RaspberryMatic/CCU normalerweise <code>root</code>.
+                    </p>
+                  </details>
+                </div>
+              ) : (
+                <div className="metric-grid">
+                  {(() => {
                   const history = analysis.systemDashboard.history ?? [];
                   const timeLabels = historyTimeLabels(history);
                   const temperatureValues = history.map((point) => parseTemperature(point.temperature)).filter((value): value is number => value !== undefined);
@@ -1737,7 +1780,7 @@ function App() {
                     help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
                   }
                 ];
-                })().map((metric) => (
+                  })().map((metric) => (
                   <div className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""}`} key={metric.label}>
                     <div className="metric-card__top">
                       <span>{metric.label}</span>
@@ -1773,8 +1816,9 @@ function App() {
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

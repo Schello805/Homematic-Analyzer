@@ -1124,6 +1124,74 @@ pre {
   gap: 10px;
 }
 
+.system-collector-empty {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 22px;
+  padding: 18px;
+  background: linear-gradient(135deg, #eff6ff, #f8fbff);
+}
+
+.system-collector-empty h3 {
+  margin: 2px 0 6px;
+}
+
+.system-collector-empty p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.system-collector-empty ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  color: #334155;
+}
+
+.system-collector-empty code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.system-collector-empty__help {
+  color: #344054;
+}
+
+.system-collector-empty__help summary {
+  cursor: pointer;
+  color: #1849a9;
+  font-weight: 700;
+}
+
+.system-collector-empty .script-copy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.system-collector-empty .script-copy-row code {
+  display: block;
+  overflow-x: auto;
+  border-radius: 16px;
+  padding: 13px 14px;
+  color: #f8fafc;
+  background: #111827;
+  white-space: nowrap;
+}
+
+.system-collector-empty .script-copy-row button {
+  border: 0;
+  border-radius: 16px;
+  padding: 13px 16px;
+  color: white;
+  background: #1849a9;
+  cursor: pointer;
+  font-weight: 760;
+}
+
 .metric-card {
   position: relative;
   display: grid;
