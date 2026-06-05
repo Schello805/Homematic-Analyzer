@@ -258,6 +258,58 @@ h2 {
   flex-wrap: wrap;
 }
 
+.backup-modal {
+  width: min(900px, 100%);
+}
+
+.backup-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(62vh, 620px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.backup-list-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e0e7f2;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: #f8fbff;
+}
+
+.backup-list-item strong {
+  color: #172033;
+}
+
+.backup-list-item span {
+  color: #5d687d;
+  font-size: 0.86rem;
+}
+
+.backup-list-item code {
+  overflow-wrap: anywhere;
+  color: #1849a9;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.backup-modal__actions {
+  align-items: center;
+}
+
+.backup-modal__actions > span {
+  color: #657086;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.backup-modal__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .setup-warning {
   border-left: 5px solid #f79009;
   border-radius: 14px;
@@ -1298,6 +1350,17 @@ pre {
   background: white;
 }
 
+.metric-card-clickable {
+  cursor: pointer;
+}
+
+.metric-card-clickable:hover,
+.metric-card-clickable:focus-visible {
+  border-color: #3478f6;
+  box-shadow: 0 16px 34px rgba(52, 120, 246, 0.14);
+  outline: none;
+}
+
 .metric-card-warning {
   border-color: #f79009;
   background: #fffbeb;
@@ -1376,6 +1439,7 @@ pre {
   color: #172033;
   font-size: 0.98rem;
   line-height: 1.25;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 

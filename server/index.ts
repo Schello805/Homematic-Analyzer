@@ -168,6 +168,21 @@ function stringArrayFromRecord(record: Record<string, unknown> | undefined, key:
   return value.map((entry) => String(entry)).filter(Boolean);
 }
 
+function recordArrayFromRecord(record: Record<string, unknown> | undefined, key: string): Array<Record<string, unknown>> | undefined {
+  const value = record?.[key];
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry));
+}
+
+function backupItemsFromRecord(record: Record<string, unknown> | undefined) {
+  return (recordArrayFromRecord(record, "items") ?? []).map((item) => ({
+    name: stringFromRecord(item, "name") ?? "",
+    path: stringFromRecord(item, "path") ?? "",
+    size: stringFromRecord(item, "size") ?? "",
+    modifiedAt: stringFromRecord(item, "modifiedAt") ?? ""
+  })).filter((item) => item.path || item.name);
+}
+
 async function readUpdateLogTail() {
   try {
     const log = await readFile(updateLogFile, "utf8");
@@ -244,6 +259,8 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
   const ccuBackups = masterdata?.backups;
   const hasCcuSystemData = Boolean(ccuSystem || ccuBackups);
   const ccuTarget = normalizeCcuUiTarget(ccuHost);
+  const collectorBackupItems = backupItemsFromRecord(collector?.backups);
+  const ccuBackupItems = backupItemsFromRecord(ccuBackups);
 
   if (!hasCcuSystemData && !collector) {
     return { available: false, logs: 0, connections: 0, ...ccuTarget };
@@ -265,6 +282,7 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     backupLatestDirectory: stringFromRecord(collector?.backups, "latestDirectory") ?? stringFromRecord(ccuBackups, "latestDirectory"),
     backupLatestAt: stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt"),
     backupDisk: stringFromRecord(collector?.backups, "disk") ?? stringFromRecord(ccuBackups, "disk"),
+    backupItems: collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems,
     logs: collector?.logs?.length ?? 0,
     connections: collector?.network?.connections?.length ?? 0,
     history: collectorHistory.slice(-120)

@@ -54,6 +54,7 @@ type SystemDashboard = {
   backupLatestDirectory?: string;
   backupLatestAt?: string;
   backupDisk?: string;
+  backupItems?: BackupItem[];
   logs: number;
   connections: number;
   history?: Array<{
@@ -63,6 +64,13 @@ type SystemDashboard = {
     disk?: string;
     temperature?: string;
   }>;
+};
+
+type BackupItem = {
+  name: string;
+  path: string;
+  size: string;
+  modifiedAt: string;
 };
 
 type UpdateStatus = {
@@ -346,7 +354,7 @@ function formatMemory(raw?: string) {
 function formatDisk(raw?: string) {
   const disk = parseDiskInfo(raw);
   if (disk) {
-    return `${disk.percent}% belegt · ${disk.available} frei von ${disk.total}${disk.mount ? ` · ${disk.mount}` : ""}`;
+    return `${formatPercent(disk.percent)} belegt · ${disk.available} frei von ${disk.total}${disk.mount ? ` · ${disk.mount}` : ""}`;
   }
 
   const lines = splitMetricLines(raw);
@@ -395,7 +403,7 @@ function formatBackups(count?: string, paths?: string[], latestDirectory?: strin
     ?? (latestPath ? latestPath.replace(/\/[^/]+$/, "/") : undefined)
     ?? (paths?.[paths.length - 1] ? paths[paths.length - 1].replace(/\/[^/]+$/, "/") : undefined);
   const date = formatBackupDate(latestAt);
-  return [label, directory, date ? `Letztes Backup vom ${date}` : ""].filter(Boolean).join(" · ");
+  return [label, directory, date ? `Letztes Backup vom ${date}` : ""].filter(Boolean).join("\n");
 }
 
 function metricNeedsHelp(value: string) {
@@ -416,17 +424,49 @@ function parseDiskInfo(raw?: string) {
   const percentIndex = parts.findIndex((part) => /^\d+%$/.test(part));
   if (percentIndex < 4) return undefined;
 
-  const percent = Number(parts[percentIndex].replace("%", ""));
-  if (!Number.isFinite(percent)) return undefined;
+  const total = parts[percentIndex - 3];
+  const used = parts[percentIndex - 2];
+  const available = parts[percentIndex - 1];
+  const percentFromDf = Number(parts[percentIndex].replace("%", ""));
+  const calculatedPercent = calculateDiskPercent(used, total);
+  const percent = calculatedPercent ?? (Number.isFinite(percentFromDf) ? percentFromDf : undefined);
+  if (percent === undefined) return undefined;
 
   return {
     filesystem: parts[0],
-    total: parts[percentIndex - 3],
-    used: parts[percentIndex - 2],
-    available: parts[percentIndex - 1],
+    total,
+    used,
+    available,
     percent,
     mount: parts.slice(percentIndex + 1).join(" ")
   };
+}
+
+function parseStorageSizeToGiB(value: string) {
+  const match = value.match(/^([0-9.]+)\s*([KMGTPE]?)(?:i?B?)?$/i);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return undefined;
+  const unit = match[2].toUpperCase();
+  if (unit === "K") return amount / 1024 / 1024;
+  if (unit === "M") return amount / 1024;
+  if (unit === "T") return amount * 1024;
+  if (unit === "P") return amount * 1024 * 1024;
+  if (unit === "E") return amount * 1024 * 1024 * 1024;
+  return amount;
+}
+
+function calculateDiskPercent(used: string, total: string) {
+  const usedGiB = parseStorageSizeToGiB(used);
+  const totalGiB = parseStorageSizeToGiB(total);
+  if (usedGiB === undefined || totalGiB === undefined || totalGiB <= 0) return undefined;
+  return (usedGiB / totalGiB) * 100;
+}
+
+function formatPercent(value: number) {
+  if (value > 0 && value < 1) return `${value.toFixed(1).replace(".", ",")}%`;
+  if (value < 10 && value % 1 !== 0) return `${value.toFixed(1).replace(".", ",")}%`;
+  return `${Math.round(value)}%`;
 }
 
 function parseMemoryNumberToMb(value: string, unit?: string) {
@@ -538,6 +578,8 @@ function App() {
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [backupPage, setBackupPage] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
     label: "Update wird geprüft",
@@ -545,6 +587,10 @@ function App() {
     url: repositoryUrl
   });
   const hasAnalysis = Boolean(analysis);
+  const backupItems = analysis?.systemDashboard?.backupItems ?? [];
+  const backupPageSize = 25;
+  const backupPageCount = Math.max(1, Math.ceil(backupItems.length / backupPageSize));
+  const visibleBackupItems = backupItems.slice(backupPage * backupPageSize, (backupPage + 1) * backupPageSize);
 
   const scriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
@@ -1803,7 +1849,11 @@ function App() {
                       analysis.systemDashboard.backupLatestPath
                     ),
                     hint: Number(analysis.systemDashboard.backups ?? 0) > 0 ? "Backup-Ordner und Datum des neuesten Backups." : "Keine Backup-Dateien in den bekannten CCU-Pfaden gefunden.",
-                    help: "Bekannte Pfade: `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard`. Per SSH suchen: `find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)'`."
+                    help: "Bekannte Pfade: `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard`. Per SSH suchen: `find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)'`.",
+                    onClick: Number(analysis.systemDashboard.backups ?? 0) > 0 ? () => {
+                      setBackupPage(0);
+                      setShowBackupModal(true);
+                    } : undefined
                   },
                   {
                     label: "Uptime",
@@ -1813,7 +1863,20 @@ function App() {
                   }
                 ];
                   })().map((metric) => (
-                  <div className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""}`} key={metric.label}>
+                  <div
+                    className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""} ${metric.onClick ? "metric-card-clickable" : ""}`}
+                    key={metric.label}
+                    role={metric.onClick ? "button" : undefined}
+                    tabIndex={metric.onClick ? 0 : undefined}
+                    onClick={metric.onClick}
+                    onKeyDown={(event) => {
+                      if (!metric.onClick) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        metric.onClick();
+                      }
+                    }}
+                  >
                     <div className="metric-card__top">
                       <span>{metric.label}</span>
                       <button type="button" className={metricNeedsHelp(metric.value) ? "metric-help needs-attention" : "metric-help"} aria-label={`Hilfe zu ${metric.label}`}>
@@ -2298,6 +2361,38 @@ function App() {
               </button>
               <button type="button" className="primary-button" onClick={() => void runAppUpdate()}>
                 OK, Update starten
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showBackupModal && (
+        <div className="confirm-backdrop" role="presentation" onMouseDown={() => setShowBackupModal(false)}>
+          <section className="confirm-dialog backup-modal" role="dialog" aria-modal="true" aria-labelledby="backup-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Backups</p>
+            <h2 id="backup-modal-title">Gefundene CCU-Backups</h2>
+            <p>{backupItems.length} Backup-Dateien gefunden. Angezeigt werden maximal {backupPageSize} pro Seite.</p>
+            <div className="backup-list">
+              {visibleBackupItems.map((backup) => (
+                <article className="backup-list-item" key={backup.path}>
+                  <strong>{backup.name}</strong>
+                  <span>{backup.size || "Größe unbekannt"} · {formatBackupDate(backup.modifiedAt) || backup.modifiedAt || "Zeit unbekannt"}</span>
+                  <code>{backup.path}</code>
+                </article>
+              ))}
+              {visibleBackupItems.length === 0 && <p>Keine Backup-Details verfügbar. Bitte Shell-Collector nach dem Update erneut ausführen.</p>}
+            </div>
+            <div className="confirm-dialog__actions backup-modal__actions">
+              <button type="button" className="ghost-button" onClick={() => setBackupPage((page) => Math.max(0, page - 1))} disabled={backupPage === 0}>
+                Zurück
+              </button>
+              <span>Seite {backupPage + 1} von {backupPageCount}</span>
+              <button type="button" className="ghost-button" onClick={() => setBackupPage((page) => Math.min(backupPageCount - 1, page + 1))} disabled={backupPage >= backupPageCount - 1}>
+                Mehr
+              </button>
+              <button type="button" className="primary-button" onClick={() => setShowBackupModal(false)}>
+                Schließen
               </button>
             </div>
           </section>

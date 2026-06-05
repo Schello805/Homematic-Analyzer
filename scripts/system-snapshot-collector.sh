@@ -224,6 +224,27 @@ echo "Homematic Analyzer: Systemwerte gesammelt."
     fi
     printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
   done
+  printf '\n  ], "items": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    [ -f "$line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    backup_name="$(basename "$line" 2>/dev/null || printf '%s' "$line")"
+    backup_size="$(du -h "$line" 2>/dev/null | awk '{print $1}' || true)"
+    backup_modified="$(date -r "$line" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || true)"
+    printf '    { "name": "%s", "path": "%s", "size": "%s", "modifiedAt": "%s" }' \
+      "$(printf '%s' "$backup_name" | json_escape)" \
+      "$(printf '%s' "$line" | json_escape)" \
+      "$(printf '%s' "$backup_size" | json_escape)" \
+      "$(printf '%s' "$backup_modified" | json_escape)"
+  done <<EOF_BACKUPS
+$(while IFS= read -r line; do [ -f "$line" ] && printf '%s\n' "$line"; done < "$BACKUP_LIST_FILE" | xargs ls -1t 2>/dev/null | head -n 200 || true)
+EOF_BACKUPS
   printf '\n  ] },\n'
   printf '  "logs": [\n'
   FIRST=1
