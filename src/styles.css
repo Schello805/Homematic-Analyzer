@@ -544,15 +544,76 @@ h2 {
 
 .dc-events,
 .dc-duty-panel,
-.dc-table-card {
+.dc-table-card,
+.dc-chart-card {
   display: grid;
   gap: 12px;
 }
 
 .dc-events h3,
 .dc-duty-panel h3,
-.dc-table-card h3 {
+.dc-table-card h3,
+.dc-chart-card h3 {
   margin: 0;
+}
+
+.dc-chart-card p:not(.eyebrow) {
+  margin: 4px 0 0;
+  color: #667085;
+}
+
+.dc-chart {
+  display: grid;
+  gap: 8px;
+}
+
+.dc-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-height: 180px;
+  border: 1px solid #e0e7f2;
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    linear-gradient(to top, rgba(224, 231, 242, 0.9) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(135deg, #ffffff, #f8fbff);
+}
+
+.dc-chart-column {
+  position: relative;
+  flex: 1;
+  min-width: 8px;
+  height: 150px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.dc-chart-telegram,
+.dc-chart-noise {
+  display: block;
+  width: 45%;
+  min-height: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.dc-chart-telegram {
+  background: linear-gradient(180deg, #60a5fa, #3478f6);
+}
+
+.dc-chart-noise {
+  background: linear-gradient(180deg, #fb923c, #f97316);
+  opacity: 0.78;
+}
+
+.dc-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  color: #667085;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .dc-duty-bars {
@@ -623,6 +684,10 @@ h2 {
   min-width: 760px;
 }
 
+.dc-telegram-table {
+  min-width: 1040px;
+}
+
 .dc-table th,
 .dc-table td {
   border-bottom: 1px solid #e0e7f2;
@@ -657,6 +722,61 @@ h2 {
   color: #1849a9;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.82rem;
+}
+
+.rssi-badge {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 44px;
+  border-radius: 8px;
+  padding: 4px 7px;
+  color: #172033;
+  font-weight: 850;
+  background: #e0e7f2;
+}
+
+.rssi-badge.good {
+  background: #86efac;
+}
+
+.rssi-badge.medium {
+  background: #fde68a;
+}
+
+.rssi-badge.weak {
+  color: white;
+  background: #ef4444;
+}
+
+.flag-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.flag-badge {
+  border-radius: 6px;
+  padding: 3px 5px;
+  color: white;
+  background: #667085;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.flag-badge.ok {
+  background: #16a34a;
+}
+
+.flag-badge.warn {
+  background: #b45309;
+}
+
+.flag-badge.info {
+  background: #3478f6;
+}
+
+.flag-badge.danger {
+  background: #dc2626;
 }
 
 .dc-events summary {

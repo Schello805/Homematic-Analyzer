@@ -140,6 +140,7 @@ type SnifferSnapshot = {
     lastSeen: string;
   }>;
   events: Array<{
+    tstamp: string;
     raw: string;
     fromAddress: string;
     toAddress: string;
@@ -157,6 +158,7 @@ type SnifferSnapshot = {
     payload: string;
   }>;
   rssiNoise: Array<{
+    tstamp: string;
     raw: string;
     rssi?: number;
   }>;
@@ -528,6 +530,25 @@ function formatPercent(value: number) {
   if (value > 0 && value < 1) return `${value.toFixed(1).replace(".", ",")}%`;
   if (value < 10 && value % 1 !== 0) return `${value.toFixed(1).replace(".", ",")}%`;
   return `${Math.round(value)}%`;
+}
+
+function formatSnifferTime(value?: string) {
+  if (!value) return "–";
+  return new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function rssiClass(value?: number) {
+  if (value === undefined) return "";
+  if (value >= -65) return "good";
+  if (value >= -85) return "medium";
+  return "weak";
+}
+
+function flagClass(flag: string) {
+  if (flag === "BURST") return "danger";
+  if (flag === "BIDI") return "warn";
+  if (flag === "WKMEUP") return "info";
+  return "ok";
 }
 
 function parseMemoryNumberToMb(value: string, unit?: string) {
@@ -1910,7 +1931,7 @@ function App() {
           <div className="dc-metric-grid">
             {[
               ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Berechnet wie AskSinAnalyzerXS aus Telegrammlänge und Flags."],
-              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? `${snifferSnapshot.summary.carrierSense} dBm` : "nicht gemessen", "RSSI-Noise-Zeilen des Sniffers (`;xx;`)."],
+              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? `${snifferSnapshot.summary.carrierSense} dBm` : "nicht gemessen", "RSSI-Noise-Zeilen des Sniffers (`:xx;`)."],
               ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
               ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
               ["Schwächstes RSSI", snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen", "Schwächstes empfangenes Telegramm."]
@@ -1922,6 +1943,43 @@ function App() {
               </div>
             ))}
           </div>
+
+          {snifferSnapshot && (snifferSnapshot.events.length > 0 || snifferSnapshot.rssiNoise.length > 0) && (
+            <div className="dc-chart-card">
+              <div>
+                <p className="eyebrow">Verlauf</p>
+                <h3>Telegramme und RSSI-Noise</h3>
+                <p>
+                  Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Momentaufnahme liest aktuell einige Sekunden vom seriellen Port.
+                </p>
+              </div>
+              <div className="dc-chart">
+                <div className="dc-chart-bars" aria-label="Telegramm- und RSSI-Noise-Verlauf">
+                  {(() => {
+                    const telegrams = snifferSnapshot.events.slice().reverse();
+                    const noises = snifferSnapshot.rssiNoise.slice(-40);
+                    const maxItems = Math.max(telegrams.length, noises.length, 12);
+                    return Array.from({ length: maxItems }).map((_, index) => {
+                      const telegram = telegrams[index];
+                      const noise = noises[index];
+                      const telegramHeight = telegram ? Math.max(14, Math.min(100, (telegram.len / 32) * 100)) : 0;
+                      const noiseHeight = noise?.rssi !== undefined ? Math.max(8, Math.min(100, ((120 + noise.rssi) / 60) * 100)) : 0;
+                      return (
+                        <div className="dc-chart-column" key={`dc-chart-${index}`}>
+                          <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `RSSI-Noise ${noise.rssi} dBm` : ""} />
+                          <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} title={telegram ? `${telegram.fromName ?? telegram.fromAddress}: ${telegram.type || "Telegramm"}` : ""} />
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <div className="dc-chart-axis">
+                  <span>Telegramme: {snifferSnapshot.events.length}</span>
+                  <span>RSSI-Noise: {snifferSnapshot.rssiNoise.length}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {snifferSnapshot?.devices.length ? (
             <>
@@ -2001,34 +2059,67 @@ function App() {
               )}
             </div>
 
-            <details className="dc-events">
-              <summary>
-                <span>
-                  <small>Telegramme</small>
-                  Letzte Funktelegramme anzeigen
-                </span>
-                <strong>{snifferSnapshot.events.length}</strong>
-              </summary>
-              <ul>
-                {snifferSnapshot.events.slice(0, 20).map((event, index) => (
-                  <li key={`${event.raw}-${index}`}>
-                    <strong>{event.fromName ?? event.fromAddress} → {event.toName ?? event.toAddress}</strong>
-                    <span>
-                      RSSI {event.rssi} dBm · DC {Math.round(event.dutyCycle * 10) / 10}% · {event.type || "Typ unbekannt"} · {event.raw}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+            <div className="dc-table-card">
+              <div>
+                <p className="eyebrow">Telegramme</p>
+                <h3>{snifferSnapshot.events.length} empfangene Funktelegramme</h3>
+              </div>
+              <div className="dc-table-wrap">
+                <table className="dc-table dc-telegram-table">
+                  <thead>
+                    <tr>
+                      <th>Zeit</th>
+                      <th>Von</th>
+                      <th>Von/An</th>
+                      <th>An</th>
+                      <th>RSSI</th>
+                      <th>Len</th>
+                      <th>Cnt</th>
+                      <th>DC</th>
+                      <th>Typ</th>
+                      <th>Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snifferSnapshot.events.slice(0, 80).map((event, index) => (
+                      <tr key={`${event.raw}-${index}`}>
+                        <td>{formatSnifferTime(event.tstamp)}</td>
+                        <td>
+                          <strong>{event.fromName ?? event.fromAddress}</strong>
+                          <span>{event.fromSerial ?? event.fromAddress}</span>
+                        </td>
+                        <td>{event.fromName && event.toName ? `${event.fromName} → ${event.toName}` : "–"}</td>
+                        <td>
+                          <strong>{event.toName ?? event.toAddress}</strong>
+                          <span>{event.toSerial ?? event.toAddress}</span>
+                        </td>
+                        <td><span className={`rssi-badge ${rssiClass(event.rssi)}`}>{event.rssi}</span></td>
+                        <td>{event.len}</td>
+                        <td>{event.cnt}</td>
+                        <td>{Math.round(event.dutyCycle * 10) / 10}%</td>
+                        <td>{event.type || "–"}</td>
+                        <td>
+                          <div className="flag-list">
+                            {event.flags.map((flag) => (
+                              <span className={`flag-badge ${flagClass(flag)}`} key={flag}>{flag}</span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             </>
           ) : (
             <div className="system-collector-empty">
               <div>
-                <p className="eyebrow">{snifferSnapshot?.connected ? "Noch keine Funktelegramme" : "Noch leer"}</p>
-                <h3>{snifferSnapshot?.connected ? "Der Sniffer sendet Startmeldungen, aber noch keine Homematic-Telegramme" : "Der DC-Analyzer wartet auf echte Snifferdaten"}</h3>
+                <p className="eyebrow">{snifferSnapshot?.rssiNoise?.length ? "RSSI-Noise empfangen" : snifferSnapshot?.connected ? "Noch keine Funktelegramme" : "Noch leer"}</p>
+                <h3>{snifferSnapshot?.rssiNoise?.length ? "Der Sniffer misst Funkrauschen, aber noch keine Homematic-Telegramme" : snifferSnapshot?.connected ? "Der Sniffer sendet Startmeldungen, aber noch keine Homematic-Telegramme" : "Der DC-Analyzer wartet auf echte Snifferdaten"}</h3>
                 <p>
-                  Wichtig: Für die Tabelle müssen Zeilen im AskSin-Format `:...;` ankommen. Die sichtbaren Meldungen wie `ready`,
-                  `CC init` oder `AskSin++` zeigen nur, dass der Stick grundsätzlich antwortet.
+                  Wichtig: Kurze Zeilen wie `:8A;` sind RSSI-Noise/Carrier-Sense. Für die Telegramm-Tabelle müssen längere
+                  AskSin-Zeilen im Format `:...;` ankommen. Löse dafür ein Homematic-Gerät in Funkreichweite aus.
                 </p>
               </div>
               <ol>
@@ -2042,7 +2133,7 @@ function App() {
                   <summary>
                     <span>
                       <small>Sniffer-Meldungen</small>
-                      Empfangene Nicht-Telegramme
+                      Start- und Infomeldungen
                     </span>
                     <strong>{snifferSnapshot.diagnostics.length}</strong>
                   </summary>

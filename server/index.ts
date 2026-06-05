@@ -286,6 +286,7 @@ function snifferTelegramType(typeInt: number) {
 function parseAskSinTelegram(line: string, deviceMap: Map<string, { name: string; serial?: string; type?: string }>) {
   const trimmed = line.trim();
   if (!/^:[0-9a-f]+;$/i.test(trimmed) || trimmed.length <= 23) return undefined;
+  const tstamp = new Date().toISOString();
 
   const fromAddress = trimmed.substring(11, 17).toUpperCase();
   const toAddress = trimmed.substring(17, 23).toUpperCase();
@@ -299,6 +300,7 @@ function parseAskSinTelegram(line: string, deviceMap: Map<string, { name: string
     : (length + 11) * 0.81;
 
   return {
+    tstamp,
     raw: trimmed,
     rssi: -1 * parseInt(trimmed.substring(1, 3), 16),
     len: length,
@@ -321,8 +323,9 @@ function parseAskSinTelegram(line: string, deviceMap: Map<string, { name: string
 
 function parseRssiNoise(line: string) {
   const trimmed = line.trim();
-  if (!/^;[0-9a-f]{2};$/i.test(trimmed)) return undefined;
+  if (!/^:[0-9a-f]{2};$/i.test(trimmed)) return undefined;
   return {
+    tstamp: new Date().toISOString(),
     raw: trimmed,
     rssi: -1 * parseInt(trimmed.substring(1, 3), 16)
   };
