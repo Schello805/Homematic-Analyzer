@@ -535,6 +535,8 @@ function App() {
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
+  const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
+  const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
     label: "Update wird geprüft",
@@ -1133,11 +1135,29 @@ function App() {
       }
     }
 
-    const interval = window.setInterval(() => void refreshAnalysisSnapshot(), 60000);
+    const refreshEveryMs = 60000;
+    let nextRefreshAt = Date.now() + refreshEveryMs;
+
+    setDashboardRefreshProgress(0);
+    setDashboardRefreshSecondsLeft(60);
+
+    const refreshInterval = window.setInterval(() => {
+      nextRefreshAt = Date.now() + refreshEveryMs;
+      setDashboardRefreshProgress(0);
+      setDashboardRefreshSecondsLeft(60);
+      void refreshAnalysisSnapshot();
+    }, refreshEveryMs);
+
+    const tickInterval = window.setInterval(() => {
+      const remainingMs = Math.max(0, nextRefreshAt - Date.now());
+      setDashboardRefreshSecondsLeft(Math.ceil(remainingMs / 1000));
+      setDashboardRefreshProgress(Math.min(100, Math.max(0, ((refreshEveryMs - remainingMs) / refreshEveryMs) * 100)));
+    }, 1000);
 
     return () => {
       isActive = false;
-      window.clearInterval(interval);
+      window.clearInterval(refreshInterval);
+      window.clearInterval(tickInterval);
     };
   }, [hasAnalysis, currentPage, loading, form, notificationSettings]);
 
@@ -1669,6 +1689,17 @@ function App() {
                     : "Aktueller Snapshot"}
                 </span>
               </div>
+              {hasShellSystemData(analysis.systemDashboard) && (
+                <div className="dashboard-refresh-timer" aria-label={`Nächste Aktualisierung in ${dashboardRefreshSecondsLeft} Sekunden`}>
+                  <div>
+                    <span>Nächste Aktualisierung</span>
+                    <strong>{dashboardRefreshSecondsLeft}s</strong>
+                  </div>
+                  <div className="dashboard-refresh-timer__track">
+                    <span style={{ width: `${dashboardRefreshProgress}%` }} />
+                  </div>
+                </div>
+              )}
               {!hasShellSystemData(analysis.systemDashboard) ? (
                 <div className="system-collector-empty">
                   <div>
