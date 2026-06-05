@@ -53,6 +53,7 @@ type SystemDashboard = {
   backupLatestPath?: string;
   backupLatestDirectory?: string;
   backupLatestAt?: string;
+  backupDisk?: string;
   logs: number;
   connections: number;
   history?: Array<{
@@ -115,6 +116,7 @@ type CollectorStatus = {
 const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const setupStorageKey = "homematic-analyzer.setup.v1";
+const analysisStorageKey = "homematic-analyzer.analysis.v1";
 
 const statusLabel: Record<CheckStatus, string> = {
   ok: "OK",
@@ -265,6 +267,30 @@ function loadSavedSetup(): SetupForm {
   } catch {
     return initialForm;
   }
+}
+
+function loadSavedAnalysis(): AnalysisResponse | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const savedAnalysis = window.localStorage.getItem(analysisStorageKey);
+    return savedAnalysis ? JSON.parse(savedAnalysis) as AnalysisResponse : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAnalysisSnapshot(nextAnalysis: AnalysisResponse) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(analysisStorageKey, JSON.stringify(nextAnalysis));
+  } catch {
+  }
+}
+
+function firstRelevantCheckId(analysis: AnalysisResponse | null) {
+  return analysis?.checks.find((check) => check.status !== "ok")?.id ?? analysis?.checks[0]?.id ?? null;
 }
 
 function getApiBaseUrl() {
@@ -443,10 +469,10 @@ function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
   const [currentPage, setCurrentPage] = useState<"analysis" | "setup" | "settings">("analysis");
-  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
-  const [activeCheck, setActiveCheck] = useState<string | null>(null);
+  const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -469,6 +495,7 @@ function App() {
     detail: "GitHub wird nach der neuesten Version gefragt.",
     url: repositoryUrl
   });
+  const hasAnalysis = Boolean(analysis);
 
   const scriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
@@ -1024,15 +1051,16 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!analysis || currentPage !== "analysis" || loading) return;
+    if (!hasAnalysis || currentPage !== "analysis" || loading) return;
 
     let isActive = true;
 
     async function refreshAnalysisSnapshot() {
       try {
-        const data = await fetchAnalysisSnapshot();
+        const data = await fetchAnalysisSnapshot({ notify: false });
         if (!isActive) return;
         setAnalysis(data);
+        saveAnalysisSnapshot(data);
         setActiveCheck((currentActiveCheck) => (
           currentActiveCheck && data.checks.some((check) => check.id === currentActiveCheck)
             ? currentActiveCheck
@@ -1049,9 +1077,9 @@ function App() {
       isActive = false;
       window.clearInterval(interval);
     };
-  }, [analysis, currentPage, loading, form, notificationSettings]);
+  }, [hasAnalysis, currentPage, loading, form, notificationSettings]);
 
-  async function fetchAnalysisSnapshot() {
+  async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1067,7 +1095,8 @@ function App() {
         hasSshPassword: Boolean(form.sshPassword),
         snifferPort: form.snifferPort.trim(),
         externalSystems: [],
-        notificationSettings
+        notificationSettings,
+        notify: options.notify
       })
     });
 
@@ -1084,7 +1113,6 @@ function App() {
     setLoading(true);
     setActiveAnalysisStep(0);
     setError(null);
-    setAnalysis(null);
     setSelectedStatusFilter(null);
     showToast({
       type: "info",
@@ -1093,11 +1121,12 @@ function App() {
     });
 
     try {
-      const [data] = await Promise.all([fetchAnalysisSnapshot(), wait(2600)]);
+      const [data] = await Promise.all([fetchAnalysisSnapshot({ notify: true }), wait(2600)]);
       setActiveAnalysisStep(analysisSteps.length - 1);
       const criticalCount = data.checks.filter((check) => check.status === "critical").length;
       const unavailableCount = data.checks.filter((check) => check.status === "unavailable").length;
       setAnalysis(data);
+      saveAnalysisSnapshot(data);
       setActiveCheck(data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null);
       showToast({
         type: criticalCount > 0 ? "warning" : "success",
@@ -1603,12 +1632,22 @@ function App() {
                     help: "Temperatur kommt über `/usr/bin/vcgencmd measure_temp`. Wenn sie fehlt: Script auf RaspberryMatic/CCU3 ausführen; in einem LXC ist dieser Wert meist nicht vorhanden."
                   },
                   {
-                    label: "Speicher",
+                    label: "Lokaler Speicher",
                     value: formatDisk(analysis.systemDashboard.disk),
-                    hint: "Freier Speicher der CCU/RaspberryMatic.",
-                    help: "Wenn Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen. Es prüft `df -h /usr/local` auf der Zentrale. Gelb ab 80%, rot ab 95% Belegung.",
+                    hint: "Interner Speicherbereich der CCU/RaspberryMatic.",
+                    help: "Wenn lokaler Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen oder Shell-Collector minütlich einrichten. Geprüft wird `df -h /usr/local`. Gelb ab 80%, rot ab 95% Belegung.",
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.disk);
+                      return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
+                    })()
+                  },
+                  {
+                    label: "USB/Backup-Speicher",
+                    value: formatDisk(analysis.systemDashboard.backupDisk),
+                    hint: "Speicherplatz des Backup-Mediums, falls ein USB-Stick erkannt wurde.",
+                    help: "Der Wert kommt vom Dateisystem, auf dem das neueste Backup liegt. Wenn nicht verfügbar: Shell-Collector nach dem Update neu auf der CCU ausführen und prüfen, ob der Stick unter `/media`, `/mnt` oder `/run/media` gemountet ist.",
+                    usageStatus: (() => {
+                      const usage = parseDiskUsagePercent(analysis.systemDashboard.backupDisk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
                     })()
                   },

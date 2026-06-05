@@ -172,6 +172,14 @@ if [ -n "$LATEST_BACKUP_PATH" ]; then
   LATEST_BACKUP_DIR="$(dirname "$LATEST_BACKUP_PATH" 2>/dev/null || true)"
   LATEST_BACKUP_AT="$(date -r "$LATEST_BACKUP_PATH" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || true)"
 fi
+BACKUP_DISK_VALUE=""
+if [ -n "$LATEST_BACKUP_DIR" ]; then
+  BACKUP_DISK_VALUE="$(df -h "$LATEST_BACKUP_DIR" 2>/dev/null | tail -n 1 | json_escape || true)"
+elif [ -d /media ]; then
+  BACKUP_DISK_VALUE="$(df -h /media 2>/dev/null | tail -n 1 | json_escape || true)"
+elif [ -d /mnt ]; then
+  BACKUP_DISK_VALUE="$(df -h /mnt 2>/dev/null | tail -n 1 | json_escape || true)"
+fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
@@ -199,11 +207,12 @@ echo "Homematic Analyzer: Systemwerte gesammelt."
   printf '    "temperatureRaw": "%s",\n' "$TEMP_VALUE"
   printf '    "cpu": "%s"\n' "$CPU_VALUE"
   printf '  },\n'
-  printf '  "backups": { "count": "%s", "latestPath": "%s", "latestDirectory": "%s", "latestAt": "%s", "paths": [\n' \
+  printf '  "backups": { "count": "%s", "latestPath": "%s", "latestDirectory": "%s", "latestAt": "%s", "disk": "%s", "paths": [\n' \
     "$BACKUP_COUNT" \
     "$(printf '%s' "$LATEST_BACKUP_PATH" | json_escape)" \
     "$(printf '%s' "$LATEST_BACKUP_DIR" | json_escape)" \
-    "$(printf '%s' "$LATEST_BACKUP_AT" | json_escape)"
+    "$(printf '%s' "$LATEST_BACKUP_AT" | json_escape)" \
+    "$BACKUP_DISK_VALUE"
   FIRST=1
   tail -n 8 "$BACKUP_LIST_FILE" 2>/dev/null | while IFS= read -r line; do
     [ -z "$line" ] && continue

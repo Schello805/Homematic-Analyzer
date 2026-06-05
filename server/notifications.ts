@@ -33,7 +33,7 @@ function relevantChecks(checks: AnalysisCheck[], settings: NotificationSettings)
   return checks.filter((check) => shouldNotifyCheck(check, settings));
 }
 
-function buildMessage(checks: AnalysisCheck[], settings: NotificationSettings) {
+function buildMessage(checks: AnalysisCheck[], settings: NotificationSettings, analyzerUrl?: string) {
   const selectedChecks = relevantChecks(checks, settings);
   const warningChecks = checks.filter((check) => check.status === "warning");
 
@@ -44,11 +44,11 @@ function buildMessage(checks: AnalysisCheck[], settings: NotificationSettings) {
     warningChecks.length > 0 ? "" : undefined,
     warningChecks.length > 0 ? `${warningChecks.length} weitere Hinweise/Warnungen vorhanden.` : undefined,
     "",
-    "Bitte Analyzer öffnen und Belege prüfen."
+    analyzerUrl ? `Analyzer öffnen: ${analyzerUrl}` : "Bitte Analyzer öffnen und Belege prüfen."
   ].filter(Boolean).join("\n");
 }
 
-async function sendTelegramSummary(settings: NotificationSettings, checks: AnalysisCheck[]): Promise<NotificationChannelResult> {
+async function sendTelegramSummary(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationChannelResult> {
   if (!settings.telegram?.enabled) {
     return { state: "disabled", message: "Telegram ist nicht aktiviert." };
   }
@@ -71,7 +71,7 @@ async function sendTelegramSummary(settings: NotificationSettings, checks: Analy
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: buildMessage(checks, settings),
+        text: buildMessage(checks, settings, analyzerUrl),
         disable_web_page_preview: true
       })
     });
@@ -86,7 +86,7 @@ async function sendTelegramSummary(settings: NotificationSettings, checks: Analy
   }
 }
 
-async function sendEmailSummary(settings: NotificationSettings, checks: AnalysisCheck[]): Promise<NotificationChannelResult> {
+async function sendEmailSummary(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationChannelResult> {
   if (!settings.email?.enabled) {
     return { state: "disabled", message: "E-Mail ist nicht aktiviert." };
   }
@@ -118,7 +118,7 @@ async function sendEmailSummary(settings: NotificationSettings, checks: Analysis
       from: email.from,
       to: email.to,
       subject: `Homematic Analyzer: ${selectedChecks.length} Ereignis(se)`,
-      text: buildMessage(checks, settings)
+      text: buildMessage(checks, settings, analyzerUrl)
     });
 
     return { state: "sent", message: `${selectedChecks.length} Ereignis(se) per E-Mail gemeldet.` };
@@ -127,10 +127,10 @@ async function sendEmailSummary(settings: NotificationSettings, checks: Analysis
   }
 }
 
-export async function sendNotificationSummaries(settings: NotificationSettings, checks: AnalysisCheck[]): Promise<NotificationResult> {
+export async function sendNotificationSummaries(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationResult> {
   const [telegram, email] = await Promise.all([
-    sendTelegramSummary(settings, checks),
-    sendEmailSummary(settings, checks)
+    sendTelegramSummary(settings, checks, analyzerUrl),
+    sendEmailSummary(settings, checks, analyzerUrl)
   ]);
 
   return { telegram, email };

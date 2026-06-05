@@ -1,7 +1,6 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,7 +110,8 @@ const analyzeSchema = z.object({
   snifferPort: z.string().optional(),
   telegramEnabled: z.boolean().optional(),
   externalSystems: z.array(z.string()).optional(),
-  notificationSettings: notificationSettingsSchema.optional()
+  notificationSettings: notificationSettingsSchema.optional(),
+  notify: z.boolean().optional()
 });
 
 const notificationTestSchema = z.object({
@@ -254,16 +254,17 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     host: stringFromRecord(ccuSystem, "host") ?? collector?.host,
     ...ccuTarget,
     collectedAt: masterdata?.collectedAt ?? collector?.collectedAt,
-    uptime: stringFromRecord(ccuSystem, "uptime") ?? stringFromRecord(collector?.system, "uptime"),
-    memory: stringFromRecord(ccuSystem, "memory") ?? stringFromRecord(collector?.system, "memory"),
-    disk: stringFromRecord(ccuSystem, "disk") ?? stringFromRecord(collector?.system, "disk"),
-    temperature: stringFromRecord(ccuSystem, "temperatureRaw") ?? stringFromRecord(collector?.system, "temperatureRaw"),
-    cpu: stringFromRecord(ccuSystem, "cpu") ?? stringFromRecord(collector?.system, "cpu"),
-    backups: stringFromRecord(ccuBackups, "count") ?? stringFromRecord(collector?.backups, "count"),
-    backupPaths: stringArrayFromRecord(ccuBackups, "paths") ?? stringArrayFromRecord(collector?.backups, "paths"),
-    backupLatestPath: stringFromRecord(ccuBackups, "latestPath") ?? stringFromRecord(collector?.backups, "latestPath"),
-    backupLatestDirectory: stringFromRecord(ccuBackups, "latestDirectory") ?? stringFromRecord(collector?.backups, "latestDirectory"),
-    backupLatestAt: stringFromRecord(ccuBackups, "latestAt") ?? stringFromRecord(collector?.backups, "latestAt"),
+    uptime: stringFromRecord(collector?.system, "uptime") ?? stringFromRecord(ccuSystem, "uptime"),
+    memory: stringFromRecord(collector?.system, "memory") ?? stringFromRecord(ccuSystem, "memory"),
+    disk: stringFromRecord(collector?.system, "disk") ?? stringFromRecord(ccuSystem, "disk"),
+    temperature: stringFromRecord(collector?.system, "temperatureRaw") ?? stringFromRecord(ccuSystem, "temperatureRaw"),
+    cpu: stringFromRecord(collector?.system, "cpu") ?? stringFromRecord(ccuSystem, "cpu"),
+    backups: stringFromRecord(collector?.backups, "count") ?? stringFromRecord(ccuBackups, "count"),
+    backupPaths: stringArrayFromRecord(collector?.backups, "paths") ?? stringArrayFromRecord(ccuBackups, "paths"),
+    backupLatestPath: stringFromRecord(collector?.backups, "latestPath") ?? stringFromRecord(ccuBackups, "latestPath"),
+    backupLatestDirectory: stringFromRecord(collector?.backups, "latestDirectory") ?? stringFromRecord(ccuBackups, "latestDirectory"),
+    backupLatestAt: stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt"),
+    backupDisk: stringFromRecord(collector?.backups, "disk") ?? stringFromRecord(ccuBackups, "disk"),
     logs: collector?.logs?.length ?? 0,
     connections: collector?.network?.connections?.length ?? 0,
     history: collectorHistory.slice(-120)
@@ -504,7 +505,13 @@ app.post("/api/analyze", async (request, response) => {
     if (aiLogAnalysis) {
       checks.push(aiLogAnalysis);
     }
-    const notificationResult = await sendNotificationSummaries(notificationSettings, checks);
+    const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
+    const notificationResult = parsed.data.notify === false
+      ? {
+        telegram: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." },
+        email: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." }
+      }
+      : await sendNotificationSummaries(notificationSettings, checks, analyzerUrl);
 
     response.json({
       generatedAt: new Date().toISOString(),
@@ -644,61 +651,73 @@ app.post("/api/system/update", async (_request, response) => {
     return;
   }
 
-  const updateScript = join(root, "scripts", "install", "update-local.sh");
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(updateLogFile, `[${new Date().toISOString()}] Update per Footer gestartet\n`);
-  updateRun = {
-    running: true,
-    startedAt: new Date().toISOString()
-  };
-
-  const updateLogStream = createWriteStream(updateLogFile, { flags: "a" });
-  const child = spawn("bash", [updateScript], {
-    cwd: root,
-    detached: true,
-    stdio: ["ignore", updateLogStream, updateLogStream],
-    env: {
-      ...process.env,
-      ANALYZER_PID: String(process.pid),
-      UPDATE_LOG_FILE: updateLogFile
-    }
-  });
-
-  child.on("exit", (code) => {
-    console.log("[Homematic Analyzer][Update] child exited", { code });
+  try {
+    const updateScript = join(root, "scripts", "install", "update-local.sh");
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(updateLogFile, `[${new Date().toISOString()}] Update per Footer gestartet\n`);
     updateRun = {
-      ...updateRun,
+      running: true,
+      startedAt: new Date().toISOString()
+    };
+
+    const child = spawn("bash", [updateScript], {
+      cwd: root,
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        ANALYZER_PID: String(process.pid),
+        UPDATE_LOG_FILE: updateLogFile
+      }
+    });
+
+    child.on("exit", (code) => {
+      console.log("[Homematic Analyzer][Update] child exited", { code });
+      updateRun = {
+        ...updateRun,
+        running: false,
+        finishedAt: new Date().toISOString(),
+        exitCode: code
+      };
+    });
+
+    child.on("error", (error) => {
+      console.error("[Homematic Analyzer][Update] child error", error);
+      updateRun = {
+        ...updateRun,
+        running: false,
+        finishedAt: new Date().toISOString(),
+        error: error.message
+      };
+    });
+
+    child.unref();
+
+    console.log("[Homematic Analyzer][Update] child started", {
+      pid: child.pid,
+      script: updateScript,
+      log: updateLogFile
+    });
+
+    response.json({
+      ok: true,
+      message: "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
+      log: ".data/update.log"
+    });
+  } catch (error) {
+    console.error("[Homematic Analyzer][Update] start failed", error);
+    updateRun = {
       running: false,
       finishedAt: new Date().toISOString(),
-      exitCode: code
+      error: error instanceof Error ? error.message : String(error)
     };
-    updateLogStream.end();
-  });
-
-  child.on("error", (error) => {
-    console.error("[Homematic Analyzer][Update] child error", error);
-    updateRun = {
-      ...updateRun,
-      running: false,
-      finishedAt: new Date().toISOString(),
-      error: error.message
-    };
-    updateLogStream.end();
-  });
-
-  child.unref();
-
-  console.log("[Homematic Analyzer][Update] child started", {
-    pid: child.pid,
-    script: updateScript,
-    log: updateLogFile
-  });
-
-  response.json({
-    ok: true,
-    message: "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
-    log: ".data/update.log"
-  });
+    response.status(500).json({
+      ok: false,
+      message: "Update konnte nicht gestartet werden.",
+      error: updateRun.error,
+      log: ".data/update.log"
+    });
+  }
 });
 
 app.get("/api/collector/script", async (request, response) => {
