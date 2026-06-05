@@ -1166,7 +1166,7 @@ function App() {
           showToast({
             type: "success",
             title: "Update abgeschlossen",
-            message: "Der Analyzer startet ggf. neu. Lade die Seite gleich erneut."
+            message: "Bitte die Seite neu laden, damit der neue Stand aktiv ist."
           });
         }
 
@@ -2636,9 +2636,14 @@ function App() {
               {updateRunStatus.status === "running"
                 ? "Bitte warten. GitHub wird geladen, Abhängigkeiten werden installiert und die App wird gebaut."
                 : updateRunStatus.status === "completed"
-                  ? "Die App wurde aktualisiert. Falls die Seite alt wirkt, bitte neu laden."
+                  ? "Die App wurde aktualisiert. Lade die Seite neu, damit Browser und Analyzer denselben Stand verwenden."
                   : updateRunStatus.error ?? "Bitte Log prüfen oder per SSH aktualisieren."}
             </span>
+            {updateRunStatus.status === "completed" && (
+              <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+                Seite neu laden
+              </button>
+            )}
             {updateRunStatus.log && (
               <details>
                 <summary>Update-Log anzeigen</summary>

@@ -211,17 +211,56 @@ function parseSnifferLine(line: string) {
   };
 }
 
+async function readSerialSnifferLines(port?: string): Promise<string[]> {
+  const trimmedPort = port?.trim();
+  if (!trimmedPort || !trimmedPort.startsWith("/dev/")) return [];
+
+  try {
+    const stats = await lstat(trimmedPort);
+    if (!stats.isCharacterDevice() && !stats.isSymbolicLink()) return [];
+  } catch {
+    return [];
+  }
+
+  return new Promise((resolve) => {
+    const command = [
+      "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
+      "timeout 2s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
+    ].join("; ");
+    const child = spawn("bash", ["-lc", command], {
+      env: { ...process.env, SNIFFER_PORT: trimmedPort },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let output = "";
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve([]));
+    child.on("close", () => {
+      resolve(output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(-300));
+    });
+  });
+}
+
 async function readSnifferSnapshot(port?: string) {
   const checkedAt = new Date().toISOString();
   let lines: string[] = [];
   let source = "Noch keine Snifferdaten empfangen.";
 
+  lines = await readSerialSnifferLines(port);
+  if (lines.length > 0) {
+    source = port?.trim() ? `Serieller Port ${port.trim()}` : "Serieller Port";
+  }
+
   try {
-    const parsed = JSON.parse(await readFile(snifferEventsFile, "utf8"));
-    const parsedRecord = parsed && typeof parsed === "object" ? parsed as { events?: unknown[] } : {};
-    const entries: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsedRecord.events) ? parsedRecord.events : [];
-    lines = entries.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).slice(-300);
-    if (lines.length > 0) source = snifferEventsFile;
+    if (lines.length === 0) {
+      const parsed = JSON.parse(await readFile(snifferEventsFile, "utf8"));
+      const parsedRecord = parsed && typeof parsed === "object" ? parsed as { events?: unknown[] } : {};
+      const entries: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsedRecord.events) ? parsedRecord.events : [];
+      lines = entries.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).slice(-300);
+      if (lines.length > 0) source = snifferEventsFile;
+    }
   } catch {
   }
 

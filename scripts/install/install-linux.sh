@@ -67,7 +67,7 @@ run_apt_update_once() {
 install_base_packages() {
   run_apt_update_once
   info "Basis-Pakete werden installiert ..."
-  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git gnupg util-linux
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git gnupg util-linux usbutils
 }
 
 node_major_version() {
