@@ -1223,11 +1223,35 @@ pre {
   line-height: 1.25;
 }
 
+.metric-chart {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 7px;
+  align-items: stretch;
+  margin-top: 2px;
+}
+
+.metric-chart__axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #7b8798;
+  font-size: 0.62rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
 .metric-sparkline {
   width: 100%;
-  height: 34px;
-  margin-top: 2px;
+  height: 38px;
   overflow: visible;
+}
+
+.metric-sparkline line {
+  stroke: #dbe4f0;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .metric-sparkline polyline {

@@ -261,6 +261,9 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     cpu: stringFromRecord(ccuSystem, "cpu") ?? stringFromRecord(collector?.system, "cpu"),
     backups: stringFromRecord(ccuBackups, "count") ?? stringFromRecord(collector?.backups, "count"),
     backupPaths: stringArrayFromRecord(ccuBackups, "paths") ?? stringArrayFromRecord(collector?.backups, "paths"),
+    backupLatestPath: stringFromRecord(ccuBackups, "latestPath") ?? stringFromRecord(collector?.backups, "latestPath"),
+    backupLatestDirectory: stringFromRecord(ccuBackups, "latestDirectory") ?? stringFromRecord(collector?.backups, "latestDirectory"),
+    backupLatestAt: stringFromRecord(ccuBackups, "latestAt") ?? stringFromRecord(collector?.backups, "latestAt"),
     logs: collector?.logs?.length ?? 0,
     connections: collector?.network?.connections?.length ?? 0,
     history: collectorHistory.slice(-120)

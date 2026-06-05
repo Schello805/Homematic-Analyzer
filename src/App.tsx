@@ -50,6 +50,9 @@ type SystemDashboard = {
   cpu?: string;
   backups?: string;
   backupPaths?: string[];
+  backupLatestPath?: string;
+  backupLatestDirectory?: string;
+  backupLatestAt?: string;
   logs: number;
   connections: number;
   history?: Array<{
@@ -277,7 +280,7 @@ function firstLine(value?: string) {
 }
 
 function splitMetricLines(value?: string) {
-  return value?.replaceAll("\\n", "\n").split("\n").map((line) => line.trim()).filter(Boolean) ?? [];
+  return value?.replaceAll("\\n", "\n").split(/\n|\s+\|\s+/).map((line) => line.trim()).filter(Boolean) ?? [];
 }
 
 function formatTemperature(raw?: string) {
@@ -294,30 +297,41 @@ function formatMemory(raw?: string) {
   const line = memoryLine ?? fallbackLine;
   if (!line) return "nicht verfügbar";
 
-  const busyboxMatch = line.match(/Mem:\s*([0-9.]+\s*[KMGT]?B?)\s+used,?\s+([0-9.]+\s*[KMGT]?B?)\s+free/i);
-  if (busyboxMatch) return `${busyboxMatch[1]} genutzt · ${busyboxMatch[2]} frei`;
+  const busyboxMatch = line.match(/Mem:\s*([0-9.]+)\s*([KMGT]?B?|K)?\s+used,?\s+([0-9.]+)\s*([KMGT]?B?|K)?\s+free/i);
+  if (busyboxMatch) {
+    const used = parseMemoryNumberToMb(busyboxMatch[1], busyboxMatch[2]);
+    const free = parseMemoryNumberToMb(busyboxMatch[3], busyboxMatch[4]);
+    const total = used + free;
+    return total > 0 ? `${Math.round((used / total) * 100)}% belegt · ${Math.round(free)} MB frei` : "nicht verfügbar";
+  }
 
   const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
-  return parts.length >= 3 ? `${parts[1]} / ${parts[0]} MB genutzt` : line;
+  if (parts.length >= 3) {
+    const total = Number(parts[0]);
+    const used = Number(parts[1]);
+    const available = Number(parts[6] ?? parts[3]);
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(used)) {
+      return `${Math.round((used / total) * 100)}% belegt · ${Number.isFinite(available) ? `${available} MB verfügbar` : `${total - used} MB frei`}`;
+    }
+  }
+
+  return line;
 }
 
 function formatDisk(raw?: string) {
   const lines = splitMetricLines(raw);
-  const diskLine = lines.find((line) => /\s\/$/.test(line) || /\/dev\/|overlay|rootfs/i.test(line));
+  const diskLine = lines.find((line) => /\d+%/.test(line) && !/^filesystem\s+/i.test(line));
   if (!diskLine) return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "nicht verfügbar";
   const parts = diskLine.split(/\s+/);
-  return parts.length >= 5 ? `${parts[4]} belegt · ${parts[3]} frei` : diskLine;
+  const percentPart = parts.find((part) => /^\d+%$/.test(part));
+  const percentIndex = percentPart ? parts.indexOf(percentPart) : -1;
+  const available = percentIndex >= 1 ? parts[percentIndex - 1] : parts[3];
+  return percentPart ? `${percentPart} belegt · ${available} frei` : diskLine;
 }
 
 function formatCpu(raw?: string) {
-  const lines = splitMetricLines(raw);
-  const loadLine = lines.find((entry) => /load average|load:/i.test(entry));
-  const cpuLine = lines.find((entry) => /^(cpu|%cpu)/i.test(entry));
-  const procLoadLine = lines.find((entry) => /^\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?/.test(entry));
-  const line = loadLine ?? cpuLine ?? procLoadLine;
-  if (!line) return "nicht verfügbar";
-  if (line === procLoadLine) return `Load ${line.split(/\s+/).slice(0, 3).join(", ")}`;
-  return line.replace(/^.*load average:\s*/i, "Load ").replace(/^Load:\s*/i, "Load ");
+  const percent = parseCpuUsagePercent(raw);
+  return percent === undefined ? "nicht verfügbar" : `${percent}% Auslastung`;
 }
 
 function formatUptime(raw?: string) {
@@ -326,28 +340,63 @@ function formatUptime(raw?: string) {
   const uptime = line.match(/\bup\s+(.+?),\s+\d+\s+users?/i)?.[1]
     ?? line.match(/\bup\s+(.+?),\s+load average/i)?.[1]
     ?? line.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "");
-  return uptime.replace(/,\s*load average:.*$/i, "").trim();
+  const clean = uptime.replace(/,\s*load average:.*$/i, "").trim();
+  const dayMatch = clean.match(/(\d+)\s+days?,\s*(\d{1,2}):(\d{2})/i);
+  if (dayMatch) return `${dayMatch[1]} Tage, ${Number(dayMatch[2])} h ${Number(dayMatch[3])} min`;
+  const hourMinuteMatch = clean.match(/(\d{1,2}):(\d{2})/);
+  if (hourMinuteMatch) return `${Number(hourMinuteMatch[1])} h ${Number(hourMinuteMatch[2])} min`;
+  const minuteMatch = clean.match(/(\d+)\s+min/i);
+  if (minuteMatch) return `${minuteMatch[1]} min`;
+  return clean
+    .replace(/\bdays?\b/i, "Tage")
+    .replace(/\bhours?\b/i, "h")
+    .replace(/\bminutes?\b/i, "min");
 }
 
-function formatBackups(count?: string, paths?: string[]) {
+function formatBackupDate(raw?: string) {
+  if (!raw) return "";
+  const date = new Date(raw.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatBackups(count?: string, paths?: string[], latestDirectory?: string, latestAt?: string, latestPath?: string) {
   if (!count) return "nicht geprüft";
   const backupCount = Number(count);
   const label = Number.isFinite(backupCount)
     ? backupCount === 0 ? "keine gefunden" : `${backupCount} gefunden`
     : `${count} gefunden`;
-  return paths?.length ? `${label} · ${paths[paths.length - 1]}` : label;
+  if (backupCount === 0) return label;
+  const directory = latestDirectory
+    ?? (latestPath ? latestPath.replace(/\/[^/]+$/, "/") : undefined)
+    ?? (paths?.[paths.length - 1] ? paths[paths.length - 1].replace(/\/[^/]+$/, "/") : undefined);
+  const date = formatBackupDate(latestAt);
+  return [label, directory, date ? `Letztes Backup vom ${date}` : ""].filter(Boolean).join(" · ");
 }
 
 function metricNeedsHelp(value: string) {
   return value === "nicht verfügbar" || value === "nicht geprüft" || value === "keine gefunden" || value.startsWith("keine gefunden");
 }
 
-function parseCpuLoad(raw?: string) {
+function parseMemoryNumberToMb(value: string, unit?: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  const normalizedUnit = (unit ?? "").toUpperCase();
+  if (normalizedUnit.startsWith("G")) return parsed * 1024;
+  if (normalizedUnit.startsWith("K") || normalizedUnit === "") return parsed / 1024;
+  return parsed;
+}
+
+function parseCpuUsagePercent(raw?: string) {
   const line = firstLine(raw);
-  const value = line?.replace(/^.*load average:\s*/i, "").replace(/^Load\s*/i, "").match(/\d+(?:[.,]\d+)?/)?.[0];
+  const value = line?.match(/(\d+(?:[.,]\d+)?)\s*%/)?.[1];
   if (!value) return undefined;
   const parsed = Number(value.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : undefined;
+}
+
+function parseCpuLoad(raw?: string) {
+  return parseCpuUsagePercent(raw);
 }
 
 function parseMemoryUsagePercent(raw?: string) {
@@ -378,13 +427,14 @@ function parseDiskUsagePercent(raw?: string) {
 
 function sparklinePoints(values: number[], width = 120, height = 34) {
   if (values.length === 0) return "";
-  if (values.length === 1) return `0,${height - values[0]} ${width},${height - values[0]}`;
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = Math.max(max - min, 1);
-  return values.map((value, index) => {
-    const x = (index / (values.length - 1)) * width;
-    const y = height - ((value - min) / range) * height;
+  const normalizedValues = values.map((value) => Math.max(0, Math.min(100, value)));
+  if (normalizedValues.length === 1) {
+    const y = height - (normalizedValues[0] / 100) * height;
+    return `0,${Math.round(y * 10) / 10} ${width},${Math.round(y * 10) / 10}`;
+  }
+  return normalizedValues.map((value, index) => {
+    const x = (index / (normalizedValues.length - 1)) * width;
+    const y = height - (value / 100) * height;
     return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
   }).join(" ");
 }
@@ -973,8 +1023,63 @@ function App() {
     };
   }, []);
 
-  async function runAnalysis(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    if (!analysis || currentPage !== "analysis" || loading) return;
+
+    let isActive = true;
+
+    async function refreshAnalysisSnapshot() {
+      try {
+        const data = await fetchAnalysisSnapshot();
+        if (!isActive) return;
+        setAnalysis(data);
+        setActiveCheck((currentActiveCheck) => (
+          currentActiveCheck && data.checks.some((check) => check.id === currentActiveCheck)
+            ? currentActiveCheck
+            : data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null
+        ));
+      } catch (caughtError) {
+        console.warn("[Homematic Analyzer][Analysis] Auto-Refresh fehlgeschlagen", caughtError);
+      }
+    }
+
+    const interval = window.setInterval(() => void refreshAnalysisSnapshot(), 60000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [analysis, currentPage, loading, form, notificationSettings]);
+
+  async function fetchAnalysisSnapshot() {
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ccuHost: form.ccuHost.trim(),
+        ccuUser: form.ccuUser.trim(),
+        ccuPassword: form.ccuPassword,
+        xmlApiToken: (form.xmlApiToken ?? "").trim(),
+        hasCcuPassword: Boolean(form.ccuPassword),
+        sshHost: form.ccuHost.trim(),
+        sshUser: form.sshUser.trim(),
+        sshPassword: form.sshPassword,
+        hasSshPassword: Boolean(form.sshPassword),
+        snifferPort: form.snifferPort.trim(),
+        externalSystems: [],
+        notificationSettings
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Die Analyse konnte nicht gestartet werden.");
+    }
+
+    return (await response.json()) as AnalysisResponse;
+  }
+
+  async function runAnalysis(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setCurrentPage("analysis");
     setLoading(true);
     setActiveAnalysisStep(0);
@@ -988,33 +1093,7 @@ function App() {
     });
 
     try {
-      const [response] = await Promise.all([
-        fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ccuHost: form.ccuHost.trim(),
-            ccuUser: form.ccuUser.trim(),
-            ccuPassword: form.ccuPassword,
-            xmlApiToken: (form.xmlApiToken ?? "").trim(),
-            hasCcuPassword: Boolean(form.ccuPassword),
-            sshHost: form.ccuHost.trim(),
-            sshUser: form.sshUser.trim(),
-            sshPassword: form.sshPassword,
-            hasSshPassword: Boolean(form.sshPassword),
-            snifferPort: form.snifferPort.trim(),
-            externalSystems: [],
-            notificationSettings
-          })
-        }),
-        wait(2600)
-      ]);
-
-      if (!response.ok) {
-        throw new Error("Die Analyse konnte nicht gestartet werden.");
-      }
-
-      const data = (await response.json()) as AnalysisResponse;
+      const [data] = await Promise.all([fetchAnalysisSnapshot(), wait(2600)]);
       setActiveAnalysisStep(analysisSteps.length - 1);
       const criticalCount = data.checks.filter((check) => check.status === "critical").length;
       const unavailableCount = data.checks.filter((check) => check.status === "unavailable").length;
@@ -1505,17 +1584,17 @@ function App() {
                     label: "CPU",
                     value: formatCpu(analysis.systemDashboard.cpu),
                     hint: "Systemlast der CCU/RaspberryMatic.",
-                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen, „Logs und Verbindungen per Shell sammeln“ minütlich einrichten oder das CCU-WebUI-Script erneut ausführen.",
+                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten. Der Verlauf zeigt 0–100% CPU-Auslastung der CCU.",
                     sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseCpuLoad(point.cpu)).filter((value): value is number => value !== undefined)),
-                    sparklineLabel: "CPU-Verlauf aus Shell-Collector-Snapshots"
+                    sparklineLabel: "CPU-Verlauf 0 bis 100 Prozent"
                   },
                   {
                     label: "RAM",
                     value: formatMemory(analysis.systemDashboard.memory),
                     hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
-                    help: "Wenn RAM nicht verfügbar ist: Shell-Collector minütlich einrichten oder das CCU-WebUI-Script erneut ausführen. RAM kommt von `free -m` auf der CCU.",
+                    help: "Wenn RAM nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten oder das CCU-WebUI-Script erneut kopieren. Der Verlauf zeigt 0–100% RAM-Belegung.",
                     sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseMemoryUsagePercent(point.memory)).filter((value): value is number => value !== undefined)),
-                    sparklineLabel: "RAM-Verlauf in Prozent"
+                    sparklineLabel: "RAM-Verlauf 0 bis 100 Prozent"
                   },
                   {
                     label: "Temperatur",
@@ -1535,8 +1614,14 @@ function App() {
                   },
                   {
                     label: "Backups",
-                    value: formatBackups(analysis.systemDashboard.backups, analysis.systemDashboard.backupPaths),
-                    hint: Number(analysis.systemDashboard.backups ?? 0) > 0 ? "Gefundene CCU-Backup-Dateien." : "Keine Backup-Dateien in den bekannten CCU-Pfaden gefunden.",
+                    value: formatBackups(
+                      analysis.systemDashboard.backups,
+                      analysis.systemDashboard.backupPaths,
+                      analysis.systemDashboard.backupLatestDirectory,
+                      analysis.systemDashboard.backupLatestAt,
+                      analysis.systemDashboard.backupLatestPath
+                    ),
+                    hint: Number(analysis.systemDashboard.backups ?? 0) > 0 ? "Backup-Ordner und Datum des neuesten Backups." : "Keine Backup-Dateien in den bekannten CCU-Pfaden gefunden.",
                     help: "Bekannte Pfade: `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard`. Per SSH suchen: `find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)'`."
                   },
                   {
@@ -1544,18 +1629,6 @@ function App() {
                     value: formatUptime(analysis.systemDashboard.uptime),
                     hint: "Laufzeit seit dem letzten Neustart.",
                     help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
-                  },
-                  {
-                    label: "Logzeilen",
-                    value: `${analysis.systemDashboard.logs}`,
-                    hint: "Übermittelte Logzeilen für belegbare Hinweise.",
-                    help: "Logs sind optional. Wenn du sie willst: Setup → „Logs und Verbindungen per Shell sammeln“ öffnen, Befehl kopieren und auf der CCU per SSH ausführen."
-                  },
-                  {
-                    label: "Verbindungen",
-                    value: `${analysis.systemDashboard.connections}`,
-                    hint: "Aktive Verbindungen zu typischen CCU-Diensten.",
-                    help: "Verbindungen sind optional. Dafür den Shell-Zusatzbefehl auf der CCU ausführen; er nutzt `ss`/`netstat`, um Zugriffe auf typische CCU-Ports zu zählen."
                   }
                 ].map((metric) => (
                   <div className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""}`} key={metric.label}>
@@ -1571,9 +1644,17 @@ function App() {
                     <strong>{metric.value}</strong>
                     <em>{metric.hint}</em>
                     {metric.sparkline && (
-                      <svg className="metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label={metric.sparklineLabel}>
-                        <polyline points={metric.sparkline} />
-                      </svg>
+                      <div className="metric-chart" aria-label={metric.sparklineLabel}>
+                        <div className="metric-chart__axis">
+                          <span>100%</span>
+                          <span>0%</span>
+                        </div>
+                        <svg className="metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label={metric.sparklineLabel}>
+                          <line x1="0" y1="0" x2="120" y2="0" />
+                          <line x1="0" y1="34" x2="120" y2="34" />
+                          <polyline points={metric.sparkline} />
+                        </svg>
+                      </div>
                     )}
                   </div>
                 ))}

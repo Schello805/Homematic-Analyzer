@@ -126,11 +126,35 @@ value_or_empty() {
   sh -c "$1" 2>/dev/null | json_escape || true
 }
 
+read_cpu_percent() {
+  if [ ! -r /proc/stat ]; then
+    uptime 2>/dev/null | json_escape || true
+    return
+  fi
+
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat || return
+  idle_one=$((idle + iowait))
+  total_one=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  sleep 1
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat || return
+  idle_two=$((idle + iowait))
+  total_two=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  total_delta=$((total_two - total_one))
+  idle_delta=$((idle_two - idle_one))
+
+  if [ "$total_delta" -le 0 ]; then
+    printf '0%%'
+    return
+  fi
+
+  awk "BEGIN { printf \"%.0f%%\", (100 * ($total_delta - $idle_delta) / $total_delta) }"
+}
+
 UPTIME_VALUE="$(value_or_empty "uptime")"
 MEMORY_VALUE="$(value_or_empty "free -m || top -bn1 | grep '^Mem:' | head -n 1")"
-DISK_VALUE="$(value_or_empty "df -h / 2>/dev/null || df -h | head -n 2")"
+DISK_VALUE="$(value_or_empty "df -h /usr/local 2>/dev/null || df -h / 2>/dev/null || df -h | head -n 2")"
 TEMP_VALUE="$(value_or_empty "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'")"
-CPU_VALUE="$(value_or_empty "uptime")"
+CPU_VALUE="$(read_cpu_percent)"
 for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
   if [ -d "$backup_dir" ]; then
     find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
@@ -138,6 +162,16 @@ for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
 done
 sort -u "$BACKUP_LIST_FILE" -o "$BACKUP_LIST_FILE" 2>/dev/null || true
 BACKUP_COUNT="$(wc -l < "$BACKUP_LIST_FILE" 2>/dev/null | tr -d ' ')"
+LATEST_BACKUP_PATH=""
+LATEST_BACKUP_DIR=""
+LATEST_BACKUP_AT=""
+if [ -s "$BACKUP_LIST_FILE" ]; then
+  LATEST_BACKUP_PATH="$(while IFS= read -r line; do [ -f "$line" ] && printf '%s\n' "$line"; done < "$BACKUP_LIST_FILE" | xargs ls -1t 2>/dev/null | head -n 1 || true)"
+fi
+if [ -n "$LATEST_BACKUP_PATH" ]; then
+  LATEST_BACKUP_DIR="$(dirname "$LATEST_BACKUP_PATH" 2>/dev/null || true)"
+  LATEST_BACKUP_AT="$(date -r "$LATEST_BACKUP_PATH" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || true)"
+fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
@@ -165,7 +199,11 @@ echo "Homematic Analyzer: Systemwerte gesammelt."
   printf '    "temperatureRaw": "%s",\n' "$TEMP_VALUE"
   printf '    "cpu": "%s"\n' "$CPU_VALUE"
   printf '  },\n'
-  printf '  "backups": { "count": "%s", "paths": [\n' "$BACKUP_COUNT"
+  printf '  "backups": { "count": "%s", "latestPath": "%s", "latestDirectory": "%s", "latestAt": "%s", "paths": [\n' \
+    "$BACKUP_COUNT" \
+    "$(printf '%s' "$LATEST_BACKUP_PATH" | json_escape)" \
+    "$(printf '%s' "$LATEST_BACKUP_DIR" | json_escape)" \
+    "$(printf '%s' "$LATEST_BACKUP_AT" | json_escape)"
   FIRST=1
   tail -n 8 "$BACKUP_LIST_FILE" 2>/dev/null | while IFS= read -r line; do
     [ -z "$line" ] && continue
