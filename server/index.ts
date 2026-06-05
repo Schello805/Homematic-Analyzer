@@ -270,7 +270,7 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     available: true,
     host: stringFromRecord(ccuSystem, "host") ?? collector?.host,
     ...ccuTarget,
-    collectedAt: masterdata?.collectedAt ?? collector?.collectedAt,
+    collectedAt: collector?.collectedAt ?? masterdata?.collectedAt,
     uptime: stringFromRecord(collector?.system, "uptime") ?? stringFromRecord(ccuSystem, "uptime"),
     memory: stringFromRecord(collector?.system, "memory") ?? stringFromRecord(ccuSystem, "memory"),
     disk: stringFromRecord(collector?.system, "disk") ?? stringFromRecord(ccuSystem, "disk"),

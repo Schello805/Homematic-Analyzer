@@ -282,7 +282,16 @@ function loadSavedAnalysis(): AnalysisResponse | null {
 
   try {
     const savedAnalysis = window.localStorage.getItem(analysisStorageKey);
-    return savedAnalysis ? JSON.parse(savedAnalysis) as AnalysisResponse : null;
+    if (!savedAnalysis) return null;
+
+    const parsedAnalysis = JSON.parse(savedAnalysis) as AnalysisResponse;
+    const generatedAt = new Date(parsedAnalysis.generatedAt).getTime();
+    if (!Number.isFinite(generatedAt) || Date.now() - generatedAt > 6 * 60 * 60 * 1000) {
+      window.localStorage.removeItem(analysisStorageKey);
+      return null;
+    }
+
+    return parsedAnalysis;
   } catch {
     return null;
   }
@@ -1732,7 +1741,7 @@ function App() {
                 </div>
                 <span>
                   {analysis.systemDashboard.collectedAt
-                    ? `Zuletzt ${new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}`
+                    ? `Systemwerte zuletzt ${new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}`
                     : "Aktueller Snapshot"}
                 </span>
               </div>
