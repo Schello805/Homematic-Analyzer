@@ -151,6 +151,12 @@ curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001
 
 Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
 
+## DC-Analyzer und Gerätenamen
+
+Der DC-Analyzer orientiert sich am AskSinAnalyzerXS: echte Sniffer-Telegramme werden vom seriellen Port gelesen, Duty-Cycle-Anteile werden aus Telegrammlänge und Flags berechnet und pro Funkadresse gruppiert.
+
+Für verständliche Gerätenamen braucht der Analyzer die kompatible CCU-Systemvariable `AskSinAnalyzerDevList`. Wer AskSinAnalyzerXS bereits nutzt, hat diese Variable oft schon. Dann sendet das normale CCU-Stammdaten-Script sie automatisch mit. Falls sie fehlt, zeigt der DC-Analyzer einen Hinweis und bietet ein Copy-Paste-WebUI-Script an, das `AskSinAnalyzerDevList` erstellt oder aktualisiert.
+
 ## Aktueller Funktionsstand
 
 Bereits umgesetzt:
@@ -165,14 +171,14 @@ Bereits umgesetzt:
 - HmIP-Routing-Hinweis auf Basis vorhandener Gerätedaten und möglicher Router-/Repeater-Kandidaten.
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
+- DC-Analyzer mit AskSin-kompatibler Telegramm-Auswertung, Duty-Cycle-Anteil pro Gerät und optionaler Namensauflösung über `AskSinAnalyzerDevList`.
 
 Noch offen bzw. bewusst nur vorbereitet:
 
-- Echte AskSin Analyzer XS Live-Anbindung über seriellen Port; aktuell wird der Port nur erfasst/vorbereitet.
 - Echte HmIP-Routing-Topologie aus HmIPServer-Daten oder belastbaren Logquellen ableiten.
 - Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
 - Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
-- Sniffer-getriebene Funkanalyse mit Telegrammzählung, Signalstärken und Carrier-Sense-Verlauf.
+- Längere Sniffer-Historie, Carrier-Sense-Verlauf und Live-Streaming statt kurzer Momentaufnahme.
 
 ## Dokumentation
 

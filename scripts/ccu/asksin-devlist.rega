@@ -1,0 +1,161 @@
+! Homematic Analyzer - AskSinAnalyzerXS Geräteliste
+! Legt/aktualisiert die kompatible Systemvariable AskSinAnalyzerDevList.
+! Diese Variable wird auch vom originalen AskSinAnalyzerXS verwendet.
+
+string analyzerUrl = "__ANALYZER_URL__";
+string analyzerToken = "__ANALYZER_TOKEN__";
+string endpoint = analyzerUrl # "/api/ccu-masterdata";
+
+WriteLine("Homematic Analyzer: AskSin-Geräteliste wird erstellt");
+WriteLine("Homematic Analyzer: kompatible Variable AskSinAnalyzerDevList wird genutzt");
+
+object systemVariables = dom.GetObject(ID_SYSTEM_VARIABLES);
+object askSinDevList = dom.GetObject("AskSinAnalyzerDevList");
+if (!askSinDevList) {
+  WriteLine("Homematic Analyzer: Variable AskSinAnalyzerDevList wird angelegt");
+  askSinDevList = dom.CreateObject(OT_VARDP);
+  askSinDevList.Name("AskSinAnalyzerDevList");
+  askSinDevList.ValueType(ivtString);
+  askSinDevList.ValueSubType(istChar8859);
+  systemVariables.Add(askSinDevList.ID());
+  dom.RTUpdate(0);
+}
+
+object status = dom.GetObject("HomematicAnalyzer_Status");
+if (!status) {
+  status = dom.CreateObject(OT_VARDP);
+  status.Name("HomematicAnalyzer_Status");
+  status.ValueType(ivtString);
+  status.ValueSubType(istChar8859);
+  systemVariables.Add(status.ID());
+  dom.RTUpdate(0);
+}
+
+object errorVar = dom.GetObject("HomematicAnalyzer_Error");
+if (!errorVar) {
+  errorVar = dom.CreateObject(OT_VARDP);
+  errorVar.Name("HomematicAnalyzer_Error");
+  errorVar.ValueType(ivtString);
+  errorVar.ValueSubType(istChar8859);
+  systemVariables.Add(errorVar.ID());
+  dom.RTUpdate(0);
+}
+
+string now = system.Date("%s");
+string nowIso = system.Date("%Y-%m-%dT%H:%M:%S");
+string centralName;
+string stdout;
+string stderr;
+system.Exec("hostname", &centralName, &stderr);
+centralName = centralName.Trim();
+centralName = centralName.Replace("\\", "\\\\");
+centralName = centralName.Replace("\"", "\\\"");
+centralName = centralName.Replace("'", " ");
+centralName = centralName.Replace("\n", " ");
+centralName = centralName.Replace("\r", " ");
+
+string devicesJson = "[";
+devicesJson = devicesJson # "{\"address\":15728641,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast All Devices\"},";
+devicesJson = devicesJson # "{\"address\":15728642,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast All Routers\"},";
+devicesJson = devicesJson # "{\"address\":15728643,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast All AccessControllers\"},";
+devicesJson = devicesJson # "{\"address\":15728644,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast All Thermostats\"},";
+devicesJson = devicesJson # "{\"address\":15728645,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast All Smoke Sensors\"},";
+devicesJson = devicesJson # "{\"address\":15728769,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast Permanent Listener\"},";
+devicesJson = devicesJson # "{\"address\":15728770,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast Burst Listener\"},";
+devicesJson = devicesJson # "{\"address\":15728771,\"serial\":\"00000000000000\",\"name\":\"HmIP Multicast Triple Burst Listener\"},";
+devicesJson = devicesJson # "{\"address\":0,\"serial\":\"0000000000\",\"name\":\"HMRF Broadcast\"},";
+integer deviceCount = 0;
+string deviceId;
+
+foreach(deviceId, dom.GetObject(ID_DEVICES).EnumUsedIDs()) {
+  object device = dom.GetObject(deviceId);
+  if ((device) && (true == device.ReadyConfig())) {
+    string rfAddress;
+    string deviceName;
+    string serial;
+    string hssType;
+    string metaData;
+    string metaEntry;
+    rfAddress = "";
+    deviceName = device.Name();
+    serial = device.Address();
+    hssType = device.HssType();
+    metaData = device.MetaData("DEVDESC");
+
+    foreach(metaEntry, metaData.Split(",")) {
+      if (metaEntry.Substr(0,10) == "RF_ADDRESS") {
+        rfAddress = metaEntry.Replace("RF_ADDRESS:","");
+      }
+    }
+
+    deviceName = deviceName.Replace("\\", "\\\\");
+    deviceName = deviceName.Replace("\"", "\\\"");
+    deviceName = deviceName.Replace("'", " ");
+    deviceName = deviceName.Replace("\n", " ");
+    deviceName = deviceName.Replace("\r", " ");
+
+    serial = serial.Replace("\\", "\\\\");
+    serial = serial.Replace("\"", "\\\"");
+    serial = serial.Replace("'", " ");
+
+    hssType = hssType.Replace("\\", "\\\\");
+    hssType = hssType.Replace("\"", "\\\"");
+    hssType = hssType.Replace("'", " ");
+
+    if ((rfAddress.Length() > 0) && (rfAddress != "0")) {
+      if ((hssType != "RPI-RF-MOD") && (hssType != "HmIP-RFUSB") && (hssType != "HmIP-CCU3")) {
+        if (hssType == "HM-RCV-50") {
+          deviceName = "Zentrale: " # centralName # " - BidCos-RF";
+        }
+        if (hssType == "HmIP-RCV-50") {
+          deviceName = "Zentrale: " # centralName # " - HmIP-RF";
+          serial = serial # "-000";
+        }
+        deviceCount = deviceCount + 1;
+        devicesJson = devicesJson # "{";
+        devicesJson = devicesJson # "\"name\":\"" # deviceName # "\",";
+        devicesJson = devicesJson # "\"serial\":\"" # serial # "\",";
+        devicesJson = devicesJson # "\"address\":" # rfAddress;
+        devicesJson = devicesJson # "},";
+      }
+    }
+  }
+}
+
+devicesJson = devicesJson # "]";
+devicesJson = devicesJson.Replace("},]", "}]");
+
+string askSinJson = "{";
+askSinJson = askSinJson # "\"created_at\":" # now # ",";
+askSinJson = askSinJson # "\"devices\":" # devicesJson;
+askSinJson = askSinJson # "}";
+
+askSinDevList.State(askSinJson);
+
+string payload = "{";
+payload = payload # "\"token\":\"" # analyzerToken # "\",";
+payload = payload # "\"source\":\"rega-asksin-devlist\",";
+payload = payload # "\"collectedAt\":\"" # nowIso # "\",";
+payload = payload # "\"deviceCount\":" # deviceCount.ToString() # ",";
+payload = payload # "\"askSinDevList\":" # askSinJson;
+payload = payload # "}";
+
+string command = "curl -fsS --connect-timeout 5 --max-time 20 -H 'Content-Type: application/json' -X POST --data-binary '" # payload # "' '" # endpoint # "'";
+
+WriteLine("Homematic Analyzer: " # deviceCount.ToString() # " Geräte in AskSinAnalyzerDevList geschrieben");
+WriteLine("Homematic Analyzer: Geräteliste wird an Analyzer gesendet");
+system.Exec(command, &stdout, &stderr);
+
+if (stderr.Length() > 0) {
+  status.State("AskSin-Geräteliste: Fehler beim Senden");
+  errorVar.State(stderr);
+  WriteLine("Homematic Analyzer: Fehler beim Senden");
+  WriteLine(stderr);
+} else {
+  status.State("AskSin-Geräteliste OK - " # deviceCount.ToString() # " Geräte");
+  errorVar.State("");
+  WriteLine("Homematic Analyzer: AskSin-Geräteliste erfolgreich aktualisiert");
+  if (stdout.Length() > 0) {
+    WriteLine(stdout);
+  }
+}

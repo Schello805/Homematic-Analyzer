@@ -148,8 +148,19 @@ const ccuMasterdataSchema = z.object({
     name: z.string().max(200).optional(),
     address: z.string().max(80).optional(),
     type: z.string().max(120).optional(),
-    firmware: z.string().max(80).optional()
-  })).max(1000).optional()
+    firmware: z.string().max(80).optional(),
+    rfAddress: z.union([z.string().max(80), z.number()]).optional(),
+    radioAddress: z.union([z.string().max(80), z.number()]).optional(),
+    serial: z.string().max(80).optional()
+  })).max(1000).optional(),
+  askSinDevList: z.object({
+    created_at: z.number().optional(),
+    devices: z.array(z.object({
+      name: z.string().max(200).optional(),
+      serial: z.string().max(80).optional(),
+      address: z.union([z.number(), z.string().max(80)]).optional()
+    })).max(1500).optional()
+  }).optional()
 });
 
 function replacementCount(value: string) {
@@ -207,12 +218,22 @@ function hexAddress(value: number | string | undefined): string | undefined {
 
 function buildSnifferDeviceNameMap() {
   const map = new Map<string, { name: string; serial?: string; type?: string }>();
+  for (const device of latestCcuMasterdata?.askSinDevList?.devices ?? []) {
+    const key = hexAddress(device.address);
+    if (!key) continue;
+    map.set(key, {
+      name: device.name || device.serial || key,
+      serial: device.serial
+    });
+  }
+
   for (const device of latestCcuMasterdata?.devices ?? []) {
     const name = device.name || device.address || "Unbenanntes Gerät";
-    const serial = device.address;
+    const serial = device.serial ?? device.address;
     const type = device.type;
     const keys = [
       device.address,
+      device.serial,
       hexAddress(device.address),
       hexAddress((device as { rfAddress?: string | number }).rfAddress),
       hexAddress((device as { radioAddress?: string | number }).radioAddress)
@@ -707,8 +728,14 @@ app.post("/api/ccu-masterdata", express.raw({ type: "*/*", limit: "2mb" }), asyn
   }
 
   latestCcuMasterdata = {
+    ...latestCcuMasterdata,
     ...parsed.data,
-    collectedAt: parsed.data.collectedAt ?? new Date().toISOString()
+    collectedAt: parsed.data.collectedAt ?? new Date().toISOString(),
+    system: parsed.data.system ?? latestCcuMasterdata?.system,
+    backups: parsed.data.backups ?? latestCcuMasterdata?.backups,
+    devices: parsed.data.devices ?? latestCcuMasterdata?.devices,
+    askSinDevList: parsed.data.askSinDevList ?? latestCcuMasterdata?.askSinDevList,
+    deviceCount: parsed.data.deviceCount ?? latestCcuMasterdata?.deviceCount ?? parsed.data.devices?.length ?? latestCcuMasterdata?.devices?.length
   };
   await persistCcuMasterdata(latestCcuMasterdata);
 
@@ -861,7 +888,9 @@ app.get("/api/ccu-masterdata/latest", (_request, response) => {
     available: Boolean(latestCcuMasterdata),
     collectedAt: latestCcuMasterdata?.collectedAt,
     deviceCount: latestCcuMasterdata?.deviceCount ?? latestCcuMasterdata?.devices?.length ?? 0,
-    systemAvailable: Boolean(latestCcuMasterdata?.system || latestCcuMasterdata?.backups)
+    systemAvailable: Boolean(latestCcuMasterdata?.system || latestCcuMasterdata?.backups),
+    askSinDevListAvailable: Boolean(latestCcuMasterdata?.askSinDevList?.devices?.length),
+    askSinDevListCount: latestCcuMasterdata?.askSinDevList?.devices?.length ?? 0
   });
 });
 
@@ -1043,6 +1072,19 @@ app.get("/api/ccu-masterdata/script", async (request, response) => {
   const analyzerUrl = String(request.query.url ?? `http://127.0.0.1:${port}`);
   const token = String(request.query.token ?? "bitte-token-aendern");
   const scriptPath = join(root, "scripts", "ccu", "daily-masterdata.rega");
+  const script = await readFile(scriptPath, "utf8");
+
+  response.type("text/plain").send(
+    script
+      .replaceAll("__ANALYZER_URL__", analyzerUrl)
+      .replaceAll("__ANALYZER_TOKEN__", token)
+  );
+});
+
+app.get("/api/asksin-devlist/script", async (request, response) => {
+  const analyzerUrl = String(request.query.url ?? `http://127.0.0.1:${port}`);
+  const token = String(request.query.token ?? "bitte-token-aendern");
+  const scriptPath = join(root, "scripts", "ccu", "asksin-devlist.rega");
   const script = await readFile(scriptPath, "utf8");
 
   response.type("text/plain").send(

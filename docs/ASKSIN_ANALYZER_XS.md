@@ -1,32 +1,50 @@
-# AskSin Analyzer XS
+# AskSin Analyzer XS / DC-Analyzer
 
-AskSin Analyzer XS ist die optionale Grundlage für die Funk-Tiefenanalyse.
+Der DC-Analyzer ist optional. Die normale Homematic-Analyse funktioniert auch ohne Sniffer.
 
-Repository:
+Referenzprojekt:
 
-https://github.com/jp112sdl/AskSinAnalyzerXS
+https://github.com/psi-4ward/AskSinAnalyzerXS
 
-## Rolle im Homematic Analyzer
+## Was der DC-Analyzer auswertet
 
-Homematic Analyzer soll auch ohne Sniffer nützlich sein. Der Sniffer erweitert die Analyse um genauere Funkbelege.
+- echte Sniffer-Telegramme vom seriellen Port, z. B. `/dev/ttyUSB0`
+- RSSI pro Telegramm
+- RSSI-Noise / Carrier-Sense-Zeilen, wenn der Sniffer sie liefert
+- Duty-Cycle-Anteil pro Funkadresse
+- Tabellenansicht nach Funklast
 
-## Geplante Auswertung
+Die Berechnung orientiert sich an AskSinAnalyzerXS: Die Sendezeit wird aus Telegrammlänge und Flags berechnet. Ohne echte Telegramme wird kein Funkproblem behauptet.
 
-- Funktelegramme zeitlich einordnen
-- Signalqualität verständlich erklären
-- auffällige Geräte anhand belegter Daten markieren
-- Sniffer-Verbindung überwachen
+## Gerätenamen
 
-## UX-Prinzip
+Sniffer-Telegramme enthalten Funkadressen, aber keine CCU-Gerätenamen. Für verständliche Namen nutzt der Analyzer die kompatible Systemvariable:
 
-Ohne Sniffer zeigt die App:
+```text
+AskSinAnalyzerDevList
+```
 
-> Nicht möglich – kein Sniffer eingerichtet.
+Wenn AskSinAnalyzerXS bereits genutzt wurde, existiert diese Variable oft schon. Dann sendet das normale CCU-Stammdaten-Script sie automatisch an den Homematic Analyzer.
 
-Mit Sniffer zeigt die App:
+Wenn sie fehlt, zeigt der DC-Analyzer einen Hinweis und bietet ein Copy-Paste-WebUI-Script an. Dieses Script:
 
-> Funk-Tiefenanalyse aktiv.
+- legt `AskSinAnalyzerDevList` an, falls sie fehlt
+- liest die Funkadresse aus `MetaData("DEVDESC")` / `RF_ADDRESS`
+- schreibt die kompatible JSON-Struktur
+- sendet die Geräteliste zusätzlich an den Homematic Analyzer
 
-Der USB-Port kann in der Web-App per Dropdown ausgewählt werden. Bevorzugt werden stabile Pfade wie `/dev/serial/by-id/...`; falls Proxmox/LXC den Port anders durchreicht, bleibt eine manuelle Eingabe möglich.
+## Empfohlener Ablauf
 
-Technische Details bleiben optional sichtbar.
+1. Sniffer per USB anschließen.
+2. In Proxmox/LXC den USB-Port durchreichen, falls nötig.
+3. Im Setup oder DC-Analyzer den USB-Port wählen.
+4. DC-Analyzer öffnen und `Sniffer prüfen` klicken.
+5. Wenn Namen fehlen: `AskSin-Geräteliste Script kopieren`.
+6. Script in der CCU-WebUI als Programm einfügen und ausführen.
+7. Ein Homematic-Gerät auslösen und erneut prüfen.
+
+## Hinweise
+
+- Startmeldungen wie `ready`, `CC init` oder `AskSin++` zeigen nur, dass der Sniffer antwortet.
+- Für die Tabelle braucht der Analyzer Telegrammzeilen im Format `:...;`.
+- Wenn nur Funkadressen sichtbar sind, fehlt die passende `AskSinAnalyzerDevList`.

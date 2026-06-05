@@ -143,7 +143,18 @@ export type CcuMasterdataPayload = {
     address?: string;
     type?: string;
     firmware?: string;
+    rfAddress?: string | number;
+    radioAddress?: string | number;
+    serial?: string;
   }>;
+  askSinDevList?: {
+    created_at?: number;
+    devices?: Array<{
+      name?: string;
+      serial?: string;
+      address?: number | string;
+    }>;
+  };
 };
 
 export type ReleaseCheck = {

@@ -102,6 +102,8 @@ type MasterdataStatus = {
   collectedAt?: string;
   deviceCount: number;
   systemAvailable?: boolean;
+  askSinDevListAvailable?: boolean;
+  askSinDevListCount?: number;
 };
 
 type UsbPort = {
@@ -622,6 +624,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [ccuScriptPreview, setCcuScriptPreview] = useState("");
+  const [askSinScriptPreview, setAskSinScriptPreview] = useState("");
   const [collectorCommandPreview, setCollectorCommandPreview] = useState("");
   const [masterdataStatus, setMasterdataStatus] = useState<MasterdataStatus | null>(null);
   const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
@@ -671,6 +674,15 @@ function App() {
       token: "homematic-analyzer-demo-token"
     });
     return `${baseUrl}/api/ccu-masterdata/script?${params.toString()}`;
+  }, []);
+
+  const askSinDevListScriptUrl = useMemo(() => {
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({
+      url: baseUrl,
+      token: "homematic-analyzer-demo-token"
+    });
+    return `${baseUrl}/api/asksin-devlist/script?${params.toString()}`;
   }, []);
 
   const collectorCommand = useMemo(() => `curl -fsSL "${scriptUrl}" | sh`, [scriptUrl]);
@@ -1432,6 +1444,33 @@ function App() {
     }
   }
 
+  async function copyAskSinDevListScript() {
+    try {
+      const response = await fetch(askSinDevListScriptUrl);
+
+      if (!response.ok) {
+        throw new Error("Script konnte nicht geladen werden.");
+      }
+
+      const script = await response.text();
+      const copied = await copyText(script);
+      setAskSinScriptPreview(copied ? "" : script);
+      showToast({
+        type: copied ? "success" : "warning",
+        title: copied ? "AskSin-Script kopiert" : "Kopieren blockiert",
+        message: copied
+          ? "Script wurde kopiert. Füge es in der CCU-WebUI als Programm ein."
+          : "Das Script wird unten eingeblendet. Bitte manuell markieren und kopieren."
+      });
+    } catch {
+      showToast({
+        type: "warning",
+        title: "Kopieren nicht möglich",
+        message: "Das Script wird unten eingeblendet. Bitte manuell markieren und kopieren."
+      });
+    }
+  }
+
 
   return (
     <main>
@@ -1761,6 +1800,34 @@ function App() {
             </a>
           </div>
 
+          <div className={`dc-guidance-card ${masterdataStatus?.askSinDevListAvailable ? "is-ok" : "needs-action"}`}>
+            <div>
+              <strong>{masterdataStatus?.askSinDevListAvailable ? "Gerätenamen vorbereitet" : "Gerätenamen fehlen noch"}</strong>
+              <span>
+                {masterdataStatus?.askSinDevListAvailable
+                  ? `AskSinAnalyzerDevList ist vorhanden (${masterdataStatus.askSinDevListCount ?? 0} Einträge). Funkadressen können zu Namen aufgelöst werden.`
+                  : "Der Sniffer liefert Funkadressen. Für Namen braucht der Analyzer die kompatible CCU-Systemvariable AskSinAnalyzerDevList."}
+              </span>
+            </div>
+            {!masterdataStatus?.askSinDevListAvailable && (
+              <div className="dc-guidance-actions">
+                <button type="button" onClick={() => void copyAskSinDevListScript()}>
+                  AskSin-Geräteliste Script kopieren
+                </button>
+                <a href="https://homematic-forum.de/forum/viewtopic.php?t=84237" target="_blank" rel="noreferrer">
+                  Original/Forum ansehen
+                </a>
+              </div>
+            )}
+          </div>
+
+          {askSinScriptPreview && (
+            <label className="script-preview">
+              AskSin-Geräteliste Script zum manuellen Kopieren
+              <textarea readOnly value={askSinScriptPreview} onFocus={(event) => event.target.select()} />
+            </label>
+          )}
+
           <div className="dc-setup-grid">
             <fieldset className="setup-card">
               <legend>Sniffer-Port</legend>
@@ -1880,9 +1947,20 @@ function App() {
                 </table>
               </div>
               {snifferSnapshot.devices.some((device) => device.name === device.address) && (
-                <p className="setup-note">
-                  Einige Namen fehlen, weil der Sniffer nur Funkadressen sieht. Dafür braucht der Analyzer eine CCU-Geräteliste mit Funkadresse.
-                </p>
+                <div className="dc-guidance-card needs-action">
+                  <div>
+                    <strong>Einige Gerätenamen fehlen</strong>
+                    <span>
+                      Das ist kein Fehler im Funkempfang: Die Telegramme enthalten nur Funkadressen. Kopiere das AskSin-Geräteliste-Script,
+                      führe es in der CCU-WebUI aus und prüfe danach erneut.
+                    </span>
+                  </div>
+                  <div className="dc-guidance-actions">
+                    <button type="button" onClick={() => void copyAskSinDevListScript()}>
+                      Script kopieren
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 

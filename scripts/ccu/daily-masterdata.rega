@@ -120,6 +120,8 @@ if (!systemBackups) {
   dom.RTUpdate(0);
 }
 
+object askSinDevList = dom.GetObject("AskSinAnalyzerDevList");
+
 string now = system.Date("%Y-%m-%dT%H:%M:%S");
 string hostValue;
 string uptimeValue;
@@ -129,6 +131,7 @@ string diskValue;
 string tempValue;
 string backupCount;
 string execError;
+string askSinDevListValue;
 
 WriteLine("Homematic Analyzer: CCU-Systemwerte werden gesammelt");
 system.Exec("hostname", &hostValue, &execError);
@@ -180,6 +183,11 @@ backupCount = backupCount.Replace("\"", "\\\"");
 backupCount = backupCount.Replace("'", " ");
 backupCount = backupCount.Replace("\n", " ");
 backupCount = backupCount.Replace("\r", " ");
+
+askSinDevListValue = "";
+if (askSinDevList) {
+  askSinDevListValue = askSinDevList.Value();
+}
 
 systemCpu.State(cpuValue);
 systemRam.State(ramValue);
@@ -251,6 +259,9 @@ payload = payload # "\"disk\":\"" # diskValue # "\",";
 payload = payload # "\"temperatureRaw\":\"" # tempValue # "\"";
 payload = payload # "},";
 payload = payload # "\"backups\":{\"count\":\"" # backupCount # "\"},";
+if (askSinDevListValue.Length() > 0) {
+  payload = payload # "\"askSinDevList\":" # askSinDevListValue # ",";
+}
 payload = payload # "\"devices\":" # devicesJson;
 payload = payload # "}";
 

@@ -432,6 +432,65 @@ h2 {
   background: #edf5ff;
 }
 
+.dc-guidance-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid #dbe4f0;
+  border-radius: 24px;
+  padding: 16px;
+  background: #f8fbff;
+}
+
+.dc-guidance-card.is-ok {
+  border-color: #abefc6;
+  background: #ecfdf3;
+}
+
+.dc-guidance-card.needs-action {
+  border-color: #fedf89;
+  background: #fffbeb;
+}
+
+.dc-guidance-card > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.dc-guidance-card strong {
+  color: #172033;
+}
+
+.dc-guidance-card span {
+  color: #5d687d;
+  line-height: 1.38;
+}
+
+.dc-guidance-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dc-guidance-actions button,
+.dc-guidance-actions a {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 13px;
+  cursor: pointer;
+  color: white;
+  font-weight: 760;
+  text-decoration: none;
+  background: #1849a9;
+}
+
+.dc-guidance-actions a {
+  color: #1849a9;
+  background: #edf5ff;
+}
+
 .dc-setup-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
@@ -2424,9 +2483,14 @@ pre {
   }
 
   .dc-page__header,
-  .dc-source-card {
+  .dc-source-card,
+  .dc-guidance-card {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .dc-guidance-actions {
+    justify-content: flex-start;
   }
 
   .results__header {
