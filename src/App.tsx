@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import packageInfo from "../package.json";
 
 type CheckStatus = "ok" | "improvement" | "warning" | "critical" | "unavailable";
@@ -616,6 +616,7 @@ function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
   const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "setup" | "settings">("analysis");
+  const updateReloadStarted = useRef(false);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
@@ -917,6 +918,40 @@ function App() {
     }
   }
 
+  function scheduleReloadAfterUpdate(reason: string) {
+    if (updateReloadStarted.current) return;
+    updateReloadStarted.current = true;
+    console.info("[Homematic Analyzer][Update] auto reload scheduled", { reason });
+    showToast({
+      type: "info",
+      title: "Neustart erkannt",
+      message: "Die Seite lädt automatisch neu, sobald der Analyzer wieder erreichbar ist."
+    });
+
+    const startedAt = Date.now();
+    const reloadWhenApiIsReady = async () => {
+      try {
+        const response = await fetch(`/api/health?reload=${Date.now()}`, { cache: "no-store" });
+        if (response.ok) {
+          console.info("[Homematic Analyzer][Update] API reachable, reloading page");
+          window.setTimeout(() => window.location.reload(), 700);
+          return;
+        }
+      } catch {
+      }
+
+      if (Date.now() - startedAt > 60000) {
+        console.warn("[Homematic Analyzer][Update] API wait timed out, reloading anyway");
+        window.location.reload();
+        return;
+      }
+
+      window.setTimeout(reloadWhenApiIsReady, 1500);
+    };
+
+    window.setTimeout(reloadWhenApiIsReady, 2500);
+  }
+
   async function runAppUpdate() {
     console.info("[Homematic Analyzer][Update] start clicked");
     setShowUpdateConfirm(false);
@@ -1206,8 +1241,9 @@ function App() {
           showToast({
             type: "success",
             title: "Update abgeschlossen",
-            message: "Bitte die Seite neu laden, damit der neue Stand aktiv ist."
+            message: "Die Seite lädt gleich automatisch neu."
           });
+          scheduleReloadAfterUpdate("completed-status");
         }
 
         if (status.status === "failed") {
@@ -1224,8 +1260,9 @@ function App() {
           status: "running",
           running: true,
           startedAt: current?.startedAt,
-          log: `${current?.log ?? ""}\nAnalyzer ist während des Updates kurz nicht erreichbar. Das kann beim Neustart normal sein.`.trim()
+          log: `${current?.log ?? ""}\nAnalyzer ist während des Updates kurz nicht erreichbar. Die Seite lädt automatisch neu, sobald er wieder da ist.`.trim()
         }));
+        scheduleReloadAfterUpdate("polling-failed-during-update");
       }
     }
 
@@ -2828,7 +2865,7 @@ function App() {
               {updateRunStatus.status === "running"
                 ? "Bitte warten. GitHub wird geladen, Abhängigkeiten werden installiert und die App wird gebaut."
                 : updateRunStatus.status === "completed"
-                  ? "Die App wurde aktualisiert. Lade die Seite neu, damit Browser und Analyzer denselben Stand verwenden."
+                  ? "Die App wurde aktualisiert. Die Seite lädt automatisch neu; der Button bleibt als Fallback."
                   : updateRunStatus.error ?? "Bitte Log prüfen oder per SSH aktualisieren."}
             </span>
             {updateRunStatus.status === "completed" && (
