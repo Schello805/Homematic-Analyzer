@@ -427,9 +427,16 @@ function resolveServiceMessageName(notification: UnknownRecord, nameMap: Map<str
   return undefined;
 }
 
-function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>): CcuEvidence[] {
-  const root = asRecord(parsedNotifications.systemNotifications ?? parsedNotifications.systemNotification ?? parsedNotifications);
-  const notifications = asArray(root.notification);
+function collectMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>, source: string): CcuEvidence[] {
+  const root = asRecord(
+    parsedNotifications.systemNotifications
+    ?? parsedNotifications.systemNotification
+    ?? parsedNotifications.alarmMessages
+    ?? parsedNotifications.alarmmessages
+    ?? parsedNotifications.alarms
+    ?? parsedNotifications
+  );
+  const notifications = asArray(root.notification ?? root.alarm ?? root.alarmmessage ?? root.message);
   const activeNotifications = notifications.filter((notificationValue) => {
     const notification = asRecord(notificationValue);
     const haystack = Object.values(notification).map((value) => String(value ?? "")).join(" ").toUpperCase();
@@ -438,6 +445,7 @@ function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map
   const skippedSticky = notifications.length - activeNotifications.length;
 
   console.info("[CCU DEBUG] ServiceMessages", JSON.stringify({
+    source,
     raw: notifications.length,
     active: activeNotifications.length,
     skippedStickyUnreach: skippedSticky
@@ -470,11 +478,19 @@ function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map
     }
 
     return {
-      source: "CCU Servicemeldung",
+      source,
       detail: name ? `${name}: ${message}` : `${readableType}: ${message}`,
       timestamp: stringValue(notification.timestamp)
     };
   });
+}
+
+function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>): CcuEvidence[] {
+  return collectMessages(parsedNotifications, nameMap, "CCU Servicemeldung");
+}
+
+function collectAlarmMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>): CcuEvidence[] {
+  return collectMessages(parsedNotifications, nameMap, "CCU Alarmmeldung");
 }
 
 function findDutyCycle(datapoints: UnknownRecord[], serviceMessages: CcuEvidence[]): number | undefined {
@@ -665,9 +681,10 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       sid: activeSid
     };
 
-    const [stateList, notifications] = await Promise.all([
+    const [stateList, notifications, alarms] = await Promise.all([
       fetchXml(endpointWithAuth, "/addons/xmlapi/statelist.cgi", config),
-      fetchXml(endpointWithAuth, "/addons/xmlapi/systemNotification.cgi", config).catch(() => ({}))
+      fetchXml(endpointWithAuth, "/addons/xmlapi/systemNotification.cgi", config).catch(() => ({})),
+      fetchXml(endpointWithAuth, "/addons/xmlapi/alarmmessages.cgi", config).catch(() => ({}))
     ]);
 
     const xmlError = detectXmlError(stateList);
@@ -681,6 +698,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
 
     const nameMap = collectNameMap(stateList);
     const serviceMessages = collectServiceMessages(notifications, nameMap);
+    const alarmMessages = collectAlarmMessages(alarms, nameMap);
     const datapoints = collectDatapoints(stateList);
     const devices = enrichFromServiceMessages(collectDevices(stateList), serviceMessages);
     const dutyCycle = findDutyCycle(datapoints, serviceMessages);
@@ -692,13 +710,15 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       collectedAt,
       devices,
       serviceMessages,
+      alarmMessages,
       dutyCycle,
       counters: {
         devices: devices.length,
         lowBattery: devices.filter((device) => device.lowBattery).length,
         unreachable: devices.filter((device) => device.unreachable).length,
         configPending: devices.filter((device) => device.configPending).length,
-        serviceMessages: serviceMessages.length
+        serviceMessages: serviceMessages.length,
+        alarmMessages: alarmMessages.length
       }
     };
   } catch (error) {
@@ -722,12 +742,14 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       error: detail,
       devices: [],
       serviceMessages: [],
+      alarmMessages: [],
       counters: {
         devices: 0,
         lowBattery: 0,
         unreachable: 0,
         configPending: 0,
-        serviceMessages: 0
+        serviceMessages: 0,
+        alarmMessages: 0
       }
     };
   } finally {

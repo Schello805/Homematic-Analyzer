@@ -99,6 +99,7 @@ export type CcuSnapshot = {
   error?: string;
   devices: CcuDevice[];
   serviceMessages: CcuEvidence[];
+  alarmMessages: CcuEvidence[];
   dutyCycle?: number;
   counters: {
     devices: number;
@@ -106,6 +107,7 @@ export type CcuSnapshot = {
     unreachable: number;
     configPending: number;
     serviceMessages: number;
+    alarmMessages: number;
   };
 };
 

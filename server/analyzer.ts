@@ -341,10 +341,33 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       ]
     },
     {
+      id: "alarm-messages",
+      title: "Alarmmeldungen",
+      category: "Sicherheit",
+      status: hasCcuData ? statusForCount(ccu?.counters.alarmMessages ?? 0) : "unavailable",
+      summary: hasCcuData
+        ? ccu?.counters.alarmMessages
+          ? `${ccu.counters.alarmMessages} Alarmmeldungen wurden gefunden.`
+          : "Keine Alarmmeldungen gefunden."
+        : "Alarmmeldungen können ohne CCU-Daten nicht geprüft werden.",
+      recommendation: hasCcuData
+        ? ccu?.counters.alarmMessages
+          ? "Alarmmeldungen zuerst prüfen und erst danach normale Servicemeldungen abarbeiten."
+          : "Kein Handlungsbedarf."
+        : "CCU-Zugang und XML-API prüfen.",
+      access: ["ccu"],
+      evidence: ccu?.alarmMessages.slice(0, 8) ?? [],
+      details: [
+        "Alarmmeldungen werden getrennt von normalen Servicemeldungen bewertet.",
+        "Nur echte Alarmmeldungen der Zentrale werden als kritisch markiert.",
+        "Wenn die XML-API keine Alarmmeldungen liefert, behauptet der Analyzer hier keinen Alarm."
+      ]
+    },
+    {
       id: "service-messages",
       title: "Servicemeldungen",
       category: "Geräte",
-      status: hasCcuData ? statusForCount(ccu?.counters.serviceMessages ?? 0) : "unavailable",
+      status: hasCcuData ? (ccu?.counters.serviceMessages ? "warning" : "ok") : "unavailable",
       summary: hasCcuData
         ? ccu?.counters.serviceMessages
           ? `${ccu.counters.serviceMessages} Servicemeldungen wurden gefunden.`
@@ -352,14 +375,15 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : "Servicemeldungen können ohne CCU-Daten nicht geprüft werden.",
       recommendation: hasCcuData
         ? ccu?.counters.serviceMessages
-          ? "Öffne die betroffenen Punkte und arbeite die Meldungen nacheinander ab."
+          ? "Prüfe die Meldungen in Ruhe. Kritisch werden nur echte Alarmmeldungen bewertet."
           : "Kein Handlungsbedarf."
         : "CCU-Zugang und XML-API prüfen.",
       access: ["ccu"],
       evidence: ccu?.serviceMessages.slice(0, 8) ?? [],
       details: [
-        "Servicemeldungen sind direkte Belege der Zentrale.",
-        "Die App zeigt sie nicht als Vermutung, sondern als Quelle für konkrete Analysepunkte."
+        "Servicemeldungen sind direkte Belege der Zentrale, aber nicht automatisch kritisch.",
+        "Sie helfen bei der Ursachenfindung, z. B. Batterie, Kommunikation oder Konfiguration.",
+        "Kritisch wird dieser Bereich erst über separate Alarmmeldungen oder belegte Einzelprüfungen."
       ]
     },
     {
@@ -416,7 +440,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "reachability",
       title: "Erreichbarkeit",
       category: "Geräte",
-      status: hasCcuData ? statusForCount(unreachableCount) : "unavailable",
+      status: hasCcuData ? (unreachableCount > 0 ? "warning" : "ok") : "unavailable",
       summary: hasCcuData
         ? unreachableDevices.length
           ? `${unreachableDevices.length} Geräte sind auffällig: ${deviceNames(ccu?.devices ?? [], (device) => device.unreachable)}.`
@@ -426,13 +450,14 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : "Erreichbarkeit kann ohne CCU-Daten nicht geprüft werden.",
       recommendation: hasCcuData
         ? unreachableCount
-          ? "Betroffene Geräte auf Strom/Batterie, Entfernung und Funkhindernisse prüfen."
+          ? "Betroffene Geräte auf Strom/Batterie, Entfernung und Funkhindernisse prüfen. Kritisch wird es erst bei Alarmmeldung oder wiederholter Störung."
           : "Kein Handlungsbedarf."
         : "CCU-Zugang einrichten, um nicht erreichbare Geräte nachweisbar zu erkennen.",
       access: ["ccu"],
       evidence: unreachableEvidence,
       details: [
-        "Als aktueller Fehler zählen aktive Servicemeldungen der Zentrale und zuordenbare Gerätebelege.",
+        "Als Hinweis zählen aktive Servicemeldungen der Zentrale und zuordenbare Gerätebelege.",
+        "Normale Servicemeldungen sind nicht automatisch kritisch.",
         "Historische UNREACH-/STICKY_UNREACH-Rohkanäle werden nicht mehr allein als aktueller Fehler gezählt."
       ]
     },

@@ -111,6 +111,28 @@ type UsbPort = {
   target?: string;
 };
 
+type SnifferSnapshot = {
+  checkedAt: string;
+  port?: string;
+  configured: boolean;
+  connected: boolean;
+  source: string;
+  summary: {
+    telegrams: number;
+    devices: number;
+    dutyCycle?: number;
+    carrierSense?: number;
+    weakestRssi?: number;
+  };
+  events: Array<{
+    raw: string;
+    device?: string;
+    rssi?: number;
+    dutyCycle?: number;
+    carrierSense?: number;
+  }>;
+};
+
 type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort">>;
 
 type CollectorStatus = {
@@ -563,7 +585,7 @@ function hasShellSystemData(systemDashboard?: SystemDashboard) {
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
-  const [currentPage, setCurrentPage] = useState<"analysis" | "setup" | "settings">("analysis");
+  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "setup" | "settings">("analysis");
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
@@ -584,6 +606,8 @@ function App() {
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
+  const [snifferSnapshot, setSnifferSnapshot] = useState<SnifferSnapshot | null>(null);
+  const [snifferLoading, setSnifferLoading] = useState(false);
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
@@ -713,6 +737,43 @@ function App() {
       }
     } finally {
       setUsbPortsLoading(false);
+    }
+  }
+
+  async function loadSnifferSnapshot(showSuccessToast = false) {
+    setSnifferLoading(true);
+    try {
+      const response = await fetch("/api/sniffer/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port: form.snifferPort.trim() })
+      });
+
+      if (!response.ok) throw new Error("Snifferdaten konnten nicht gelesen werden.");
+
+      const snapshot = (await response.json()) as SnifferSnapshot;
+      setSnifferSnapshot(snapshot);
+      if (showSuccessToast) {
+        showToast({
+          type: snapshot.connected ? "success" : snapshot.configured ? "warning" : "info",
+          title: "DC-Analyzer geprüft",
+          message: snapshot.connected
+            ? `${snapshot.summary.telegrams} Sniffer-Zeilen ausgewertet.`
+            : snapshot.configured
+              ? "Port ist eingetragen, aber noch keine Snifferdaten vorhanden."
+              : "Bitte zuerst einen Sniffer-Port im Setup auswählen."
+        });
+      }
+    } catch {
+      if (showSuccessToast) {
+        showToast({
+          type: "warning",
+          title: "Sniffer nicht lesbar",
+          message: "Prüfe USB-Port, Rechte und ob AskSin Analyzer XS Daten liefert."
+        });
+      }
+    } finally {
+      setSnifferLoading(false);
     }
   }
 
@@ -1217,6 +1278,12 @@ function App() {
     };
   }, [hasAnalysis, currentPage, loading, form, notificationSettings]);
 
+  useEffect(() => {
+    if (currentPage !== "dc") return;
+    void loadUsbPorts(false);
+    void loadSnifferSnapshot(false);
+  }, [currentPage]);
+
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -1366,6 +1433,9 @@ function App() {
           <div className="page-tabs__left">
             <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => setCurrentPage("analysis")}>
               Analyse
+            </button>
+            <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => setCurrentPage("dc")}>
+              DC-Analyzer
             </button>
             <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
               Einstellungen
@@ -1632,6 +1702,134 @@ function App() {
         </details>
       </section>
         </>
+      )}
+
+      {currentPage === "dc" && (
+        <section className="panel dc-page">
+          <div className="panel__header dc-page__header">
+            <div>
+              <p className="eyebrow">DC-Analyzer</p>
+              <h2>AskSin Analyzer XS Snifferdaten</h2>
+              <p>
+                Diese Seite ist für echte Funkmesswerte gedacht: Duty Cycle, Carrier Sense, Telegramme und RSSI werden nur angezeigt,
+                wenn ein Sniffer Daten liefert.
+              </p>
+            </div>
+            <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true)} disabled={snifferLoading}>
+              {snifferLoading ? "Prüfe ..." : "Sniffer prüfen"}
+            </button>
+          </div>
+
+          <div className="dc-source-card">
+            <div>
+              <strong>Quelle</strong>
+              <span>
+                Orientiert an AskSinAnalyzerXS: Der AskSinSniffer328P sendet Funktelegramme über UART/USB an den Analyzer.
+                Ohne empfangene Sniffer-Zeilen wird hier kein Funkproblem behauptet.
+              </span>
+            </div>
+            <a href="https://github.com/psi-4ward/AskSinAnalyzerXS" target="_blank" rel="noreferrer">
+              AskSinAnalyzerXS öffnen
+            </a>
+          </div>
+
+          <div className="dc-setup-grid">
+            <fieldset className="setup-card">
+              <legend>Sniffer-Port</legend>
+              <p>Wenn der Sniffer per USB am Analyzer-System steckt, wähle hier den seriellen Port. In Proxmox muss der Port vorher an den LXC durchgereicht werden.</p>
+              <div className="usb-port-picker">
+                <label>
+                  USB-Port
+                  <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
+                    <option value="">Kein Sniffer / später einrichten</option>
+                    {usbPorts.map((usbPort) => (
+                      <option value={usbPort.path} key={usbPort.path}>
+                        {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
+                      </option>
+                    ))}
+                    <option value="__manual__">Manuell eintragen</option>
+                  </select>
+                </label>
+                <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
+                  {usbPortsLoading ? "Suche läuft ..." : "Ports suchen"}
+                </button>
+              </div>
+              {showManualSnifferPort && (
+                <label>
+                  Manueller USB-Port
+                  <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
+                </label>
+              )}
+            </fieldset>
+
+            <div className={`dc-status-card ${snifferSnapshot?.connected ? "is-connected" : ""}`}>
+              <strong>{snifferSnapshot?.connected ? "Snifferdaten vorhanden" : "Noch keine Snifferdaten"}</strong>
+              <span>
+                {snifferSnapshot?.connected
+                  ? `Quelle: ${snifferSnapshot.source}`
+                  : form.snifferPort.trim()
+                    ? `Port ${form.snifferPort.trim()} ist eingetragen, aber noch wurden keine auswertbaren Zeilen gefunden.`
+                    : "Bitte zuerst einen Sniffer-Port eintragen oder die normale Analyse ohne Sniffer nutzen."}
+              </span>
+              {snifferSnapshot?.checkedAt && <small>Geprüft: {new Date(snifferSnapshot.checkedAt).toLocaleString("de-DE")}</small>}
+            </div>
+          </div>
+
+          <div className="dc-metric-grid">
+            {[
+              ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Funk-Sendezeit aus Snifferdaten."],
+              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? String(snifferSnapshot.summary.carrierSense) : "nicht gemessen", "Stör-/Belegungswert, wenn vom Sniffer geliefert."],
+              ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", "Auswertbare Sniffer-Zeilen im lokalen Snapshot."],
+              ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Absender aus Sniffer-Zeilen."],
+              ["Schwächstes RSSI", snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen", "Nur vorhanden, wenn RSSI in den Snifferdaten steht."]
+            ].map(([label, value, hint]) => (
+              <div className="dc-metric" key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+                <em>{hint}</em>
+              </div>
+            ))}
+          </div>
+
+          {snifferSnapshot?.events.length ? (
+            <div className="dc-events">
+              <div>
+                <p className="eyebrow">Telegramme</p>
+                <h3>Letzte Sniffer-Zeilen</h3>
+              </div>
+              <ul>
+                {snifferSnapshot.events.slice(0, 20).map((event, index) => (
+                  <li key={`${event.raw}-${index}`}>
+                    <strong>{event.device ?? "Unbekannter Absender"}</strong>
+                    <span>
+                      {event.rssi !== undefined ? `RSSI ${event.rssi} dBm · ` : ""}
+                      {event.dutyCycle !== undefined ? `DC ${event.dutyCycle}% · ` : ""}
+                      {event.carrierSense !== undefined ? `CS ${event.carrierSense} · ` : ""}
+                      {event.raw}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="system-collector-empty">
+              <div>
+                <p className="eyebrow">Noch leer</p>
+                <h3>Der DC-Analyzer wartet auf echte Snifferdaten</h3>
+                <p>
+                  Wichtig: Die normale Homematic-Analyse bleibt davon unabhängig. Diese Seite wird erst aussagekräftig,
+                  wenn der AskSin Analyzer XS Sniffer angeschlossen ist und Daten beim Analyzer ankommen.
+                </p>
+              </div>
+              <ol>
+                <li>Sniffer nach AskSinAnalyzerXS/AskSinSniffer328P aufbauen oder vorhandenen Sniffer anschließen.</li>
+                <li>USB-Port im Setup oder hier auswählen.</li>
+                <li>Bei Proxmox/LXC den USB-Port an den Container durchreichen.</li>
+                <li>Danach „Sniffer prüfen“ klicken.</li>
+              </ol>
+            </div>
+          )}
+        </section>
       )}
 
       {currentPage === "analysis" && (

@@ -25,6 +25,8 @@ const localDatabaseFile = join(dataDir, "homematic-analyzer-db.json");
 const ccuMasterdataFile = join(dataDir, "ccu-masterdata.json");
 const notificationSettingsFile = join(dataDir, "notification-settings.json");
 const updateLogFile = join(dataDir, "update.log");
+const snifferEventsFile = join(dataDir, "sniffer-events.json");
+const snifferLogFile = join(dataDir, "sniffer-lines.log");
 
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
@@ -131,6 +133,10 @@ const collectorSchema = z.object({
   backups: z.record(z.unknown()).optional()
 });
 
+const snifferSnapshotSchema = z.object({
+  port: z.string().max(300).optional()
+});
+
 const ccuMasterdataSchema = z.object({
   token: z.string().max(200).optional(),
   source: z.string().max(80).optional(),
@@ -181,6 +187,73 @@ function backupItemsFromRecord(record: Record<string, unknown> | undefined) {
     size: stringFromRecord(item, "size") ?? "",
     modifiedAt: stringFromRecord(item, "modifiedAt") ?? ""
   })).filter((item) => item.path || item.name);
+}
+
+function numberFromText(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseSnifferLine(line: string) {
+  const device = line.match(/\b(?:from|src|sender|device|addr(?:ess)?)[:=\s]+([A-Fa-f0-9]{6,}|[A-Z]{2,}[A-Z0-9]{5,})\b/i)?.[1]
+    ?? line.match(/\b([A-Fa-f0-9]{6})\b/)?.[1];
+  const rssi = numberFromText(line.match(/\bRSSI[:=\s-]*(-?\d+(?:[.,]\d+)?)\b/i)?.[1]);
+  const dutyCycle = numberFromText(line.match(/\b(?:DC|DutyCycle|Duty Cycle)[:=\s]*(\d+(?:[.,]\d+)?)\s*%?/i)?.[1]);
+  const carrierSense = numberFromText(line.match(/\b(?:CS|CarrierSense|Carrier Sense|Noise)[:=\s-]*(-?\d+(?:[.,]\d+)?)\b/i)?.[1]);
+
+  return {
+    raw: line,
+    device,
+    rssi,
+    dutyCycle,
+    carrierSense
+  };
+}
+
+async function readSnifferSnapshot(port?: string) {
+  const checkedAt = new Date().toISOString();
+  let lines: string[] = [];
+  let source = "Noch keine Snifferdaten empfangen.";
+
+  try {
+    const parsed = JSON.parse(await readFile(snifferEventsFile, "utf8"));
+    const parsedRecord = parsed && typeof parsed === "object" ? parsed as { events?: unknown[] } : {};
+    const entries: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsedRecord.events) ? parsedRecord.events : [];
+    lines = entries.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).slice(-300);
+    if (lines.length > 0) source = snifferEventsFile;
+  } catch {
+  }
+
+  if (lines.length === 0) {
+    try {
+      lines = (await readFile(snifferLogFile, "utf8")).split(/\r?\n/).filter(Boolean).slice(-300);
+      if (lines.length > 0) source = snifferLogFile;
+    } catch {
+    }
+  }
+
+  const events = lines.map(parseSnifferLine);
+  const devices = new Set(events.map((event) => event.device).filter(Boolean));
+  const rssiValues = events.map((event) => event.rssi).filter((value): value is number => value !== undefined);
+  const dutyValues = events.map((event) => event.dutyCycle).filter((value): value is number => value !== undefined);
+  const carrierValues = events.map((event) => event.carrierSense).filter((value): value is number => value !== undefined);
+
+  return {
+    checkedAt,
+    port: port?.trim() || undefined,
+    configured: Boolean(port?.trim()),
+    connected: lines.length > 0,
+    source,
+    summary: {
+      telegrams: events.length,
+      devices: devices.size,
+      dutyCycle: dutyValues.at(-1),
+      carrierSense: carrierValues.at(-1),
+      weakestRssi: rssiValues.length ? Math.min(...rssiValues) : undefined
+    },
+    events: events.slice(-40).reverse()
+  };
 }
 
 async function readUpdateLogTail() {
@@ -495,6 +568,16 @@ app.get("/api/system/usb-ports", async (_request, response) => {
     checkedAt: new Date().toISOString(),
     ports: await readUsbSerialPorts()
   });
+});
+
+app.post("/api/sniffer/snapshot", async (request, response) => {
+  const parsed = snifferSnapshotSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({ error: "Ungültige Sniffer-Anfrage", issues: parsed.error.issues });
+    return;
+  }
+
+  response.json(await readSnifferSnapshot(parsed.data.port));
 });
 
 app.get("/api/setup/defaults", async (_request, response) => {
