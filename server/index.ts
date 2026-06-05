@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
-import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -24,11 +24,19 @@ const dataDir = join(root, ".data");
 const localDatabaseFile = join(dataDir, "homematic-analyzer-db.json");
 const ccuMasterdataFile = join(dataDir, "ccu-masterdata.json");
 const notificationSettingsFile = join(dataDir, "notification-settings.json");
+const updateLogFile = join(dataDir, "update.log");
 
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
 let persistedNotificationSettings: NotificationSettings | undefined;
 let collectorHistory: CollectorHistoryPoint[] = [];
+let updateRun: {
+  running: boolean;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number | null;
+  error?: string;
+} = { running: false };
 
 const defaultNotificationSettings: NotificationSettings = {
   telegram: { enabled: false },
@@ -157,6 +165,40 @@ function stringArrayFromRecord(record: Record<string, unknown> | undefined, key:
   const value = record?.[key];
   if (!Array.isArray(value)) return undefined;
   return value.map((entry) => String(entry)).filter(Boolean);
+}
+
+async function readUpdateLogTail() {
+  try {
+    const log = await readFile(updateLogFile, "utf8");
+    return log.split("\n").slice(-80).join("\n").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function createUpdateRunStatus() {
+  const log = await readUpdateLogTail();
+  const logFailed = /\bfatal:|npm ERR!|\[ERROR\]|error Command failed/i.test(log);
+  const logCompleted = /\[OK\] Update abgeschlossen\./.test(log);
+  const status = updateRun.running
+    ? "running"
+    : updateRun.error || updateRun.exitCode
+      ? "failed"
+      : logFailed
+        ? "failed"
+        : logCompleted
+          ? "completed"
+          : "idle";
+
+  return {
+    status,
+    running: updateRun.running,
+    startedAt: updateRun.startedAt,
+    finishedAt: updateRun.finishedAt,
+    exitCode: updateRun.exitCode,
+    error: updateRun.error,
+    log
+  };
 }
 
 function normalizeCcuUiTarget(ccuHost?: string) {
@@ -519,6 +561,10 @@ app.get("/api/system/update-status", async (_request, response) => {
   });
 });
 
+app.get("/api/system/update-run", async (_request, response) => {
+  response.json(await createUpdateRunStatus());
+});
+
 app.post("/api/settings/notifications", async (request, response) => {
   const parsed = notificationSettingsSchema.safeParse(request.body);
 
@@ -544,8 +590,24 @@ app.post("/api/settings/notifications/test", async (request, response) => {
   response.json(result);
 });
 
-app.post("/api/system/update", (_request, response) => {
+app.post("/api/system/update", async (_request, response) => {
+  if (updateRun.running) {
+    response.status(409).json({
+      ok: false,
+      message: "Ein Update läuft bereits.",
+      status: await createUpdateRunStatus()
+    });
+    return;
+  }
+
   const updateScript = join(root, "scripts", "install", "update-local.sh");
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(updateLogFile, "");
+  updateRun = {
+    running: true,
+    startedAt: new Date().toISOString()
+  };
+
   const child = spawn("bash", [updateScript], {
     cwd: root,
     detached: true,
@@ -554,6 +616,24 @@ app.post("/api/system/update", (_request, response) => {
       ...process.env,
       ANALYZER_PID: String(process.pid)
     }
+  });
+
+  child.on("exit", (code) => {
+    updateRun = {
+      ...updateRun,
+      running: false,
+      finishedAt: new Date().toISOString(),
+      exitCode: code
+    };
+  });
+
+  child.on("error", (error) => {
+    updateRun = {
+      ...updateRun,
+      running: false,
+      finishedAt: new Date().toISOString(),
+      error: error.message
+    };
   });
 
   child.unref();

@@ -68,6 +68,16 @@ type UpdateStatus = {
   url: string;
 };
 
+type UpdateRunStatus = {
+  status: "idle" | "running" | "completed" | "failed";
+  running: boolean;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number | null;
+  error?: string;
+  log?: string;
+};
+
 type Toast = {
   id: number;
   type: "info" | "success" | "warning" | "error";
@@ -398,6 +408,7 @@ function App() {
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [savingSettings, setSavingSettings] = useState(false);
   const [updatingApp, setUpdatingApp] = useState(false);
+  const [updateRunStatus, setUpdateRunStatus] = useState<UpdateRunStatus | null>(null);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
@@ -630,6 +641,12 @@ function App() {
     }
 
     setUpdatingApp(true);
+    setUpdateRunStatus({
+      status: "running",
+      running: true,
+      startedAt: new Date().toISOString(),
+      log: "Update wird gestartet ..."
+    });
     try {
       const response = await fetch("/api/system/update", { method: "POST" });
       if (!response.ok) throw new Error("Update konnte nicht gestartet werden.");
@@ -640,21 +657,18 @@ function App() {
         title: "Update gestartet",
         message: result.message ?? "Die App aktualisiert sich im Hintergrund."
       });
-      if (result.log) {
-        showToast({
-          type: "info",
-          title: "Update-Log",
-          message: `Details stehen serverseitig in ${result.log}.`
-        });
-      }
     } catch {
+      setUpdatingApp(false);
+      setUpdateRunStatus({
+        status: "failed",
+        running: false,
+        error: "Update konnte nicht gestartet werden."
+      });
       showToast({
         type: "error",
         title: "Update nicht gestartet",
         message: "Bitte per SSH mit sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh aktualisieren."
       });
-    } finally {
-      window.setTimeout(() => setUpdatingApp(false), 5000);
     }
   }
 
@@ -833,6 +847,56 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [loading]);
+
+  useEffect(() => {
+    if (!updatingApp && updateRunStatus?.status !== "running") return;
+
+    let isActive = true;
+
+    async function loadUpdateRunStatus() {
+      try {
+        const response = await fetch("/api/system/update-run");
+        if (!response.ok) throw new Error("Update-Status nicht erreichbar");
+        const status = (await response.json()) as UpdateRunStatus;
+        if (!isActive) return;
+
+        setUpdateRunStatus(status);
+        setUpdatingApp(status.status === "running");
+
+        if (status.status === "completed") {
+          showToast({
+            type: "success",
+            title: "Update abgeschlossen",
+            message: "Der Analyzer startet ggf. neu. Lade die Seite gleich erneut."
+          });
+        }
+
+        if (status.status === "failed") {
+          showToast({
+            type: "error",
+            title: "Update fehlgeschlagen",
+            message: status.error ?? "Bitte Update-Log prüfen."
+          });
+        }
+      } catch {
+        if (!isActive) return;
+        setUpdateRunStatus((current) => ({
+          status: "running",
+          running: true,
+          startedAt: current?.startedAt,
+          log: `${current?.log ?? ""}\nAnalyzer ist während des Updates kurz nicht erreichbar. Das kann beim Neustart normal sein.`.trim()
+        }));
+      }
+    }
+
+    void loadUpdateRunStatus();
+    const interval = window.setInterval(() => void loadUpdateRunStatus(), 1800);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [updatingApp, updateRunStatus?.status]);
 
   useEffect(() => {
     let isActive = true;
@@ -1920,6 +1984,30 @@ function App() {
           <button type="button" className="footer-update-button" onClick={() => void runAppUpdate()} disabled={updatingApp}>
             {updatingApp ? "Update läuft ..." : "Update starten"}
           </button>
+        )}
+        {updateRunStatus && updateRunStatus.status !== "idle" && (
+          <div className={`update-run update-run-${updateRunStatus.status}`}>
+            <strong>
+              {updateRunStatus.status === "running"
+                ? "Update läuft im Hintergrund"
+                : updateRunStatus.status === "completed"
+                  ? "Update abgeschlossen"
+                  : "Update fehlgeschlagen"}
+            </strong>
+            <span>
+              {updateRunStatus.status === "running"
+                ? "Bitte warten. GitHub wird geladen, Abhängigkeiten werden installiert und die App wird gebaut."
+                : updateRunStatus.status === "completed"
+                  ? "Die App wurde aktualisiert. Falls die Seite alt wirkt, bitte neu laden."
+                  : updateRunStatus.error ?? "Bitte Log prüfen oder per SSH aktualisieren."}
+            </span>
+            {updateRunStatus.log && (
+              <details>
+                <summary>Update-Log anzeigen</summary>
+                <pre>{updateRunStatus.log}</pre>
+              </details>
+            )}
+          </div>
         )}
       </footer>
     </main>

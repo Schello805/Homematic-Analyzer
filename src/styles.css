@@ -1490,6 +1490,53 @@ pre {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.update-run {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  border: 1px solid #dbe4f0;
+  border-radius: 18px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.update-run-running {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.update-run-completed {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.update-run-failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.update-run span {
+  color: #5d687d;
+  line-height: 1.35;
+}
+
+.update-run details {
+  margin-top: 4px;
+}
+
+.update-run summary {
+  width: fit-content;
+  color: #1849a9;
+  cursor: pointer;
+  font-weight: 680;
+}
+
+.update-run pre {
+  max-height: 260px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
 .app-footer div {
   display: grid;
   gap: 4px;
