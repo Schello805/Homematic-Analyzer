@@ -74,6 +74,11 @@ function dutyCycleText(value: number | undefined): string {
   return value === undefined ? "kein belegter Wert" : `${value}%`;
 }
 
+function collectorRecordValue(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return value === undefined || value === null || value === "" ? undefined : String(value);
+}
+
 const ccuServicePorts = new Set(["80", "443", "8181", "2001", "2010", "9292", "42001", "42010", "8700", "8701"]);
 
 const ccuServiceLabels: Record<string, string> = {
@@ -219,6 +224,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const configPendingDevices = ccu?.devices.filter((device) => device.configPending) ?? [];
   const dutyStatus = dutyCycleStatus(ccu?.dutyCycle);
   const logAnalysis = analyzeLogLines(collector?.logs);
+  const hasCcuSystemData = Boolean(masterdata?.system || masterdata?.backups);
+  const systemSourceHost = collectorRecordValue(masterdata?.system, "host") ?? collector?.host ?? "unbekanntem Host";
+  const systemTemperature = collectorRecordValue(masterdata?.system, "temperatureRaw") ?? collectorRecordValue(collector?.system, "temperatureRaw");
+  const systemBackupCount = Number(collectorRecordValue(masterdata?.backups, "count") ?? collectorRecordValue(collector?.backups, "count") ?? "0");
+  const systemMissingTemperature = Boolean((hasCcuSystemData || collector) && !systemTemperature);
+  const systemMissingBackups = Boolean((hasCcuSystemData || collector) && systemBackupCount === 0);
 
   const checks: AnalysisCheck[] = [
     {
@@ -230,12 +241,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? `${ccu?.counters.devices ?? 0} Geräte wurden über die CCU gelesen.`
         : hasCcuCredentials
           ? "Die Zugangsdaten sind eingetragen, aber die CCU-Daten konnten nicht gelesen werden."
-          : "Ohne CCU-Zugang kann die App keine Homematic-Geräte prüfen.",
+          : "CCU-Zugang wurde noch nicht eingerichtet.",
       recommendation: hasCcuData
-        ? "Die Basis steht. Für Systemwerte und Logs ergänze optional Collector oder SSH."
+        ? "Die wichtigste Datenquelle funktioniert. Geräte, Servicemeldungen und viele Zustände können bewertet werden."
         : hasCcuCredentials
           ? "Prüfe Host, Benutzer, Passwort und ob die XML-API auf der CCU verfügbar ist."
-          : "Trage Host, Benutzer und Passwort der CCU oder RaspberryMatic ein.",
+          : "Im Setup Host, Benutzer, Passwort und XML-API-Token der CCU/RaspberryMatic eintragen.",
       access: ["ccu"],
       evidence: hasCcuData
         ? [{ source: "CCU XML-API", detail: `${ccu?.counters.devices ?? 0} Geräte, ${ccu?.counters.serviceMessages ?? 0} Servicemeldungen gelesen.`, timestamp: ccu?.collectedAt }]
@@ -243,8 +254,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           ? [{ source: "CCU XML-API", detail: ccu.error, timestamp: ccu.collectedAt }]
           : [],
       details: [
-        "Die erste echte Datenquelle ist die XML-API der CCU/RaspberryMatic.",
-        "Wenn sie nicht vorhanden ist, bleibt die Analyse transparent eingeschränkt."
+        "Die XML-API ist die zentrale Quelle für Geräte, Servicemeldungen und Live-Zustände.",
+        "Ohne diese Quelle bewertet der Analyzer keine Homematic-Probleme."
       ]
     },
     {
@@ -305,18 +316,24 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     },
     {
       id: "ccu-masterdata",
-      title: "CCU-Stammdaten",
+      title: "CCU-Daten vorbereitet",
       category: "Grundlage",
-      status: masterdataDeviceCount > 0 ? "ok" : "improvement",
+      status: masterdataDeviceCount > 0 || hasCcuData ? "ok" : "unavailable",
       summary: masterdataDeviceCount > 0
         ? `${masterdataDeviceCount} Geräte wurden vom täglichen CCU-Script gemeldet.`
-        : "Das tägliche CCU-Stammdaten-Script wurde noch nicht empfangen.",
+        : hasCcuData
+          ? "Live-Gerätedaten wurden gelesen; das tägliche CCU-Script ist optional."
+          : "Das tägliche CCU-Script wurde noch nicht empfangen.",
       recommendation: masterdataDeviceCount > 0
-        ? "Gut: Gerätenamen, Adressen und Typen stehen unabhängig von Live-Abfragen bereit."
-        : "CCU-Script einmal aus der App kopieren, in der WebUI ausführen und danach täglich laufen lassen.",
+        ? "Gut: Gerätenamen und CCU-Systemwerte stehen unabhängig von Live-Abfragen bereit."
+        : hasCcuData
+          ? "Kein akuter Handlungsbedarf. Das Script verbessert nur die Stabilität der Stammdaten."
+          : "CCU-Script einmal aus der App kopieren, in der WebUI ausführen und danach täglich laufen lassen.",
       access: ["ccu"],
       evidence: masterdataDeviceCount > 0
         ? [{ source: "CCU WebUI-Script", detail: `${masterdataDeviceCount} Geräte gemeldet.`, timestamp: masterdata?.collectedAt ?? now() }]
+        : hasCcuData
+          ? [{ source: "CCU XML-API", detail: `${ccu?.counters.devices ?? 0} Geräte wurden live gelesen.`, timestamp: ccu?.collectedAt }]
         : [],
       details: [
         "Stammdaten ändern sich selten und müssen nicht bei jeder Analyse live zusammengesucht werden.",
@@ -357,7 +374,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : "Duty Cycle kann ohne CCU-Daten nicht belegt werden.",
       recommendation: hasCcuData
         ? ccu?.dutyCycle === undefined
-          ? "Wenn Duty Cycle wichtig ist, prüfe XML-API/Servicemeldungen oder ergänze später den passenden CCU-Datenpunkt."
+          ? "Kein Fehler wird behauptet. Der Analyzer zeigt Duty Cycle erst, wenn ein echter Wert oder eine passende Servicemeldung vorliegt."
           : ccu.dutyCycle >= 90
             ? "Kritisch: häufig sendende Programme, externe Systeme und Geräte mit Kommunikationsproblemen prüfen."
             : ccu.dutyCycle >= 70
@@ -369,8 +386,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? [{ source: "CCU XML-API", detail: `Duty Cycle: ${dutyCycleText(ccu.dutyCycle)}.`, timestamp: ccu.collectedAt }]
         : [],
       details: [
-        "Schwellwerte: ab 50% Verbesserung, ab 70% Hinweis, ab 90% kritisch.",
-        "Ein Problem wird nur markiert, wenn ein echter Wert oder eine Servicemeldung vorliegt."
+        "Schwellwerte: ab 50% Optimierung, ab 70% Hinweis, ab 90% kritisch.",
+        "Ein Problem wird nur markiert, wenn ein echter Wert oder eine aktive Servicemeldung vorliegt."
       ]
     },
     {
@@ -445,40 +462,40 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "signal-strength",
       title: "Signalqualität",
       category: "Funk",
-      status: hasCcuData || hasSniffer ? "improvement" : "unavailable",
+      status: hasSniffer ? "improvement" : "unavailable",
       summary: hasSniffer
         ? "Mit Sniffer können Funktelegramme und schwache Verbindungen genauer eingeordnet werden."
         : hasCcuData
-          ? "Die Basisdaten liegen vor; für Signalstärken braucht es später Sniffer- oder passende RSSI-Daten."
+          ? "Keine belegbaren Signalstärken vorhanden. Die CCU-Daten reichen dafür aktuell nicht aus."
           : "Signalqualität braucht CCU-Daten oder optional den AskSin Analyzer XS.",
       recommendation: hasSniffer
         ? "AskSin Analyzer XS verbunden lassen, um Funkprobleme zeitlich besser zuzuordnen."
-        : "Für eine tiefere Funkanalyse optional AskSin Analyzer XS anschließen.",
+        : "Optional AskSin Analyzer XS anschließen. Ohne echte RSSI-/Snifferdaten wird hier kein Funkproblem behauptet.",
       access: hasSniffer ? ["sniffer"] : ["ccu"],
-      evidence: [
+      evidence: hasSniffer ? [
         {
-          source: hasSniffer ? "Sniffer-Konfiguration" : "Setup",
-          detail: hasSniffer ? `USB-Port ${config.snifferPort} angegeben.` : "Sniffer nicht eingerichtet.",
+          source: "Sniffer-Konfiguration",
+          detail: `USB-Port ${config.snifferPort} angegeben.`,
           timestamp: now()
         }
-      ],
+      ] : [],
       details: [
-        "Die UI zeigt später normale Begriffe wie „gute Verbindung“, „schwach“ oder „kritisch“.",
-        "Technische Werte bleiben auf Wunsch in den Details sichtbar."
+        "Dieser Punkt wird erst bewertet, wenn RSSI-Werte oder Snifferdaten vorliegen.",
+        "Ohne Messwert bleibt der Punkt bewusst nicht geprüft."
       ]
     },
     {
       id: "routing-topology",
       title: "HmIP Routing",
       category: "Topologie",
-      status: hmipDevices.length > 0 ? "improvement" : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
+      status: hmipDevices.length > 0 ? "unavailable" : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
       summary: hmipDevices.length > 0
-        ? `${hmipDevices.length} HmIP-Geräte gefunden, davon ${hmipRouterCandidates.length} mögliche Router-/Repeater-Kandidaten.`
+        ? `${hmipDevices.length} HmIP-Geräte gefunden. Aktive Routing-Pfade sind damit aber noch nicht belegbar.`
         : hasCcuData || masterdataDeviceCount > 0
           ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
           : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
       recommendation: hmipDevices.length > 0
-        ? "Das ist noch kein Fehler: Aktive Routing-Pfade werden erst markiert, wenn HmIPServer-Daten oder Logs sie belegen."
+        ? "Die Kandidatenliste hilft nur bei der Vorbereitung. Für echte Topologie braucht der Analyzer HmIPServer-Daten oder passende Logbelege."
         : hasCcuData || masterdataDeviceCount > 0
           ? "Kein Handlungsbedarf."
           : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
@@ -486,11 +503,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       evidence: hmipDevices.length > 0
         ? [{
           source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
-          detail: `${hmipDevices.length} HmIP-Geräte, mögliche Router-Kandidaten: ${hmipRouterCandidates.slice(0, 8).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine"}.`,
+          detail: `${hmipDevices.length} HmIP-Geräte erkannt. Mögliche Router-Kandidaten: ${hmipRouterCandidates.slice(0, 8).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine"}. Das belegt noch keinen aktiven Routing-Pfad.`,
           timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
         }]
         : [],
       details: [
+        "Die Kandidatenliste ist hilfreich, um grundsätzlich routingfähige Geräte zu erkennen.",
         "Diese Analyse unterscheidet bewusst zwischen möglichen Router-Geräten und wirklich aktivem Routing.",
         "Ein aktiver Routing-Pfad wird erst als Problem markiert, wenn HmIPServer-Daten oder Logs ihn belegen."
       ]
@@ -530,41 +548,52 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "system-health",
       title: "Raspberry / Zentrale",
       category: "System",
-      status: hasSsh ? "ok" : "unavailable",
-      summary: hasSsh
-        ? "Systemwerte wie RAM, CPU, Temperatur, Speicher und Backups können ausgewertet werden."
+      status: hasCcuSystemData || collector ? "ok" : "unavailable",
+      summary: hasCcuSystemData
+        ? `CCU-Systemwerte wurden vom WebUI-Script gelesen (${systemSourceHost}).`
+        : collector
+          ? `Systemwerte stammen vom Shell-Collector (${systemSourceHost}).`
+        : hasSsh
+          ? "SSH-Zugang ist eingetragen, aber es liegen noch keine Systemwerte vor."
         : "Systemwerte brauchen SSH oder das Copy-Paste-Collector-Script.",
-      recommendation: hasSsh
-        ? "Behalte Temperatur, freien Speicher und Backup-Anzahl im Blick."
-        : "SSH einrichten oder das Collector-Script auf der Zentrale ausführen.",
+      recommendation: hasCcuSystemData || collector
+        ? systemMissingTemperature || systemMissingBackups
+          ? "Wenn Temperatur oder Backups fehlen, das CCU-WebUI-Script einmal aktualisiert ausführen und prüfen, ob Backup-Dateien unter /usr/local/backup, /media oder /mnt liegen."
+          : "Behalte Temperatur, freien Speicher und Backup-Anzahl im Blick."
+        : hasSsh
+          ? "CCU-WebUI-Script oder Shell-Collector ausführen, bevor Systemwerte bewertet werden."
+        : "CCU-WebUI-Script einrichten. Das ist der bevorzugte Weg für CCU3/RaspberryMatic-Systemwerte.",
       access: ["ssh"],
-      evidence: collector
-        ? [{ source: "Collector-Script", detail: `Letzte Daten von ${collector.host ?? "unbekanntem Host"}.`, timestamp: collector.collectedAt ?? now() }]
+      evidence: hasCcuSystemData
+        ? [{ source: "CCU WebUI-Script", detail: `Systemvariablen der Zentrale gelesen. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: masterdata?.collectedAt ?? now() }]
+        : collector
+          ? [{ source: "Shell-Collector", detail: `Fallback-Daten von ${systemSourceHost}. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: collector.collectedAt ?? now() }]
         : hasSsh
           ? [{ source: "SSH-Setup", detail: `SSH-Ziel ${config.sshHost ?? config.ccuHost} wurde angegeben.`, timestamp: now() }]
           : [],
       details: [
-        "Das Script sammelt nur messbare Werte und Logauszüge.",
-        "Fehlende Befehle werden toleriert, damit auch CCU2/CCU3/RaspberryMatic möglichst sauber funktionieren."
+        "Bevorzugte Quelle sind die HomematicAnalyzer-Systemvariablen, die das CCU-WebUI-Script auf der Zentrale erstellt.",
+        "Der Shell-Collector ist nur Fallback oder Ergänzung für Logs und aktive Verbindungen.",
+        "Bewertet werden nur Werte, die von der CCU/RaspberryMatic selbst geliefert wurden."
       ]
     },
     {
       id: "logs",
       title: "Log-Auswertung",
       category: "Belege",
-      status: collector?.logs?.length ? logAnalysis.status : hasSsh ? "improvement" : "unavailable",
+      status: collector?.logs?.length ? logAnalysis.status : "unavailable",
       summary: collector?.logs?.length
         ? logAnalysis.relevantLines.length > 0
           ? `${logAnalysis.relevantLines.length} auffällige Logzeilen wurden gefunden.`
           : "Es liegen Logdaten vor, aber keine belegbaren Fehler-/Warnmuster."
         : hasSsh
-          ? "Loganalyse ist vorbereitet und wartet auf echte Logdaten."
+          ? "Loganalyse ist vorbereitet, aber es liegen noch keine Logdaten vor."
           : "Loganalyse ist ohne SSH oder Collector-Script nicht möglich.",
       recommendation: collector?.logs?.length
         ? logAnalysis.relevantLines.length > 0
           ? "Prüfe die genannten Logzeilen. Nur diese werden als Auffälligkeit gewertet."
           : "Kein Handlungsbedarf aus diesen Logzeilen. Debug/Verbose-Ausgaben sind normale technische Protokolleinträge."
-        : "Collector-Script ausführen, damit Logbelege in die Analyse einfließen.",
+        : "Collector-Script ausführen, damit echte Logbelege in die Analyse einfließen.",
       access: ["ssh"],
       evidence: collector?.logs?.length
         ? (logAnalysis.relevantLines.length > 0 ? logAnalysis.relevantLines : logAnalysis.noisyLines).slice(0, 5).map((line) => ({
@@ -588,12 +617,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           ? "critical"
           : busyExternalAccesses.length > 0
             ? "warning"
-            : externalAccesses.length > 0
-              ? "improvement"
-              : "ok"
-        : hasSsh
-          ? "improvement"
-          : "unavailable",
+            : "ok"
+        : "unavailable",
       summary: collector
         ? publicExternalAccesses.length > 0
           ? publicExternalAccesses.length === 1
@@ -609,7 +634,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
                 : `${externalAccesses.length} lokale Systeme greifen aktuell auf CCU-Dienste zu.`
               : "Keine aktiven externen Zugriffe auf typische CCU-Dienste gefunden."
         : hasSsh
-          ? "Der Check ist vorbereitet; dafür braucht der Analyzer Verbindungsdaten vom Collector."
+          ? "Der Check ist vorbereitet; es liegen aber noch keine Verbindungsdaten vom Collector vor."
           : "Ohne SSH oder Collector können externe Zugriffe nicht belegbar erkannt werden.",
       recommendation: collector
         ? publicExternalAccesses.length > 0
@@ -640,11 +665,13 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "notifications",
       title: "Benachrichtigungen",
       category: "Benachrichtigung",
-      status: hasNotifications ? "ok" : "improvement",
+      status: "ok",
       summary: hasNotifications
         ? "Benachrichtigungen sind für ausgewählte Ereignisse vorbereitet."
         : "Telegram und E-Mail sind optional und noch nicht eingerichtet.",
-      recommendation: "Sinnvolle Events: Duty Cycle kritisch, Batterie niedrig, Gerät nicht erreichbar, Konfiguration ausstehend, Sniffer getrennt, neue Releases.",
+      recommendation: hasNotifications
+        ? "Kein Handlungsbedarf."
+        : "Nur einrichten, wenn du aktiv über kritische Ereignisse informiert werden möchtest.",
       access: ["telegram"],
       evidence: hasNotifications
         ? [{ source: "Settings", detail: "Mindestens ein Benachrichtigungskanal ist aktiviert.", timestamp: now() }]

@@ -40,6 +40,8 @@ type AnalysisResponse = {
 type SystemDashboard = {
   available: boolean;
   host?: string;
+  ccuHost?: string;
+  ccuUiUrl?: string;
   collectedAt?: string;
   uptime?: string;
   memory?: string;
@@ -70,6 +72,7 @@ type MasterdataStatus = {
   available: boolean;
   collectedAt?: string;
   deviceCount: number;
+  systemAvailable?: boolean;
 };
 
 type UsbPort = {
@@ -95,13 +98,29 @@ const setupStorageKey = "homematic-analyzer.setup.v1";
 
 const statusLabel: Record<CheckStatus, string> = {
   ok: "OK",
-  improvement: "Verbesserung",
+  improvement: "Optimierung",
   warning: "Hinweis",
   critical: "Kritisch",
-  unavailable: "Nicht möglich"
+  unavailable: "Nicht geprüft"
 };
 
 const statusOrder: CheckStatus[] = ["critical", "warning", "improvement", "ok", "unavailable"];
+
+const analysisSteps = [
+  { label: "Setup lesen", detail: "Host, Token, optionale Quellen" },
+  { label: "CCU verbinden", detail: "XML-API und Token prüfen" },
+  { label: "Geräte laden", detail: "Namen, Typen und Kanäle" },
+  { label: "Servicemeldungen", detail: "Nur aktive Belege zählen" },
+  { label: "Batterien & Erreichbarkeit", detail: "Gerätezustände auswerten" },
+  { label: "Duty Cycle & Funk", detail: "Nur echte Werte melden" },
+  { label: "CCU-Systemwerte", detail: "CPU, RAM, Temperatur, Speicher, Backups" },
+  { label: "Logs & Zugriffe", detail: "Optionale Shell-Zusatzdaten" },
+  { label: "Ergebnis bauen", detail: "Bewerten, gruppieren, empfehlen" }
+];
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function getStatusIcon(status: CheckStatus, className = "status-icon") {
   switch (status) {
@@ -246,7 +265,7 @@ function splitMetricLines(value?: string) {
 
 function formatTemperature(raw?: string) {
   const value = Number(firstLine(raw));
-  if (!Number.isFinite(value)) return firstLine(raw) ?? "—";
+  if (!Number.isFinite(value)) return firstLine(raw) ?? "nicht verfügbar";
   const celsius = value > 1000 ? value / 1000 : value;
   return `${Math.round(celsius * 10) / 10} °C`;
 }
@@ -256,7 +275,7 @@ function formatMemory(raw?: string) {
   const memoryLine = lines.find((line) => /^Mem:/i.test(line));
   const fallbackLine = lines.find((line) => !/^total\s+used\s+free/i.test(line));
   const line = memoryLine ?? fallbackLine;
-  if (!line) return "—";
+  if (!line) return "nicht verfügbar";
 
   const busyboxMatch = line.match(/Mem:\s*([0-9.]+\s*[KMGT]?B?)\s+used,?\s+([0-9.]+\s*[KMGT]?B?)\s+free/i);
   if (busyboxMatch) return `${busyboxMatch[1]} genutzt · ${busyboxMatch[2]} frei`;
@@ -268,7 +287,7 @@ function formatMemory(raw?: string) {
 function formatDisk(raw?: string) {
   const lines = splitMetricLines(raw);
   const diskLine = lines.find((line) => /\s\/$/.test(line) || /\/dev\/|overlay|rootfs/i.test(line));
-  if (!diskLine) return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "—";
+  if (!diskLine) return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "nicht verfügbar";
   const parts = diskLine.split(/\s+/);
   return parts.length >= 5 ? `${parts[4]} belegt · ${parts[3]} frei` : diskLine;
 }
@@ -277,14 +296,16 @@ function formatCpu(raw?: string) {
   const lines = splitMetricLines(raw);
   const loadLine = lines.find((entry) => /load average|load:/i.test(entry));
   const cpuLine = lines.find((entry) => /^(cpu|%cpu)/i.test(entry));
-  const line = loadLine ?? cpuLine;
-  if (!line) return "—";
+  const procLoadLine = lines.find((entry) => /^\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?/.test(entry));
+  const line = loadLine ?? cpuLine ?? procLoadLine;
+  if (!line) return "nicht verfügbar";
+  if (line === procLoadLine) return `Load ${line.split(/\s+/).slice(0, 3).join(", ")}`;
   return line.replace(/^.*load average:\s*/i, "Load ").replace(/^Load:\s*/i, "Load ");
 }
 
 function formatUptime(raw?: string) {
   const line = firstLine(raw);
-  if (!line) return "—";
+  if (!line) return "nicht verfügbar";
   const uptime = line.match(/\bup\s+(.+?),\s+\d+\s+users?/i)?.[1]
     ?? line.match(/\bup\s+(.+?),\s+load average/i)?.[1]
     ?? line.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "");
@@ -292,10 +313,16 @@ function formatUptime(raw?: string) {
 }
 
 function formatBackups(count?: string, paths?: string[]) {
-  if (!count) return "—";
+  if (!count) return "nicht geprüft";
   const backupCount = Number(count);
-  const label = Number.isFinite(backupCount) ? `${backupCount} gefunden` : `${count} gefunden`;
+  const label = Number.isFinite(backupCount)
+    ? backupCount === 0 ? "keine gefunden" : `${backupCount} gefunden`
+    : `${count} gefunden`;
   return paths?.length ? `${label} · ${paths[paths.length - 1]}` : label;
+}
+
+function metricNeedsHelp(value: string) {
+  return value === "nicht verfügbar" || value === "nicht geprüft" || value === "keine gefunden" || value.startsWith("keine gefunden");
 }
 
 function App() {
@@ -304,6 +331,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<"analysis" | "setup" | "settings">("analysis");
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
   const [activeCheck, setActiveCheck] = useState<string | null>(null);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -490,7 +518,7 @@ function App() {
         body: JSON.stringify(notificationSettings)
       });
 
-      if (!response.ok) throw new Error("Settings konnten nicht gespeichert werden.");
+      if (!response.ok) throw new Error("Einstellungen konnten nicht gespeichert werden.");
       const result = (await response.json()) as { settings?: NotificationSettings };
       if (result.settings) {
         setNotificationSettings({
@@ -503,13 +531,13 @@ function App() {
 
       showToast({
         type: "success",
-        title: "Settings gespeichert",
-        message: "Settings wurden dauerhaft in der lokalen Datenbank gespeichert."
+        title: "Einstellungen gespeichert",
+        message: "Einstellungen wurden dauerhaft in der lokalen Datenbank gespeichert."
       });
     } catch {
       showToast({
         type: "error",
-        title: "Settings nicht gespeichert",
+        title: "Einstellungen nicht gespeichert",
         message: "Bitte lokale API prüfen."
       });
     } finally {
@@ -537,7 +565,7 @@ function App() {
       showToast({
         type: "error",
         title: "Test nicht möglich",
-        message: "Bitte Settings und lokale API prüfen."
+        message: "Bitte Einstellungen und lokale API prüfen."
       });
     }
   }
@@ -581,7 +609,7 @@ function App() {
     showToast({
       type: "info",
       title: "Benachrichtigungen zurückgesetzt",
-      message: "Klicke Speichern, um die serverseitigen Settings ebenfalls zurückzusetzen."
+      message: "Klicke Speichern, um die serverseitigen Einstellungen ebenfalls zurückzusetzen."
     });
   }
 
@@ -642,12 +670,6 @@ function App() {
       setActiveCheck(null);
     }
   }, [selectedStatusFilter, analysis, activeCheck]);
-
-  useEffect(() => {
-    if (setupProgress.complete && currentPage === "setup") {
-      setCurrentPage("analysis");
-    }
-  }, [setupProgress.complete, currentPage]);
 
   useEffect(() => {
     let isActive = true;
@@ -746,6 +768,19 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!loading) {
+      setActiveAnalysisStep(0);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setActiveAnalysisStep((currentStep) => Math.min(currentStep + 1, analysisSteps.length - 1));
+    }, 520);
+
+    return () => window.clearInterval(interval);
+  }, [loading]);
+
+  useEffect(() => {
     let isActive = true;
 
     async function loadDataStatus() {
@@ -781,6 +816,7 @@ function App() {
   async function runAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
+    setActiveAnalysisStep(0);
     setError(null);
     setAnalysis(null);
     setSelectedStatusFilter(null);
@@ -791,30 +827,34 @@ function App() {
     });
 
     try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ccuHost: form.ccuHost.trim(),
-          ccuUser: form.ccuUser.trim(),
-          ccuPassword: form.ccuPassword,
-          xmlApiToken: (form.xmlApiToken ?? "").trim(),
-          hasCcuPassword: Boolean(form.ccuPassword),
-          sshHost: form.ccuHost.trim(),
-          sshUser: form.sshUser.trim(),
-          sshPassword: form.sshPassword,
-          hasSshPassword: Boolean(form.sshPassword),
-          snifferPort: form.snifferPort.trim(),
-          externalSystems: [],
-          notificationSettings
-        })
-      });
+      const [response] = await Promise.all([
+        fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ccuHost: form.ccuHost.trim(),
+            ccuUser: form.ccuUser.trim(),
+            ccuPassword: form.ccuPassword,
+            xmlApiToken: (form.xmlApiToken ?? "").trim(),
+            hasCcuPassword: Boolean(form.ccuPassword),
+            sshHost: form.ccuHost.trim(),
+            sshUser: form.sshUser.trim(),
+            sshPassword: form.sshPassword,
+            hasSshPassword: Boolean(form.sshPassword),
+            snifferPort: form.snifferPort.trim(),
+            externalSystems: [],
+            notificationSettings
+          })
+        }),
+        wait(2600)
+      ]);
 
       if (!response.ok) {
         throw new Error("Die Analyse konnte nicht gestartet werden.");
       }
 
       const data = (await response.json()) as AnalysisResponse;
+      setActiveAnalysisStep(analysisSteps.length - 1);
       const criticalCount = data.checks.filter((check) => check.status === "critical").length;
       const unavailableCount = data.checks.filter((check) => check.status === "unavailable").length;
       setAnalysis(data);
@@ -921,16 +961,14 @@ function App() {
               Analyse
             </button>
             <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
-              Settings
+              Einstellungen
             </button>
           </div>
-          {!setupProgress.complete && (
-            <div className="page-tabs__right">
-              <button type="button" className={currentPage === "setup" ? "is-active" : ""} onClick={() => setCurrentPage("setup")}>
-                Setup <span className="tab-badge">{setupProgress.percent}%</span>
-              </button>
-            </div>
-          )}
+          <div className="page-tabs__right">
+            <button type="button" className={currentPage === "setup" ? "is-active" : ""} onClick={() => setCurrentPage("setup")}>
+              Setup <span className="tab-badge">{setupProgress.complete ? "✓" : `${setupProgress.percent}%`}</span>
+            </button>
+          </div>
         </nav>
       </header>
 
@@ -941,11 +979,26 @@ function App() {
           <div className="panel__header">
             <p className="eyebrow">Setup</p>
             <h2>Zugänge eintragen</h2>
-            <p>Alles ist optional: je mehr Zugriff du gibst, desto genauer wird die Analyse.</p>
+            <p>Empfohlene Reihenfolge: erst CCU-Zugang und XML-API-Token, danach das CCU-Script kopieren. Alles Weitere ist optional.</p>
             <p className="setup-note">Zugangsdaten werden lokal in diesem Browser gespeichert. Die CCU bleibt im LAN oder VPN.</p>
             <button type="button" className="ghost-button" onClick={resetSavedSetup}>
               Gespeicherte Daten löschen
             </button>
+          </div>
+
+          <div className="setup-roadmap" aria-label="Empfohlene Einrichtung">
+            {[
+              ["1", "CCU Login", "Host, Benutzer, Passwort und XML-API Token eintragen."],
+              ["2", "Analyse testen", "Einmal Analyse starten und prüfen, ob Geräte gelesen werden."],
+              ["3", "CCU-Script", "Script kopieren, in der WebUI einfügen und täglich laufen lassen."],
+              ["4", "Optional", "Shell-Logs, Sniffer und Benachrichtigungen nur bei Bedarf ergänzen."]
+            ].map(([number, title, text]) => (
+              <div className="setup-roadmap-step" key={number}>
+                <strong>{number}</strong>
+                <span>{title}</span>
+                <small>{text}</small>
+              </div>
+            ))}
           </div>
 
           <div className="setup-sections">
@@ -997,7 +1050,7 @@ function App() {
 
             <fieldset className="setup-card setup-card-optional">
               <legend>SSH Login</legend>
-              <p>Optional für Logs, CPU/RAM, Temperatur, Speicher und Backups. Host ist automatisch die CCU-IP.</p>
+              <p>Optional für Logauszüge und aktive Verbindungen. CPU/RAM, Temperatur, Speicher und Backups kommen bevorzugt über das CCU-WebUI-Script.</p>
               <div className="form-grid form-grid-2">
                 <label>
                   SSH Benutzer
@@ -1071,20 +1124,22 @@ function App() {
           <summary>
             <span>
               <small>Einmaliges Setup</small>
-              CCU-Stammdaten täglich melden
+              CCU-Daten täglich vorbereiten
             </span>
             <strong>Script anzeigen</strong>
           </summary>
           <div className="setup-script-content">
             <p>
               Dieses WebUI-Script legt die Variablen `HomematicAnalyzer_LastRun`, `HomematicAnalyzer_Status`,
-              `HomematicAnalyzer_DeviceInventory` und `HomematicAnalyzer_Error` an und sendet Gerätenamen,
-              Adressen und Typen täglich an den Analyzer.
+              `HomematicAnalyzer_DeviceInventory`, `HomematicAnalyzer_SystemCpu`, `HomematicAnalyzer_SystemRam`,
+              `HomematicAnalyzer_SystemTemperature`, `HomematicAnalyzer_SystemDisk`, `HomematicAnalyzer_SystemBackups`
+              und `HomematicAnalyzer_Error` an. Es sendet Gerätenamen und CCU3/RaspberryMatic-Systemwerte an den Analyzer.
             </p>
+            <p className="setup-note">Empfehlung: erst oben CCU-Login eintragen und eine Analyse testen, danach dieses Script kopieren.</p>
             <p className={`setup-note ${masterdataStatus?.available ? "setup-note-ok" : ""}`}>
               {masterdataStatus?.available
-                ? `Empfangen: ${masterdataStatus.deviceCount} Geräte, zuletzt ${masterdataStatus.collectedAt ? new Date(masterdataStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}.`
-                : "Noch keine CCU-Stammdaten empfangen."}
+                ? `Empfangen: ${masterdataStatus.deviceCount} Geräte${masterdataStatus.systemAvailable ? " · CCU-Systemwerte" : ""}, zuletzt ${masterdataStatus.collectedAt ? new Date(masterdataStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}.`
+                : "Noch keine CCU-Daten empfangen."}
             </p>
             {usesLocalAnalyzerUrl && (
               <p className="setup-warning">
@@ -1108,9 +1163,9 @@ function App() {
             )}
             <ol>
               <li>CCU WebUI öffnen.</li>
-              <li>Programm erstellen, z. B. täglich nachts ausführen.</li>
+              <li>`Programme und Verknüpfungen` öffnen und ein neues Programm erstellen.</li>
               <li>Als Aktion `Script` wählen und den kopierten Inhalt einfügen.</li>
-              <li>Einmal manuell ausführen; danach stört es nicht mehr.</li>
+              <li>Einmal manuell ausführen und danach z. B. täglich nachts ausführen lassen.</li>
             </ol>
           </div>
         </details>
@@ -1119,18 +1174,18 @@ function App() {
           <summary>
             <span>
               <small>Optional</small>
-              Systemwerte per Shell sammeln
+              Logs und Verbindungen per Shell sammeln
             </span>
             <strong>Details</strong>
           </summary>
           <div className="setup-script-content">
             <p>
-              Nur nötig, wenn zusätzlich CPU, RAM, Temperatur, Speicher, Backups, Logs oder aktive CCU-Verbindungen geprüft werden sollen.
+              Nur nötig, wenn zusätzlich Logauszüge oder aktive CCU-Verbindungen geprüft werden sollen. CPU, RAM, Temperatur, Speicher und Backups kommen bevorzugt aus dem CCU-WebUI-Script.
             </p>
             <p className={`setup-note ${collectorStatus?.available ? "setup-note-ok" : ""}`}>
               {collectorStatus?.available
                 ? `Empfangen: ${collectorStatus.host ?? "Zentrale"}, zuletzt ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"} · ${collectorStatus.logs} Logzeilen · ${collectorStatus.connections} Verbindungen.`
-                : "Noch kein System-Snapshot empfangen. Einmalig ausführen oder regelmäßige Übertragung einrichten."}
+                : "Noch keine Shell-Zusatzdaten empfangen. Nur für Logs und Verbindungen nötig."}
             </p>
             <div className="form-grid form-grid-2 compact-grid">
               <label>
@@ -1182,7 +1237,7 @@ function App() {
               : "Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse."}
           </p>
           {!setupProgress.complete && (
-            <p className="setup-note">Setup {setupProgress.percent}% vollständig · fehlende Punkte optional ergänzen.</p>
+            <p className="setup-note">Setup {setupProgress.percent}% eingerichtet · fehlende Punkte bei Bedarf ergänzen.</p>
           )}
         </div>
         <button className="analyze-button analyze-button-compact" disabled={loading}>
@@ -1190,6 +1245,38 @@ function App() {
         </button>
         {error && <p className="error">{error}</p>}
       </form>
+
+      {loading && (
+        <section className="analysis-loader panel" aria-live="polite" aria-label="Analyse läuft">
+          <div className="loader-orbit" aria-hidden="true">
+            <span className="orbit-ring orbit-ring-outer" />
+            <span className="orbit-ring orbit-ring-inner" />
+            <span className="orbit-dot orbit-dot-ccu">CCU</span>
+            <span className="orbit-dot orbit-dot-xml">XML</span>
+            <span className="orbit-dot orbit-dot-log">LOG</span>
+            <strong>HA</strong>
+          </div>
+          <div className="loader-content">
+            <p className="eyebrow">Analyse läuft</p>
+            <h2>{analysisSteps[activeAnalysisStep]?.label ?? "Prüfung läuft"}</h2>
+            <p>{analysisSteps[activeAnalysisStep]?.detail ?? "Datenquellen werden geprüft."}</p>
+            <div className="loader-progress" role="progressbar" aria-valuemin={0} aria-valuemax={analysisSteps.length} aria-valuenow={activeAnalysisStep + 1}>
+              <span style={{ width: `${((activeAnalysisStep + 1) / analysisSteps.length) * 100}%` }} />
+            </div>
+            <div className="loader-steps">
+              {analysisSteps.map((step, index) => (
+                <div className={`loader-step ${index < activeAnalysisStep ? "is-done" : ""} ${index === activeAnalysisStep ? "is-active" : ""}`} key={step.label}>
+                  <span>{index < activeAnalysisStep ? "✓" : index + 1}</span>
+                  <div>
+                    <strong>{step.label}</strong>
+                    <small>{step.detail}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {analysis && summary && (
         <section className="results">
@@ -1237,6 +1324,11 @@ function App() {
                 <div>
                   <p className="eyebrow">System-Dashboard</p>
                   <h3>{analysis.systemDashboard.host ?? "Zentrale"}</h3>
+                  {analysis.systemDashboard.ccuHost && (
+                    <a className="system-dashboard__link" href={analysis.systemDashboard.ccuUiUrl ?? `http://${analysis.systemDashboard.ccuHost}/`} target="_blank" rel="noreferrer">
+                      CCU UI öffnen: {analysis.systemDashboard.ccuHost}
+                    </a>
+                  )}
                 </div>
                 <span>
                   {analysis.systemDashboard.collectedAt
@@ -1246,18 +1338,67 @@ function App() {
               </div>
               <div className="metric-grid">
                 {[
-                  ["CPU", formatCpu(analysis.systemDashboard.cpu)],
-                  ["RAM", formatMemory(analysis.systemDashboard.memory)],
-                  ["Temperatur", formatTemperature(analysis.systemDashboard.temperature)],
-                  ["Speicher", formatDisk(analysis.systemDashboard.disk)],
-                  ["Backups", formatBackups(analysis.systemDashboard.backups, analysis.systemDashboard.backupPaths)],
-                  ["Uptime", formatUptime(analysis.systemDashboard.uptime)],
-                  ["Logzeilen", `${analysis.systemDashboard.logs}`],
-                  ["Verbindungen", `${analysis.systemDashboard.connections}`]
-                ].map(([label, value]) => (
-                  <div className="metric-card" key={label}>
-                    <span>{label}</span>
-                    <strong>{value}</strong>
+                  {
+                    label: "CPU",
+                    value: formatCpu(analysis.systemDashboard.cpu),
+                    hint: "Systemlast der CCU/RaspberryMatic.",
+                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen, „CCU-Daten täglich vorbereiten“ → „CCU-Script kopieren“, in der CCU WebUI als Script-Aktion einfügen und einmal manuell ausführen."
+                  },
+                  {
+                    label: "RAM",
+                    value: formatMemory(analysis.systemDashboard.memory),
+                    hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
+                    help: "Wenn RAM nicht verfügbar ist: Das aktualisierte CCU-WebUI-Script erneut auf der Zentrale ausführen. Es liest `free -m` auf der CCU."
+                  },
+                  {
+                    label: "Temperatur",
+                    value: formatTemperature(analysis.systemDashboard.temperature),
+                    hint: analysis.systemDashboard.temperature ? "CPU-/Systemtemperatur der Zentrale." : "Auf der CCU das aktualisierte WebUI-Script einmal ausführen.",
+                    help: "Temperatur kommt über `/usr/bin/vcgencmd measure_temp`. Wenn sie fehlt: Script auf RaspberryMatic/CCU3 ausführen; in einem LXC ist dieser Wert meist nicht vorhanden."
+                  },
+                  {
+                    label: "Speicher",
+                    value: formatDisk(analysis.systemDashboard.disk),
+                    hint: "Freier Speicher der CCU/RaspberryMatic.",
+                    help: "Wenn Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen. Es prüft `df -h /usr/local` auf der Zentrale."
+                  },
+                  {
+                    label: "Backups",
+                    value: formatBackups(analysis.systemDashboard.backups, analysis.systemDashboard.backupPaths),
+                    hint: Number(analysis.systemDashboard.backups ?? 0) > 0 ? "Gefundene CCU-Backup-Dateien." : "Keine Backup-Dateien in den bekannten CCU-Pfaden gefunden.",
+                    help: "Bekannte Pfade: `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard`. Per SSH suchen: `find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)'`."
+                  },
+                  {
+                    label: "Uptime",
+                    value: formatUptime(analysis.systemDashboard.uptime),
+                    hint: "Laufzeit seit dem letzten Neustart.",
+                    help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
+                  },
+                  {
+                    label: "Logzeilen",
+                    value: `${analysis.systemDashboard.logs}`,
+                    hint: "Übermittelte Logzeilen für belegbare Hinweise.",
+                    help: "Logs sind optional. Wenn du sie willst: Setup → „Logs und Verbindungen per Shell sammeln“ öffnen, Befehl kopieren und auf der CCU per SSH ausführen."
+                  },
+                  {
+                    label: "Verbindungen",
+                    value: `${analysis.systemDashboard.connections}`,
+                    hint: "Aktive Verbindungen zu typischen CCU-Diensten.",
+                    help: "Verbindungen sind optional. Dafür den Shell-Zusatzbefehl auf der CCU ausführen; er nutzt `ss`/`netstat`, um Zugriffe auf typische CCU-Ports zu zählen."
+                  }
+                ].map((metric) => (
+                  <div className="metric-card" key={metric.label}>
+                    <div className="metric-card__top">
+                      <span>{metric.label}</span>
+                      <button type="button" className={metricNeedsHelp(metric.value) ? "metric-help needs-attention" : "metric-help"} aria-label={`Hilfe zu ${metric.label}`}>
+                        ?
+                      </button>
+                      <div className="metric-tooltip" role="tooltip">
+                        {metric.help}
+                      </div>
+                    </div>
+                    <strong>{metric.value}</strong>
+                    <em>{metric.hint}</em>
                   </div>
                 ))}
               </div>
@@ -1342,7 +1483,13 @@ function App() {
                         ))}
                       </ul>
                     ) : (
-                      <p className="muted">Noch kein Beleg verfügbar. Deshalb wird hier kein Fehler behauptet.</p>
+                      <p className="muted">
+                        {check.status === "unavailable"
+                          ? "Für diesen Punkt fehlt aktuell eine passende Datenquelle. Deshalb wird hier kein Fehler behauptet."
+                          : check.status === "ok"
+                            ? "Keine auffälligen Belege gefunden."
+                            : "Noch kein Beleg verfügbar. Deshalb wird hier kein Fehler behauptet."}
+                      </p>
                     )}
                     <h4>Details</h4>
                     <ul>
@@ -1362,13 +1509,13 @@ function App() {
       {currentPage === "settings" && (
         <section className="panel settings-page">
           <div className="panel__header">
-            <p className="eyebrow">Settings</p>
+            <p className="eyebrow">Einstellungen</p>
             <h2>Benachrichtigungen</h2>
-            <p>Telegram, E-Mail und KI-Settings werden serverseitig in der lokalen Analyzer-Datenbank gespeichert und bei jeder Analyse verwendet.</p>
+            <p>Telegram, E-Mail und KI-Einstellungen werden serverseitig in der lokalen Analyzer-Datenbank gespeichert und bei jeder Analyse verwendet.</p>
             <p className="setup-note">Für lokale Nutzung okay. Für öffentliche Deployments später bitte verschlüsselte Secret-Verwaltung nutzen.</p>
             <div className="script-actions">
               <button type="button" onClick={() => void saveNotificationSettings()} disabled={savingSettings}>
-                {savingSettings ? "Speichert ..." : "Settings speichern"}
+                {savingSettings ? "Speichert ..." : "Einstellungen speichern"}
               </button>
               <button type="button" className="light-button" onClick={resetNotificationSettings}>
                 Zurücksetzen

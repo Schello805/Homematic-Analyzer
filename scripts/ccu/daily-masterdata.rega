@@ -54,7 +54,140 @@ if (!errorVar) {
   dom.RTUpdate(0);
 }
 
+object systemStatus = dom.GetObject("HomematicAnalyzer_SystemStatus");
+if (!systemStatus) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemStatus wird angelegt");
+  systemStatus = dom.CreateObject(OT_VARDP);
+  systemStatus.Name("HomematicAnalyzer_SystemStatus");
+  systemStatus.ValueType(ivtString);
+  systemStatus.ValueSubType(istChar8859);
+  systemVariables.Add(systemStatus.ID());
+  dom.RTUpdate(0);
+}
+
+object systemCpu = dom.GetObject("HomematicAnalyzer_SystemCpu");
+if (!systemCpu) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemCpu wird angelegt");
+  systemCpu = dom.CreateObject(OT_VARDP);
+  systemCpu.Name("HomematicAnalyzer_SystemCpu");
+  systemCpu.ValueType(ivtString);
+  systemCpu.ValueSubType(istChar8859);
+  systemVariables.Add(systemCpu.ID());
+  dom.RTUpdate(0);
+}
+
+object systemRam = dom.GetObject("HomematicAnalyzer_SystemRam");
+if (!systemRam) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemRam wird angelegt");
+  systemRam = dom.CreateObject(OT_VARDP);
+  systemRam.Name("HomematicAnalyzer_SystemRam");
+  systemRam.ValueType(ivtString);
+  systemRam.ValueSubType(istChar8859);
+  systemVariables.Add(systemRam.ID());
+  dom.RTUpdate(0);
+}
+
+object systemTemp = dom.GetObject("HomematicAnalyzer_SystemTemperature");
+if (!systemTemp) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemTemperature wird angelegt");
+  systemTemp = dom.CreateObject(OT_VARDP);
+  systemTemp.Name("HomematicAnalyzer_SystemTemperature");
+  systemTemp.ValueType(ivtString);
+  systemTemp.ValueSubType(istChar8859);
+  systemVariables.Add(systemTemp.ID());
+  dom.RTUpdate(0);
+}
+
+object systemDisk = dom.GetObject("HomematicAnalyzer_SystemDisk");
+if (!systemDisk) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemDisk wird angelegt");
+  systemDisk = dom.CreateObject(OT_VARDP);
+  systemDisk.Name("HomematicAnalyzer_SystemDisk");
+  systemDisk.ValueType(ivtString);
+  systemDisk.ValueSubType(istChar8859);
+  systemVariables.Add(systemDisk.ID());
+  dom.RTUpdate(0);
+}
+
+object systemBackups = dom.GetObject("HomematicAnalyzer_SystemBackups");
+if (!systemBackups) {
+  WriteLine("Homematic Analyzer: Variable HomematicAnalyzer_SystemBackups wird angelegt");
+  systemBackups = dom.CreateObject(OT_VARDP);
+  systemBackups.Name("HomematicAnalyzer_SystemBackups");
+  systemBackups.ValueType(ivtString);
+  systemBackups.ValueSubType(istChar8859);
+  systemVariables.Add(systemBackups.ID());
+  dom.RTUpdate(0);
+}
+
 string now = system.Date("%Y-%m-%dT%H:%M:%S");
+string hostValue;
+string uptimeValue;
+string cpuValue;
+string ramValue;
+string diskValue;
+string tempValue;
+string backupCount;
+string execError;
+
+WriteLine("Homematic Analyzer: CCU-Systemwerte werden gesammelt");
+system.Exec("hostname", &hostValue, &execError);
+system.Exec("uptime", &uptimeValue, &execError);
+system.Exec("cat /proc/loadavg 2>/dev/null", &cpuValue, &execError);
+system.Exec("free -m 2>/dev/null | grep '^Mem:'", &ramValue, &execError);
+system.Exec("df -h /usr/local 2>/dev/null | tail -n 1", &diskValue, &execError);
+system.Exec("/usr/bin/vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'", &tempValue, &execError);
+system.Exec("find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)' | wc -l", &backupCount, &execError);
+
+hostValue = hostValue.Replace("\\", "\\\\");
+hostValue = hostValue.Replace("\"", "\\\"");
+hostValue = hostValue.Replace("'", " ");
+hostValue = hostValue.Replace("\n", " ");
+hostValue = hostValue.Replace("\r", " ");
+
+uptimeValue = uptimeValue.Replace("\\", "\\\\");
+uptimeValue = uptimeValue.Replace("\"", "\\\"");
+uptimeValue = uptimeValue.Replace("'", " ");
+uptimeValue = uptimeValue.Replace("\n", " ");
+uptimeValue = uptimeValue.Replace("\r", " ");
+
+cpuValue = cpuValue.Replace("\\", "\\\\");
+cpuValue = cpuValue.Replace("\"", "\\\"");
+cpuValue = cpuValue.Replace("'", " ");
+cpuValue = cpuValue.Replace("\n", " ");
+cpuValue = cpuValue.Replace("\r", " ");
+
+ramValue = ramValue.Replace("\\", "\\\\");
+ramValue = ramValue.Replace("\"", "\\\"");
+ramValue = ramValue.Replace("'", " ");
+ramValue = ramValue.Replace("\n", " ");
+ramValue = ramValue.Replace("\r", " ");
+
+diskValue = diskValue.Replace("\\", "\\\\");
+diskValue = diskValue.Replace("\"", "\\\"");
+diskValue = diskValue.Replace("'", " ");
+diskValue = diskValue.Replace("\n", " ");
+diskValue = diskValue.Replace("\r", " ");
+
+tempValue = tempValue.Replace("\\", "\\\\");
+tempValue = tempValue.Replace("\"", "\\\"");
+tempValue = tempValue.Replace("'", " ");
+tempValue = tempValue.Replace("\n", " ");
+tempValue = tempValue.Replace("\r", " ");
+
+backupCount = backupCount.Replace("\\", "\\\\");
+backupCount = backupCount.Replace("\"", "\\\"");
+backupCount = backupCount.Replace("'", " ");
+backupCount = backupCount.Replace("\n", " ");
+backupCount = backupCount.Replace("\r", " ");
+
+systemCpu.State(cpuValue);
+systemRam.State(ramValue);
+systemTemp.State(tempValue);
+systemDisk.State(diskValue);
+systemBackups.State(backupCount # " Backups gefunden");
+systemStatus.State("CPU " # cpuValue # " | RAM " # ramValue # " | Temp " # tempValue # " °C | Backups " # backupCount);
+
 string devicesJson = "[";
 integer deviceCount = 0;
 integer firstDevice = 1;
@@ -108,6 +241,16 @@ payload = payload # "\"token\":\"" # analyzerToken # "\",";
 payload = payload # "\"source\":\"rega-daily-masterdata\",";
 payload = payload # "\"collectedAt\":\"" # now # "\",";
 payload = payload # "\"deviceCount\":" # deviceCount.ToString() # ",";
+payload = payload # "\"system\":{";
+payload = payload # "\"source\":\"ccu-webui-script\",";
+payload = payload # "\"host\":\"" # hostValue # "\",";
+payload = payload # "\"uptime\":\"" # uptimeValue # "\",";
+payload = payload # "\"cpu\":\"" # cpuValue # "\",";
+payload = payload # "\"memory\":\"" # ramValue # "\",";
+payload = payload # "\"disk\":\"" # diskValue # "\",";
+payload = payload # "\"temperatureRaw\":\"" # tempValue # "\"";
+payload = payload # "},";
+payload = payload # "\"backups\":{\"count\":\"" # backupCount # "\"},";
 payload = payload # "\"devices\":" # devicesJson;
 payload = payload # "}";
 

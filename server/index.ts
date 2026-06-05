@@ -126,6 +126,8 @@ const ccuMasterdataSchema = z.object({
   source: z.string().max(80).optional(),
   collectedAt: z.string().max(80).optional(),
   deviceCount: z.number().int().nonnegative().optional(),
+  system: z.record(z.unknown()).optional(),
+  backups: z.record(z.unknown()).optional(),
   devices: z.array(z.object({
     name: z.string().max(200).optional(),
     address: z.string().max(80).optional(),
@@ -156,24 +158,45 @@ function stringArrayFromRecord(record: Record<string, unknown> | undefined, key:
   return value.map((entry) => String(entry)).filter(Boolean);
 }
 
-function createSystemDashboard(collector: CollectorPayload | undefined) {
-  if (!collector) {
-    return { available: false, logs: 0, connections: 0 };
+function normalizeCcuUiTarget(ccuHost?: string) {
+  if (!ccuHost) return {};
+
+  try {
+    const url = new URL(/^https?:\/\//i.test(ccuHost) ? ccuHost : `http://${ccuHost}`);
+    return {
+      ccuHost: url.hostname,
+      ccuUiUrl: `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}/`
+    };
+  } catch {
+    const host = ccuHost.split("/")[0]?.split(":")[0];
+    return host ? { ccuHost: host, ccuUiUrl: `http://${host}/` } : {};
+  }
+}
+
+function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, collector: CollectorPayload | undefined, ccuHost?: string) {
+  const ccuSystem = masterdata?.system;
+  const ccuBackups = masterdata?.backups;
+  const hasCcuSystemData = Boolean(ccuSystem || ccuBackups);
+  const ccuTarget = normalizeCcuUiTarget(ccuHost);
+
+  if (!hasCcuSystemData && !collector) {
+    return { available: false, logs: 0, connections: 0, ...ccuTarget };
   }
 
   return {
     available: true,
-    host: collector.host,
-    collectedAt: collector.collectedAt,
-    uptime: stringFromRecord(collector.system, "uptime"),
-    memory: stringFromRecord(collector.system, "memory"),
-    disk: stringFromRecord(collector.system, "disk"),
-    temperature: stringFromRecord(collector.system, "temperatureRaw"),
-    cpu: stringFromRecord(collector.system, "cpu"),
-    backups: stringFromRecord(collector.backups, "count"),
-    backupPaths: stringArrayFromRecord(collector.backups, "paths"),
-    logs: collector.logs?.length ?? 0,
-    connections: collector.network?.connections?.length ?? 0
+    host: stringFromRecord(ccuSystem, "host") ?? collector?.host,
+    ...ccuTarget,
+    collectedAt: masterdata?.collectedAt ?? collector?.collectedAt,
+    uptime: stringFromRecord(ccuSystem, "uptime") ?? stringFromRecord(collector?.system, "uptime"),
+    memory: stringFromRecord(ccuSystem, "memory") ?? stringFromRecord(collector?.system, "memory"),
+    disk: stringFromRecord(ccuSystem, "disk") ?? stringFromRecord(collector?.system, "disk"),
+    temperature: stringFromRecord(ccuSystem, "temperatureRaw") ?? stringFromRecord(collector?.system, "temperatureRaw"),
+    cpu: stringFromRecord(ccuSystem, "cpu") ?? stringFromRecord(collector?.system, "cpu"),
+    backups: stringFromRecord(ccuBackups, "count") ?? stringFromRecord(collector?.backups, "count"),
+    backupPaths: stringArrayFromRecord(ccuBackups, "paths") ?? stringArrayFromRecord(collector?.backups, "paths"),
+    logs: collector?.logs?.length ?? 0,
+    connections: collector?.network?.connections?.length ?? 0
   };
 }
 
@@ -392,7 +415,7 @@ app.post("/api/analyze", async (request, response) => {
     response.json({
       generatedAt: new Date().toISOString(),
       checks,
-      systemDashboard: createSystemDashboard(latestCollector),
+      systemDashboard: createSystemDashboard(latestCcuMasterdata, latestCollector, parsed.data.ccuHost),
       notifications: {
         telegram: notificationResult.telegram,
         email: notificationResult.email
@@ -445,7 +468,8 @@ app.get("/api/ccu-masterdata/latest", (_request, response) => {
   response.json({
     available: Boolean(latestCcuMasterdata),
     collectedAt: latestCcuMasterdata?.collectedAt,
-    deviceCount: latestCcuMasterdata?.deviceCount ?? latestCcuMasterdata?.devices?.length ?? 0
+    deviceCount: latestCcuMasterdata?.deviceCount ?? latestCcuMasterdata?.devices?.length ?? 0,
+    systemAvailable: Boolean(latestCcuMasterdata?.system || latestCcuMasterdata?.backups)
   });
 });
 
@@ -461,10 +485,10 @@ app.get("/api/system/update-status", async (_request, response) => {
     detail: releaseCheck.error
       ? `${releaseCheck.error} Die App funktioniert trotzdem.`
       : releaseCheck.available
-        ? `Installiert: ${releaseCheck.currentVersion}. Neu auf GitHub: ${releaseCheck.latestVersion}.`
+        ? `Installiert: ${releaseCheck.currentVersion}. Neu auf GitHub (${releaseCheck.source === "tag" ? "Tag" : "Release"}): ${releaseCheck.latestVersion}.`
         : releaseCheck.latestVersion
-          ? `Installierte Version ${releaseCheck.currentVersion} ist aktuell.`
-          : `Installierte Version ${releaseCheck.currentVersion}. Es wurde noch kein GitHub-Release gefunden.`,
+          ? `Installierte Version ${releaseCheck.currentVersion} ist aktuell (${releaseCheck.source === "tag" ? "Git-Tag" : "GitHub-Release"} geprüft).`
+          : `Installierte Version ${releaseCheck.currentVersion}. Kein versioniertes Release/Tag gefunden; Updates laufen über main.`,
     url: releaseCheck.url ?? "https://github.com/Schello805/Homematic-Analyzer",
     checkedAt: releaseCheck.checkedAt
   });

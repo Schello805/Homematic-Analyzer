@@ -126,6 +126,8 @@ export type CcuMasterdataPayload = {
   source?: string;
   collectedAt?: string;
   deviceCount?: number;
+  system?: Record<string, unknown>;
+  backups?: Record<string, unknown>;
   devices?: Array<{
     name?: string;
     address?: string;
@@ -138,6 +140,7 @@ export type ReleaseCheck = {
   available: boolean;
   currentVersion: string;
   latestVersion?: string;
+  source?: "release" | "tag";
   url?: string;
   checkedAt: string;
   error?: string;

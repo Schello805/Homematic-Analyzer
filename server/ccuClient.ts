@@ -430,8 +430,20 @@ function resolveServiceMessageName(notification: UnknownRecord, nameMap: Map<str
 function collectServiceMessages(parsedNotifications: UnknownRecord, nameMap: Map<string, string>): CcuEvidence[] {
   const root = asRecord(parsedNotifications.systemNotifications ?? parsedNotifications.systemNotification ?? parsedNotifications);
   const notifications = asArray(root.notification);
+  const activeNotifications = notifications.filter((notificationValue) => {
+    const notification = asRecord(notificationValue);
+    const haystack = Object.values(notification).map((value) => String(value ?? "")).join(" ").toUpperCase();
+    return !haystack.includes("STICKY_UNREACH");
+  });
+  const skippedSticky = notifications.length - activeNotifications.length;
 
-  return notifications.map((notificationValue, index) => {
+  console.info("[CCU DEBUG] ServiceMessages", JSON.stringify({
+    raw: notifications.length,
+    active: activeNotifications.length,
+    skippedStickyUnreach: skippedSticky
+  }));
+
+  return activeNotifications.map((notificationValue, index) => {
     const notification = asRecord(notificationValue);
     const type = stringValue(notification.type) ?? "Servicemeldung";
     const readableType = readableServiceMessageType(type);
