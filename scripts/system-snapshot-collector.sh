@@ -175,10 +175,11 @@ fi
 BACKUP_DISK_VALUE=""
 if [ -n "$LATEST_BACKUP_DIR" ]; then
   BACKUP_DISK_VALUE="$(df -h "$LATEST_BACKUP_DIR" 2>/dev/null | tail -n 1 | json_escape || true)"
-elif [ -d /media ]; then
-  BACKUP_DISK_VALUE="$(df -h /media 2>/dev/null | tail -n 1 | json_escape || true)"
-elif [ -d /mnt ]; then
-  BACKUP_DISK_VALUE="$(df -h /mnt 2>/dev/null | tail -n 1 | json_escape || true)"
+else
+  BACKUP_MOUNT="$(df -h 2>/dev/null | awk '$1 !~ /^tmpfs$/ && (index($6, "/media/") == 1 || index($6, "/mnt/") == 1 || index($6, "/run/media/") == 1) { print $6; exit }' || true)"
+  if [ -n "$BACKUP_MOUNT" ]; then
+    BACKUP_DISK_VALUE="$(df -h "$BACKUP_MOUNT" 2>/dev/null | tail -n 1 | json_escape || true)"
+  fi
 fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."

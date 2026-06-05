@@ -310,10 +310,9 @@ function splitMetricLines(value?: string) {
 }
 
 function formatTemperature(raw?: string) {
-  const value = Number(firstLine(raw));
-  if (!Number.isFinite(value)) return firstLine(raw) ?? "nicht verfügbar";
-  const celsius = value > 1000 ? value / 1000 : value;
-  return `${Math.round(celsius * 10) / 10} °C`;
+  const value = parseTemperature(raw);
+  if (value === undefined) return firstLine(raw) ?? "nicht verfügbar";
+  return `${Math.round(value * 10) / 10} °C`;
 }
 
 function formatMemory(raw?: string) {
@@ -345,14 +344,13 @@ function formatMemory(raw?: string) {
 }
 
 function formatDisk(raw?: string) {
+  const disk = parseDiskInfo(raw);
+  if (disk) {
+    return `${disk.percent}% belegt · ${disk.available} frei von ${disk.total}${disk.mount ? ` · ${disk.mount}` : ""}`;
+  }
+
   const lines = splitMetricLines(raw);
-  const diskLine = lines.find((line) => /\d+%/.test(line) && !/^filesystem\s+/i.test(line));
-  if (!diskLine) return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "nicht verfügbar";
-  const parts = diskLine.split(/\s+/);
-  const percentPart = parts.find((part) => /^\d+%$/.test(part));
-  const percentIndex = percentPart ? parts.indexOf(percentPart) : -1;
-  const available = percentIndex >= 1 ? parts[percentIndex - 1] : parts[3];
-  return percentPart ? `${percentPart} belegt · ${available} frei` : diskLine;
+  return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "nicht verfügbar";
 }
 
 function formatCpu(raw?: string) {
@@ -404,6 +402,33 @@ function metricNeedsHelp(value: string) {
   return value === "nicht verfügbar" || value === "nicht geprüft" || value === "keine gefunden" || value.startsWith("keine gefunden");
 }
 
+function parseTemperature(raw?: string) {
+  const value = Number(firstLine(raw)?.replace(",", "."));
+  if (!Number.isFinite(value)) return undefined;
+  return value > 1000 ? value / 1000 : value;
+}
+
+function parseDiskInfo(raw?: string) {
+  const line = splitMetricLines(raw).find((entry) => /\d+%/.test(entry) && !/^filesystem\s+/i.test(entry));
+  if (!line) return undefined;
+
+  const parts = line.split(/\s+/);
+  const percentIndex = parts.findIndex((part) => /^\d+%$/.test(part));
+  if (percentIndex < 4) return undefined;
+
+  const percent = Number(parts[percentIndex].replace("%", ""));
+  if (!Number.isFinite(percent)) return undefined;
+
+  return {
+    filesystem: parts[0],
+    total: parts[percentIndex - 3],
+    used: parts[percentIndex - 2],
+    available: parts[percentIndex - 1],
+    percent,
+    mount: parts.slice(percentIndex + 1).join(" ")
+  };
+}
+
 function parseMemoryNumberToMb(value: string, unit?: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
@@ -444,25 +469,33 @@ function parseMemoryUsagePercent(raw?: string) {
 }
 
 function parseDiskUsagePercent(raw?: string) {
-  const line = splitMetricLines(raw).find((entry) => /\d+%/.test(entry));
-  const value = line?.match(/(\d+)%/)?.[1];
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return parseDiskInfo(raw)?.percent;
 }
 
-function sparklinePoints(values: number[], width = 120, height = 34) {
+function sparklinePoints(values: number[], width = 120, height = 34, min = 0, max = 100) {
   if (values.length === 0) return "";
-  const normalizedValues = values.map((value) => Math.max(0, Math.min(100, value)));
+  const range = Math.max(max - min, 1);
+  const normalizedValues = values.map((value) => Math.max(min, Math.min(max, value)));
   if (normalizedValues.length === 1) {
-    const y = height - (normalizedValues[0] / 100) * height;
+    const y = height - ((normalizedValues[0] - min) / range) * height;
     return `0,${Math.round(y * 10) / 10} ${width},${Math.round(y * 10) / 10}`;
   }
   return normalizedValues.map((value, index) => {
     const x = (index / (normalizedValues.length - 1)) * width;
-    const y = height - (value / 100) * height;
+    const y = height - ((value - min) / range) * height;
     return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
   }).join(" ");
+}
+
+function historyTimeLabels(history?: SystemDashboard["history"]) {
+  const points = history?.filter((point) => point.collectedAt) ?? [];
+  if (points.length < 2) return undefined;
+  const formatTime = (value: string) => new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return {
+    start: formatTime(points[0].collectedAt),
+    end: formatTime(points[points.length - 1].collectedAt),
+    duration: `${points.length} min`
+  };
 }
 
 function App() {
@@ -1624,28 +1657,46 @@ function App() {
                 </span>
               </div>
               <div className="metric-grid">
-                {[
+                {(() => {
+                  const history = analysis.systemDashboard.history ?? [];
+                  const timeLabels = historyTimeLabels(history);
+                  const temperatureValues = history.map((point) => parseTemperature(point.temperature)).filter((value): value is number => value !== undefined);
+                  const temperatureMin = temperatureValues.length ? Math.floor(Math.min(...temperatureValues) - 2) : 0;
+                  const temperatureMax = temperatureValues.length ? Math.ceil(Math.max(...temperatureValues) + 2) : 100;
+
+                  return [
                   {
                     label: "CPU",
                     value: formatCpu(analysis.systemDashboard.cpu),
                     hint: "Systemlast der CCU/RaspberryMatic.",
                     help: "Wenn CPU nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten. Der Verlauf zeigt 0–100% CPU-Auslastung der CCU.",
-                    sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseCpuLoad(point.cpu)).filter((value): value is number => value !== undefined)),
-                    sparklineLabel: "CPU-Verlauf 0 bis 100 Prozent"
+                    sparkline: sparklinePoints(history.map((point) => parseCpuLoad(point.cpu)).filter((value): value is number => value !== undefined)),
+                    sparklineLabel: "CPU-Verlauf 0 bis 100 Prozent",
+                    axisTop: "100%",
+                    axisBottom: "0%",
+                    timeLabels
                   },
                   {
                     label: "RAM",
                     value: formatMemory(analysis.systemDashboard.memory),
                     hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
                     help: "Wenn RAM nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten oder das CCU-WebUI-Script erneut kopieren. Der Verlauf zeigt 0–100% RAM-Belegung.",
-                    sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseMemoryUsagePercent(point.memory)).filter((value): value is number => value !== undefined)),
-                    sparklineLabel: "RAM-Verlauf 0 bis 100 Prozent"
+                    sparkline: sparklinePoints(history.map((point) => parseMemoryUsagePercent(point.memory)).filter((value): value is number => value !== undefined)),
+                    sparklineLabel: "RAM-Verlauf 0 bis 100 Prozent",
+                    axisTop: "100%",
+                    axisBottom: "0%",
+                    timeLabels
                   },
                   {
                     label: "Temperatur",
                     value: formatTemperature(analysis.systemDashboard.temperature),
                     hint: analysis.systemDashboard.temperature ? "CPU-/Systemtemperatur der Zentrale." : "Auf der CCU das aktualisierte WebUI-Script einmal ausführen.",
-                    help: "Temperatur kommt über `/usr/bin/vcgencmd measure_temp`. Wenn sie fehlt: Script auf RaspberryMatic/CCU3 ausführen; in einem LXC ist dieser Wert meist nicht vorhanden."
+                    help: "Temperatur kommt über `/usr/bin/vcgencmd measure_temp`. Wenn sie fehlt: Script auf RaspberryMatic/CCU3 ausführen; in einem LXC ist dieser Wert meist nicht vorhanden.",
+                    sparkline: sparklinePoints(temperatureValues, 120, 34, temperatureMin, temperatureMax),
+                    sparklineLabel: "Temperatur-Verlauf der Zentrale",
+                    axisTop: `${temperatureMax}°`,
+                    axisBottom: `${temperatureMin}°`,
+                    timeLabels
                   },
                   {
                     label: "Lokaler Speicher",
@@ -1685,7 +1736,8 @@ function App() {
                     hint: "Laufzeit seit dem letzten Neustart.",
                     help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
                   }
-                ].map((metric) => (
+                ];
+                })().map((metric) => (
                   <div className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""}`} key={metric.label}>
                     <div className="metric-card__top">
                       <span>{metric.label}</span>
@@ -1701,14 +1753,23 @@ function App() {
                     {metric.sparkline && (
                       <div className="metric-chart" aria-label={metric.sparklineLabel}>
                         <div className="metric-chart__axis">
-                          <span>100%</span>
-                          <span>0%</span>
+                          <span>{metric.axisTop}</span>
+                          <span>{metric.axisBottom}</span>
                         </div>
-                        <svg className="metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label={metric.sparklineLabel}>
-                          <line x1="0" y1="0" x2="120" y2="0" />
-                          <line x1="0" y1="34" x2="120" y2="34" />
-                          <polyline points={metric.sparkline} />
-                        </svg>
+                        <div className="metric-chart__body">
+                          <svg className="metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label={metric.sparklineLabel}>
+                            <line x1="0" y1="0" x2="120" y2="0" />
+                            <line x1="0" y1="34" x2="120" y2="34" />
+                            <polyline points={metric.sparkline} />
+                          </svg>
+                          {metric.timeLabels && (
+                            <div className="metric-chart__time">
+                              <span>{metric.timeLabels.start}</span>
+                              <span>{metric.timeLabels.duration}</span>
+                              <span>{metric.timeLabels.end}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
