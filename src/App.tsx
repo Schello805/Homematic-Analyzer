@@ -736,12 +736,27 @@ function App() {
       });
       if (!response.ok) {
         const errorText = await response.text().catch(() => "");
+        let errorMessage = "Update konnte nicht gestartet werden.";
+        let fallbackCommand = "sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh";
+        try {
+          const parsedError = JSON.parse(errorText) as { message?: string; error?: string; hint?: string; fallbackCommand?: string };
+          errorMessage = [
+            parsedError.message,
+            parsedError.error ? `Grund: ${parsedError.error}` : undefined,
+            parsedError.hint
+          ].filter(Boolean).join(" ");
+          fallbackCommand = parsedError.fallbackCommand ?? fallbackCommand;
+        } catch {
+          if (errorText.trim()) {
+            errorMessage = errorText.trim().slice(0, 260);
+          }
+        }
         console.error("[Homematic Analyzer][Update] POST failed", {
           status: response.status,
           statusText: response.statusText,
           body: errorText
         });
-        throw new Error("Update konnte nicht gestartet werden.");
+        throw new Error(`${errorMessage} Fallback: ${fallbackCommand}`);
       }
 
       const result = (await response.json()) as { message?: string; log?: string };
@@ -753,16 +768,17 @@ function App() {
       });
     } catch (error) {
       console.error("[Homematic Analyzer][Update] start failed", error);
+      const message = error instanceof Error ? error.message : "Bitte per SSH aktualisieren.";
       setUpdatingApp(false);
       setUpdateRunStatus({
         status: "failed",
         running: false,
-        error: "Update konnte nicht gestartet werden."
+        error: message
       });
       showToast({
         type: "error",
         title: "Update nicht gestartet",
-        message: "Bitte per SSH mit sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh aktualisieren."
+        message
       });
     }
   }

@@ -653,8 +653,15 @@ app.post("/api/system/update", async (_request, response) => {
 
   try {
     const updateScript = join(root, "scripts", "install", "update-local.sh");
+    await readFile(updateScript, "utf8");
     await mkdir(dataDir, { recursive: true });
-    await writeFile(updateLogFile, `[${new Date().toISOString()}] Update per Footer gestartet\n`);
+    await writeFile(updateLogFile, [
+      `[${new Date().toISOString()}] Update per Footer gestartet`,
+      `[INFO] Root: ${root}`,
+      `[INFO] Script: ${updateScript}`,
+      `[INFO] Node PID: ${process.pid}`,
+      ""
+    ].join("\n"));
     updateRun = {
       running: true,
       startedAt: new Date().toISOString()
@@ -702,20 +709,24 @@ app.post("/api/system/update", async (_request, response) => {
     response.json({
       ok: true,
       message: "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
-      log: ".data/update.log"
+      log: ".data/update.log",
+      fallbackCommand: "sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh"
     });
   } catch (error) {
     console.error("[Homematic Analyzer][Update] start failed", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     updateRun = {
       running: false,
       finishedAt: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error)
+      error: errorMessage
     };
     response.status(500).json({
       ok: false,
       message: "Update konnte nicht gestartet werden.",
-      error: updateRun.error,
-      log: ".data/update.log"
+      error: errorMessage,
+      hint: "Der Analyzer-Prozess konnte das lokale Update-Script nicht starten. Häufige Ursachen sind Dateirechte in /opt/homematic-analyzer, fehlendes bash oder ein nicht beschreibbares .data-Verzeichnis.",
+      log: ".data/update.log",
+      fallbackCommand: "sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh"
     });
   }
 });
