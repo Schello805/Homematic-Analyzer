@@ -1,4 +1,4 @@
-import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck } from "./types.js";
+import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
 
 const now = () => new Date().toISOString();
 const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
@@ -199,7 +199,45 @@ function isReachabilityEvidence(evidence: Evidence): boolean {
   return /unreach|nicht erreichbar|kommunikation|communication|geratekommunikation gestort/.test(detail);
 }
 
-export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck): AnalysisCheck[] {
+function isHmIpType(type?: string): boolean {
+  return /^HmIP-/i.test(type ?? "");
+}
+
+function isLikelyHmIpSerial(serial?: string): boolean {
+  return Boolean(serial && /^00[A-Z0-9]{12,}$/i.test(serial));
+}
+
+function isHmIpSnifferDevice(device: SnifferDeviceSummary): boolean {
+  return isHmIpType(device.type) || isLikelyHmIpSerial(device.serial);
+}
+
+function isHmIpRouterCandidateType(type?: string): boolean {
+  if (!type) return false;
+  return /^HmIP-(HAP|WLAN-HAP|DRAP|PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|WRC|MIOB)/i.test(type);
+}
+
+function snifferDeviceLabel(device: SnifferDeviceSummary): string {
+  const parts = [device.name || device.address];
+  if (device.type) parts.push(device.type);
+  if (device.avgRssi !== undefined) parts.push(`Ø ${device.avgRssi} dBm`);
+  parts.push(`${device.telegrams} Telegramm${device.telegrams === 1 ? "" : "e"}`);
+  return parts.join(" · ");
+}
+
+function snifferSignalStatus(devices: SnifferDeviceSummary[]): AnalysisCheck["status"] {
+  if (!devices.length) return "unavailable";
+  if (devices.some((device) => (device.avgRssi ?? 0) <= -95)) return "warning";
+  if (devices.some((device) => (device.avgRssi ?? 0) <= -85)) return "improvement";
+  return "ok";
+}
+
+function weakSnifferDevices(devices: SnifferDeviceSummary[], limit = -85): SnifferDeviceSummary[] {
+  return devices
+    .filter((device) => device.avgRssi !== undefined && device.avgRssi <= limit)
+    .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
+}
+
+export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
@@ -211,8 +249,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const busyExternalAccesses = externalAccesses.filter((access) => access.count >= 8);
   const masterdataDeviceCount = masterdata?.deviceCount ?? masterdata?.devices?.length ?? 0;
   const inventoryDevices = masterdata?.devices?.length ? masterdata.devices : ccu?.devices ?? [];
-  const hmipDevices = inventoryDevices.filter((device) => /^HmIP-/i.test(device.type ?? ""));
-  const hmipRouterCandidates = hmipDevices.filter((device) => /(HAP|DRAP|WLAN|PSM|FSM|BSM|PCBS|WRC|MOD)/i.test(device.type ?? ""));
+  const hmipDevices = inventoryDevices.filter((device) => isHmIpType(device.type));
+  const hmipRouterCandidates = hmipDevices.filter((device) => isHmIpRouterCandidateType(device.type));
+  const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
+  const weakSignalDevices = weakSnifferDevices(snifferDevicesWithRssi);
+  const hmipSnifferDevicesWithRssi = snifferDevicesWithRssi.filter(isHmIpSnifferDevice);
+  const weakHmipSnifferDevices = weakSnifferDevices(hmipSnifferDevicesWithRssi);
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
@@ -487,25 +529,51 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "signal-strength",
       title: "Signalqualität",
       category: "Funk",
-      status: hasSniffer ? "improvement" : "unavailable",
-      summary: hasSniffer
-        ? "Mit Sniffer können Funktelegramme und schwache Verbindungen genauer eingeordnet werden."
+      status: snifferSignalStatus(snifferDevicesWithRssi),
+      summary: snifferDevicesWithRssi.length > 0
+        ? weakSignalDevices.length > 0
+          ? `${snifferDevicesWithRssi.length} Geräte mit RSSI bewertet. Schwach empfangen: ${weakSignalDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
+          : `${snifferDevicesWithRssi.length} Geräte mit RSSI bewertet. Keine schwach empfangenen Telegramme im aktuellen Sniffer-Snapshot.`
+        : hasSniffer && sniffer?.connected
+          ? "Der Sniffer antwortet, aber es wurden noch keine auswertbaren Homematic-Telegramme mit Gerätenamen/RSSI erkannt."
+          : hasSniffer
+            ? "Sniffer-Port ist eingetragen, aber es liegen noch keine auswertbaren Snifferdaten vor."
         : hasCcuData
           ? "Keine belegbaren Signalstärken vorhanden. Die CCU-Daten reichen dafür aktuell nicht aus."
           : "Signalqualität braucht CCU-Daten oder optional den AskSin Analyzer XS.",
-      recommendation: hasSniffer
-        ? "AskSin Analyzer XS verbunden lassen, um Funkprobleme zeitlich besser zuzuordnen."
+      recommendation: snifferDevicesWithRssi.length > 0
+        ? weakSignalDevices.length > 0
+          ? "Schwach empfangene Geräte räumlich prüfen: Abstand, Wände, Metall, Batteriestand und möglichen Router/Access Point in der Nähe bewerten."
+          : "Gut: Im aktuellen Sniffer-Snapshot gibt es keine auffällig schwachen RSSI-Werte."
+        : hasSniffer
+          ? "Ein Homematic-Gerät auslösen und im DC-Analyzer erneut prüfen. Für Gerätenamen das AskSinAnalyzerDevList-/CCU-Stammdaten-Script verwenden."
         : "Optional AskSin Analyzer XS anschließen. Ohne echte RSSI-/Snifferdaten wird hier kein Funkproblem behauptet.",
       access: hasSniffer ? ["sniffer"] : ["ccu"],
-      evidence: hasSniffer ? [
-        {
-          source: "Sniffer-Konfiguration",
-          detail: `USB-Port ${config.snifferPort} angegeben.`,
-          timestamp: now()
-        }
-      ] : [],
+      evidence: snifferDevicesWithRssi.length > 0
+        ? [
+          {
+            source: "Sniffer-RSSI",
+            detail: `${snifferDevicesWithRssi.length} Geräte mit RSSI. Schwelle: ab -85 dBm Optimierung, ab -95 dBm Hinweis.`,
+            timestamp: sniffer?.checkedAt
+          },
+          ...weakSignalDevices.slice(0, 8).map((device) => ({
+            source: "Sniffer-RSSI",
+            detail: snifferDeviceLabel(device),
+            timestamp: device.lastSeen
+          }))
+        ]
+        : hasSniffer
+          ? [
+            {
+              source: "Sniffer-Konfiguration",
+              detail: `USB-Port ${config.snifferPort} angegeben. Telegramme: ${sniffer?.summary.telegrams ?? 0}, RSSI-Noise: ${sniffer?.rssiNoise.length ?? 0}.`,
+              timestamp: sniffer?.checkedAt ?? now()
+            }
+          ]
+          : [],
       details: [
-        "Dieser Punkt wird erst bewertet, wenn RSSI-Werte oder Snifferdaten vorliegen.",
+        "RSSI-Werte stammen vom Sniffer-Standort. Sie zeigen, wie gut der Sniffer Telegramme empfängt, nicht zwingend die direkte Strecke zur CCU.",
+        "Bewertet wird nur, wenn echte Telegramme mit RSSI vorliegen.",
         "Ohne Messwert bleibt der Punkt bewusst nicht geprüft."
       ]
     },
@@ -513,29 +581,57 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "routing-topology",
       title: "HmIP Routing",
       category: "Topologie",
-      status: hmipDevices.length > 0 ? "unavailable" : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
+      status: hmipDevices.length > 0
+        ? weakHmipSnifferDevices.some((device) => (device.avgRssi ?? 0) <= -95)
+          ? "warning"
+          : weakHmipSnifferDevices.length > 0
+            ? "improvement"
+            : hmipSnifferDevicesWithRssi.length > 0
+              ? "ok"
+              : "unavailable"
+        : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
       summary: hmipDevices.length > 0
-        ? `${hmipDevices.length} HmIP-Geräte gefunden. Aktive Routing-Pfade sind damit aber noch nicht belegbar.`
+        ? hmipSnifferDevicesWithRssi.length > 0
+          ? weakHmipSnifferDevices.length > 0
+            ? `${hmipDevices.length} HmIP-Geräte bekannt, ${hmipSnifferDevicesWithRssi.length} per Sniffer-RSSI gesehen. Schwache HmIP-Geräte: ${weakHmipSnifferDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
+            : `${hmipDevices.length} HmIP-Geräte bekannt, ${hmipSnifferDevicesWithRssi.length} per Sniffer-RSSI gesehen. Keine schwachen HmIP-RSSI-Werte im aktuellen Snapshot.`
+          : `${hmipDevices.length} HmIP-Geräte gefunden. ${hmipRouterCandidates.length} davon wirken grundsätzlich als mögliche Router-/Repeater-Kandidaten. Aktive Routing-Pfade sind noch nicht belegt.`
         : hasCcuData || masterdataDeviceCount > 0
           ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
           : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
       recommendation: hmipDevices.length > 0
-        ? "Die Kandidatenliste hilft nur bei der Vorbereitung. Für echte Topologie braucht der Analyzer HmIPServer-Daten oder passende Logbelege."
+        ? weakHmipSnifferDevices.length > 0
+          ? "Bei schwachen HmIP-Geräten zuerst Standort, Entfernung und Stromversorgung prüfen. Danach einen HmIP-Router/Access Point näher am betroffenen Bereich testen."
+          : hmipSnifferDevicesWithRssi.length > 0
+            ? "Keine Routing-Maßnahme nötig. Für echte Routingpfade später HmIPServer-Daten/Logs ergänzen."
+            : "Router-Kandidaten helfen bei der Planung. Für Abdeckung den Sniffer laufen lassen und HmIP-Geräte auslösen."
         : hasCcuData || masterdataDeviceCount > 0
           ? "Kein Handlungsbedarf."
           : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
       access: ["ccu"],
       evidence: hmipDevices.length > 0
-        ? [{
-          source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
-          detail: `${hmipDevices.length} HmIP-Geräte erkannt. Mögliche Router-Kandidaten: ${hmipRouterCandidates.slice(0, 8).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine"}. Das belegt noch keinen aktiven Routing-Pfad.`,
-          timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
-        }]
+        ? [
+          {
+            source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
+            detail: `${hmipDevices.length} HmIP-Geräte erkannt. Mögliche Router-/Repeater-Kandidaten: ${hmipRouterCandidates.slice(0, 10).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine sicher erkannt"}.`,
+            timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
+          },
+          ...(hmipSnifferDevicesWithRssi.length > 0 ? [{
+            source: "Sniffer-RSSI",
+            detail: `${hmipSnifferDevicesWithRssi.length} HmIP-Geräte mit RSSI am Sniffer gesehen. Schwelle: ab -85 dBm Optimierung, ab -95 dBm Hinweis.`,
+            timestamp: sniffer?.checkedAt
+          }] : []),
+          ...weakHmipSnifferDevices.slice(0, 8).map((device) => ({
+            source: "Sniffer-RSSI",
+            detail: snifferDeviceLabel(device),
+            timestamp: device.lastSeen
+          }))
+        ]
         : [],
       details: [
-        "Die Kandidatenliste ist hilfreich, um grundsätzlich routingfähige Geräte zu erkennen.",
-        "Diese Analyse unterscheidet bewusst zwischen möglichen Router-Geräten und wirklich aktivem Routing.",
-        "Ein aktiver Routing-Pfad wird erst als Problem markiert, wenn HmIPServer-Daten oder Logs ihn belegen."
+        "Router-Kandidaten sind Geräte, deren Typ typischerweise netzbetrieben ist und als HmIP-Router/Repeater infrage kommt.",
+        "Sniffer-RSSI bewertet die Abdeckung am Sniffer-Standort. Das ist ein guter Hinweis, aber noch kein beweisbarer aktiver Routingpfad.",
+        "Aktive Routing-Pfade werden erst behauptet, wenn HmIPServer-Daten oder passende Logs sie belegen."
       ]
     },
     {

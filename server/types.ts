@@ -157,6 +157,64 @@ export type CcuMasterdataPayload = {
   };
 };
 
+export type SnifferTelegram = {
+  tstamp: string;
+  raw: string;
+  rssi: number;
+  len: number;
+  cnt: number;
+  flags: string[];
+  type: string;
+  fromAddress: string;
+  toAddress: string;
+  fromName?: string;
+  toName?: string;
+  fromSerial?: string;
+  toSerial?: string;
+  fromType?: string;
+  toType?: string;
+  dutyCycle: number;
+  sendTimeMs: number;
+  payload: string;
+};
+
+export type SnifferDeviceSummary = {
+  address: string;
+  name: string;
+  serial?: string;
+  type?: string;
+  telegrams: number;
+  dutyCycle: number;
+  dutyShare: number;
+  sendTimeMs: number;
+  avgRssi?: number;
+  lastSeen: string;
+};
+
+export type SnifferSnapshot = {
+  checkedAt: string;
+  port?: string;
+  configured: boolean;
+  connected: boolean;
+  source: string;
+  summary: {
+    rawLines: number;
+    telegrams: number;
+    devices: number;
+    dutyCycle?: number;
+    carrierSense?: number;
+    weakestRssi?: number;
+  };
+  devices: SnifferDeviceSummary[];
+  events: SnifferTelegram[];
+  rssiNoise: Array<{
+    tstamp: string;
+    raw: string;
+    rssi?: number;
+  }>;
+  diagnostics: string[];
+};
+
 export type ReleaseCheck = {
   available: boolean;
   currentVersion: string;

@@ -12,7 +12,7 @@ import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
 import packageInfo from "../package.json" with { type: "json" };
-import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings } from "./types.js";
+import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferSnapshot } from "./types.js";
 
 const app = express();
 const appVersion = packageInfo.version;
@@ -30,6 +30,7 @@ const snifferLogFile = join(dataDir, "sniffer-lines.log");
 
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
+let latestSnifferSnapshot: SnifferSnapshot | undefined;
 let persistedNotificationSettings: NotificationSettings | undefined;
 let collectorHistory: CollectorHistoryPoint[] = [];
 let updateRun: {
@@ -363,7 +364,7 @@ async function readSerialSnifferLines(port?: string): Promise<string[]> {
   });
 }
 
-async function readSnifferSnapshot(port?: string) {
+async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   const checkedAt = new Date().toISOString();
   let lines: string[] = [];
   let source = "Noch keine Snifferdaten empfangen.";
@@ -789,7 +790,8 @@ app.post("/api/sniffer/snapshot", async (request, response) => {
     return;
   }
 
-  response.json(await readSnifferSnapshot(parsed.data.port));
+  latestSnifferSnapshot = await readSnifferSnapshot(parsed.data.port);
+  response.json(latestSnifferSnapshot);
 });
 
 app.get("/api/setup/defaults", async (_request, response) => {
@@ -812,8 +814,12 @@ app.post("/api/analyze", async (request, response) => {
       events: { critical: true }
     });
     const releaseCheck = notificationSettings.events?.releases ? await checkRepositoryRelease(appVersion) : undefined;
+    const snifferSnapshot = parsed.data.snifferPort
+      ? await readSnifferSnapshot(parsed.data.snifferPort)
+      : latestSnifferSnapshot;
+    latestSnifferSnapshot = snifferSnapshot;
 
-    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck);
+    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot);
     const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector);
     if (aiLogAnalysis) {
       checks.push(aiLogAnalysis);
