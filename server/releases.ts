@@ -32,47 +32,7 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
 
   try {
     const candidates: Array<{ version?: string; source: ReleaseCheck["source"]; url?: string }> = [];
-    const releaseResponse = await fetch(repositoryReleasesUrl, {
-      headers: { Accept: "application/vnd.github+json" }
-    });
-
-    if (!releaseResponse.ok) {
-      return {
-        available: false,
-        currentVersion,
-        checkedAt,
-        error: `GitHub antwortet mit HTTP ${releaseResponse.status}.`
-      };
-    }
-
-    const releases = (await releaseResponse.json()) as Array<{ tag_name?: string; html_url?: string }>;
-    const latestRelease = releases[0];
-    const latestVersion = normalizeVersion(latestRelease?.tag_name);
-
-    if (latestVersion) {
-      candidates.push({ version: latestVersion, source: "release", url: latestRelease?.html_url });
-    }
-
-    const tagResponse = await fetch(repositoryTagsUrl, {
-      headers: { Accept: "application/vnd.github+json" }
-    });
-
-    if (!tagResponse.ok) {
-      return {
-        available: false,
-        currentVersion,
-        checkedAt,
-        error: `GitHub-Tags antworten mit HTTP ${tagResponse.status}.`
-      };
-    }
-
-    const tags = (await tagResponse.json()) as Array<{ name?: string; commit?: { url?: string } }>;
-    const latestTag = tags[0];
-    const latestTagVersion = normalizeVersion(latestTag?.name);
-
-    if (latestTagVersion) {
-      candidates.push({ version: latestTagVersion, source: "tag", url: `${repositoryUrl}/releases/tag/${latestTag?.name}` });
-    }
+    const errors: string[] = [];
 
     const packageResponse = await fetch(repositoryPackageUrl, {
       headers: { Accept: "application/json" }
@@ -84,6 +44,40 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
       if (mainVersion) {
         candidates.push({ version: mainVersion, source: "main", url: `${repositoryUrl}/tree/main` });
       }
+    } else {
+      errors.push(`GitHub-Raw antwortet mit HTTP ${packageResponse.status}.`);
+    }
+
+    const tagResponse = await fetch(repositoryTagsUrl, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+
+    if (tagResponse.ok) {
+      const tags = (await tagResponse.json()) as Array<{ name?: string; commit?: { url?: string } }>;
+      const latestTag = tags[0];
+      const latestTagVersion = normalizeVersion(latestTag?.name);
+
+      if (latestTagVersion) {
+        candidates.push({ version: latestTagVersion, source: "tag", url: `${repositoryUrl}/releases/tag/${latestTag?.name}` });
+      }
+    } else {
+      errors.push(`GitHub-Tags antworten mit HTTP ${tagResponse.status}.`);
+    }
+
+    const releaseResponse = await fetch(repositoryReleasesUrl, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+
+    if (releaseResponse.ok) {
+      const releases = (await releaseResponse.json()) as Array<{ tag_name?: string; html_url?: string }>;
+      const latestRelease = releases[0];
+      const latestVersion = normalizeVersion(latestRelease?.tag_name);
+
+      if (latestVersion) {
+        candidates.push({ version: latestVersion, source: "release", url: latestRelease?.html_url });
+      }
+    } else {
+      errors.push(`GitHub-Releases antworten mit HTTP ${releaseResponse.status}.`);
     }
 
     const latestCandidate = candidates
@@ -96,7 +90,8 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
       latestVersion: latestCandidate?.version,
       source: latestCandidate?.source,
       url: latestCandidate?.url ?? repositoryUrl,
-      checkedAt
+      checkedAt,
+      error: latestCandidate ? undefined : errors[0]
     };
   } catch {
     return {
