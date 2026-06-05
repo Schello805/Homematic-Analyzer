@@ -20,12 +20,16 @@ make_tmp_file() {
 TMP_FILE="$(make_tmp_file payload)"
 RESPONSE_FILE="$(make_tmp_file response)"
 BACKUP_LIST_FILE="$(make_tmp_file backups)"
+LOG_LIST_FILE="$(make_tmp_file logs)"
+CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
 : > "$BACKUP_LIST_FILE"
+: > "$LOG_LIST_FILE"
+: > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -108,9 +112,10 @@ json_escape() {
     {
       gsub(/\\/, "\\\\");
       gsub(/"/, "\\\"");
+      gsub(/\r/, " ");
       gsub(/\t/, " ");
       if (!first) {
-        printf "\\n";
+        printf " | ";
       }
       first = 0;
       printf "%s", $0;
@@ -136,21 +141,17 @@ BACKUP_COUNT="$(wc -l < "$BACKUP_LIST_FILE" 2>/dev/null | tr -d ' ')"
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
-LOG_LINES="$(
-  {
-    grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/messages 2>/dev/null
-    grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/syslog 2>/dev/null
-    journalctl -n 80 --no-pager 2>/dev/null | grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" 2>/dev/null
-  } | tail -n 25 | json_escape
-)"
+{
+  grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/messages 2>/dev/null
+  grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/syslog 2>/dev/null
+  journalctl -n 80 --no-pager 2>/dev/null | grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" 2>/dev/null
+} | tail -n 25 > "$LOG_LIST_FILE" 2>/dev/null || true
 
-CONNECTION_LINES="$(
-  {
-    ss -Htanp 2>/dev/null
-    netstat -tnp 2>/dev/null
-    netstat -tn 2>/dev/null
-  } | grep -E ":(80|443|8181|2001|2010|9292|42001|42010|8700|8701)[[:space:]]" 2>/dev/null | head -n 80 | json_escape
-)"
+{
+  ss -Htanp 2>/dev/null
+  netstat -tnp 2>/dev/null
+  netstat -tn 2>/dev/null
+} | grep -E ":(80|443|8181|2001|2010|9292|42001|42010|8700|8701)[[:space:]]" 2>/dev/null | head -n 80 > "$CONNECTION_LIST_FILE" 2>/dev/null || true
 
 {
   printf '{\n'
@@ -178,28 +179,28 @@ CONNECTION_LINES="$(
   printf '\n  ] },\n'
   printf '  "logs": [\n'
   FIRST=1
-  printf '%s\n' "$LOG_LINES" | while IFS= read -r line; do
+  while IFS= read -r line; do
     [ -z "$line" ] && continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0
     else
       printf ',\n'
     fi
-    printf '    "%s"' "$line"
-  done
+    printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
+  done < "$LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connections": [\n'
   FIRST=1
-  printf '%s\n' "$CONNECTION_LINES" | while IFS= read -r line; do
+  while IFS= read -r line; do
     [ -z "$line" ] && continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0
     else
       printf ',\n'
     fi
-    printf '      "%s"' "$line"
-  done
+    printf '      "%s"' "$(printf '%s' "$line" | json_escape)"
+  done < "$CONNECTION_LIST_FILE"
   printf '\n    ]\n'
   printf '  }\n'
   printf '}\n'
@@ -207,7 +208,7 @@ CONNECTION_LINES="$(
 
 if command -v curl >/dev/null 2>&1; then
   echo "Homematic Analyzer: Sende Daten an den Analyzer ..."
-  HTTP_STATUS="$(curl --connect-timeout 5 --max-time 20 -sS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" -o "$RESPONSE_FILE" -w "%{http_code}" "$ENDPOINT" || echo "000")"
+  HTTP_STATUS="$(curl --connect-timeout 5 --max-time 20 -sS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" -o "$RESPONSE_FILE" -w "%{http_code}" "$ENDPOINT")" || HTTP_STATUS="000"
   if [ "$HTTP_STATUS" = "200" ]; then
     echo "Homematic Analyzer: Daten erfolgreich gesendet."
     if grep -q '"ok":true' "$RESPONSE_FILE" 2>/dev/null; then
@@ -227,7 +228,10 @@ if command -v curl >/dev/null 2>&1; then
     else
       echo "Homematic Analyzer: Keine lesbare Antwort erhalten."
     fi
-    echo "Homematic Analyzer: Debug: Payload wurde nicht gespeichert. Führe den Befehl nach einem App-Update erneut aus."
+    DEBUG_PAYLOAD="/tmp/homematic-analyzer-last-payload.json"
+    cp "$TMP_FILE" "$DEBUG_PAYLOAD" 2>/dev/null || true
+    echo "Homematic Analyzer: Debug: Payload gespeichert unter $DEBUG_PAYLOAD"
+    echo "Homematic Analyzer: Debug: Prüfen mit: cat $DEBUG_PAYLOAD"
     exit 1
   fi
 else

@@ -444,6 +444,26 @@ app.post("/api/ccu-masterdata", express.raw({ type: "*/*", limit: "2mb" }), asyn
 
 app.use(express.json({ limit: "2mb" }));
 
+app.use((error: unknown, request: express.Request, response: express.Response, next: express.NextFunction) => {
+  if (!request.path.startsWith("/api")) {
+    next(error);
+    return;
+  }
+
+  console.warn("[Homematic Analyzer][API] Bad Request", {
+    path: request.path,
+    method: request.method,
+    contentType: request.headers["content-type"],
+    message: error instanceof Error ? error.message : String(error)
+  });
+
+  response.status(400).json({
+    error: "Ungültige Anfrage",
+    hint: "Die gesendeten Daten konnten nicht als JSON gelesen werden. Bitte Shell-Collector-Script aktualisieren und erneut ausführen.",
+    message: error instanceof Error ? error.message : "Bad Request"
+  });
+});
+
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true, service: "Homematic Analyzer API" });
 });
