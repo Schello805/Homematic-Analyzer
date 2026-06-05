@@ -388,7 +388,9 @@ h2 {
 
 .dc-source-card,
 .dc-status-card,
-.dc-events {
+.dc-events,
+.dc-duty-panel,
+.dc-table-card {
   border: 1px solid #dbe4f0;
   border-radius: 24px;
   padding: 16px;
@@ -481,13 +483,148 @@ h2 {
   line-height: 1.32;
 }
 
-.dc-events {
+.dc-events,
+.dc-duty-panel,
+.dc-table-card {
   display: grid;
   gap: 12px;
 }
 
-.dc-events h3 {
+.dc-events h3,
+.dc-duty-panel h3,
+.dc-table-card h3 {
   margin: 0;
+}
+
+.dc-duty-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.dc-duty-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.dc-duty-row > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.dc-duty-row strong {
+  color: #172033;
+}
+
+.dc-duty-row span {
+  color: #667085;
+  font-size: 0.82rem;
+}
+
+.dc-duty-row b {
+  color: #1849a9;
+  font-size: 0.92rem;
+}
+
+.dc-duty-bar,
+.dc-mini-bar {
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef8;
+}
+
+.dc-duty-bar {
+  height: 14px;
+}
+
+.dc-mini-bar {
+  display: inline-flex;
+  width: 72px;
+  height: 8px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.dc-duty-bar span,
+.dc-mini-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #20a783, #3478f6);
+}
+
+.dc-table-wrap {
+  overflow-x: auto;
+}
+
+.dc-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.dc-table th,
+.dc-table td {
+  border-bottom: 1px solid #e0e7f2;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.dc-table th {
+  color: #667085;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.dc-table td {
+  color: #172033;
+  font-size: 0.92rem;
+}
+
+.dc-table td strong,
+.dc-table td span {
+  display: block;
+}
+
+.dc-table td span {
+  color: #667085;
+  font-size: 0.8rem;
+}
+
+.dc-table code {
+  color: #1849a9;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.dc-events summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dc-events summary::-webkit-details-marker {
+  display: none;
+}
+
+.dc-events summary span {
+  display: grid;
+  gap: 3px;
+  color: #172033;
+  font-weight: 700;
+}
+
+.dc-events summary small {
+  color: #3478f6;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
 }
 
 .dc-events ul {
@@ -2231,6 +2368,10 @@ pre {
   }
 
   .dc-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dc-duty-row {
     grid-template-columns: 1fr;
   }
 

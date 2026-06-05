@@ -118,19 +118,47 @@ type SnifferSnapshot = {
   connected: boolean;
   source: string;
   summary: {
+    rawLines: number;
     telegrams: number;
     devices: number;
     dutyCycle?: number;
     carrierSense?: number;
     weakestRssi?: number;
   };
+  devices: Array<{
+    address: string;
+    name: string;
+    serial?: string;
+    type?: string;
+    telegrams: number;
+    dutyCycle: number;
+    dutyShare: number;
+    sendTimeMs: number;
+    avgRssi?: number;
+    lastSeen: string;
+  }>;
   events: Array<{
     raw: string;
-    device?: string;
-    rssi?: number;
-    dutyCycle?: number;
-    carrierSense?: number;
+    fromAddress: string;
+    toAddress: string;
+    fromName?: string;
+    toName?: string;
+    fromSerial?: string;
+    toSerial?: string;
+    rssi: number;
+    len: number;
+    cnt: number;
+    flags: string[];
+    type: string;
+    dutyCycle: number;
+    sendTimeMs: number;
+    payload: string;
   }>;
+  rssiNoise: Array<{
+    raw: string;
+    rssi?: number;
+  }>;
+  diagnostics: string[];
 };
 
 type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort">>;
@@ -1777,11 +1805,11 @@ function App() {
 
           <div className="dc-metric-grid">
             {[
-              ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Funk-Sendezeit aus Snifferdaten."],
-              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? String(snifferSnapshot.summary.carrierSense) : "nicht gemessen", "Stör-/Belegungswert, wenn vom Sniffer geliefert."],
-              ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", "Auswertbare Sniffer-Zeilen im lokalen Snapshot."],
-              ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Absender aus Sniffer-Zeilen."],
-              ["Schwächstes RSSI", snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen", "Nur vorhanden, wenn RSSI in den Snifferdaten steht."]
+              ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Berechnet wie AskSinAnalyzerXS aus Telegrammlänge und Flags."],
+              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? `${snifferSnapshot.summary.carrierSense} dBm` : "nicht gemessen", "RSSI-Noise-Zeilen des Sniffers (`;xx;`)."],
+              ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
+              ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
+              ["Schwächstes RSSI", snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen", "Schwächstes empfangenes Telegramm."]
             ].map(([label, value, hint]) => (
               <div className="dc-metric" key={label}>
                 <span>{label}</span>
@@ -1791,42 +1819,128 @@ function App() {
             ))}
           </div>
 
-          {snifferSnapshot?.events.length ? (
-            <div className="dc-events">
+          {snifferSnapshot?.devices.length ? (
+            <>
+            <div className="dc-duty-panel">
               <div>
-                <p className="eyebrow">Telegramme</p>
-                <h3>Letzte Sniffer-Zeilen</h3>
+                <p className="eyebrow">Funklast</p>
+                <h3>Duty-Cycle-Anteil pro Gerät</h3>
               </div>
+              <div className="dc-duty-bars">
+                {snifferSnapshot.devices.slice(0, 10).map((device) => (
+                  <div className="dc-duty-row" key={device.address}>
+                    <div>
+                      <strong>{device.name}</strong>
+                      <span>{device.serial ? `${device.serial} · ` : ""}{device.address}</span>
+                    </div>
+                    <div className="dc-duty-bar" aria-label={`${device.name}: ${device.dutyShare}% Anteil`}>
+                      <span style={{ width: `${Math.max(2, device.dutyShare)}%` }} />
+                    </div>
+                    <b>{device.dutyShare}%</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="dc-table-card">
+              <div>
+                <p className="eyebrow">Geräte</p>
+                <h3>Telegramme nach Funklast</h3>
+              </div>
+              <div className="dc-table-wrap">
+                <table className="dc-table">
+                  <thead>
+                    <tr>
+                      <th>Gerät</th>
+                      <th>Funkadresse</th>
+                      <th>Telegramme</th>
+                      <th>DC</th>
+                      <th>Anteil</th>
+                      <th>Ø RSSI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snifferSnapshot.devices.map((device) => (
+                      <tr key={device.address}>
+                        <td>
+                          <strong>{device.name}</strong>
+                          <span>{device.type ?? device.serial ?? (device.name === device.address ? "Name noch nicht auflösbar" : "")}</span>
+                        </td>
+                        <td><code>{device.address}</code></td>
+                        <td>{device.telegrams}</td>
+                        <td>{device.dutyCycle}%</td>
+                        <td>
+                          <div className="dc-mini-bar"><span style={{ width: `${Math.max(2, device.dutyShare)}%` }} /></div>
+                          {device.dutyShare}%
+                        </td>
+                        <td>{device.avgRssi !== undefined ? `${device.avgRssi} dBm` : "–"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {snifferSnapshot.devices.some((device) => device.name === device.address) && (
+                <p className="setup-note">
+                  Einige Namen fehlen, weil der Sniffer nur Funkadressen sieht. Dafür braucht der Analyzer eine CCU-Geräteliste mit Funkadresse.
+                </p>
+              )}
+            </div>
+
+            <details className="dc-events">
+              <summary>
+                <span>
+                  <small>Telegramme</small>
+                  Letzte Funktelegramme anzeigen
+                </span>
+                <strong>{snifferSnapshot.events.length}</strong>
+              </summary>
               <ul>
                 {snifferSnapshot.events.slice(0, 20).map((event, index) => (
                   <li key={`${event.raw}-${index}`}>
-                    <strong>{event.device ?? "Unbekannter Absender"}</strong>
+                    <strong>{event.fromName ?? event.fromAddress} → {event.toName ?? event.toAddress}</strong>
                     <span>
-                      {event.rssi !== undefined ? `RSSI ${event.rssi} dBm · ` : ""}
-                      {event.dutyCycle !== undefined ? `DC ${event.dutyCycle}% · ` : ""}
-                      {event.carrierSense !== undefined ? `CS ${event.carrierSense} · ` : ""}
-                      {event.raw}
+                      RSSI {event.rssi} dBm · DC {Math.round(event.dutyCycle * 10) / 10}% · {event.type || "Typ unbekannt"} · {event.raw}
                     </span>
                   </li>
                 ))}
               </ul>
-            </div>
+            </details>
+            </>
           ) : (
             <div className="system-collector-empty">
               <div>
-                <p className="eyebrow">Noch leer</p>
-                <h3>Der DC-Analyzer wartet auf echte Snifferdaten</h3>
+                <p className="eyebrow">{snifferSnapshot?.connected ? "Noch keine Funktelegramme" : "Noch leer"}</p>
+                <h3>{snifferSnapshot?.connected ? "Der Sniffer sendet Startmeldungen, aber noch keine Homematic-Telegramme" : "Der DC-Analyzer wartet auf echte Snifferdaten"}</h3>
                 <p>
-                  Wichtig: Die normale Homematic-Analyse bleibt davon unabhängig. Diese Seite wird erst aussagekräftig,
-                  wenn der AskSin Analyzer XS Sniffer angeschlossen ist und Daten beim Analyzer ankommen.
+                  Wichtig: Für die Tabelle müssen Zeilen im AskSin-Format `:...;` ankommen. Die sichtbaren Meldungen wie `ready`,
+                  `CC init` oder `AskSin++` zeigen nur, dass der Stick grundsätzlich antwortet.
                 </p>
               </div>
               <ol>
                 <li>Sniffer nach AskSinAnalyzerXS/AskSinSniffer328P aufbauen oder vorhandenen Sniffer anschließen.</li>
                 <li>USB-Port im Setup oder hier auswählen.</li>
                 <li>Bei Proxmox/LXC den USB-Port an den Container durchreichen.</li>
-                <li>Danach „Sniffer prüfen“ klicken.</li>
+                <li>Ein Homematic-Gerät auslösen und danach „Sniffer prüfen“ klicken.</li>
               </ol>
+              {snifferSnapshot?.diagnostics.length ? (
+                <details className="dc-events" open>
+                  <summary>
+                    <span>
+                      <small>Sniffer-Meldungen</small>
+                      Empfangene Nicht-Telegramme
+                    </span>
+                    <strong>{snifferSnapshot.diagnostics.length}</strong>
+                  </summary>
+                  <ul>
+                    {snifferSnapshot.diagnostics.map((line, index) => (
+                      <li key={`${line}-${index}`}>
+                        <strong>Sniffer</strong>
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
             </div>
           )}
         </section>

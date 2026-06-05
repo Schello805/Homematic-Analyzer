@@ -195,19 +195,115 @@ function numberFromText(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function parseSnifferLine(line: string) {
-  const device = line.match(/\b(?:from|src|sender|device|addr(?:ess)?)[:=\s]+([A-Fa-f0-9]{6,}|[A-Z]{2,}[A-Z0-9]{5,})\b/i)?.[1]
-    ?? line.match(/\b([A-Fa-f0-9]{6})\b/)?.[1];
-  const rssi = numberFromText(line.match(/\bRSSI[:=\s-]*(-?\d+(?:[.,]\d+)?)\b/i)?.[1]);
-  const dutyCycle = numberFromText(line.match(/\b(?:DC|DutyCycle|Duty Cycle)[:=\s]*(\d+(?:[.,]\d+)?)\s*%?/i)?.[1]);
-  const carrierSense = numberFromText(line.match(/\b(?:CS|CarrierSense|Carrier Sense|Noise)[:=\s-]*(-?\d+(?:[.,]\d+)?)\b/i)?.[1]);
+function hexAddress(value: number | string | undefined): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "number") return value.toString(16).toUpperCase().padStart(6, "0");
+  const trimmed = value.trim();
+  const hex = trimmed.match(/^(?:0x)?([0-9a-f]{6})$/i)?.[1];
+  if (hex) return hex.toUpperCase();
+  const numeric = Number(trimmed);
+  return Number.isFinite(numeric) ? numeric.toString(16).toUpperCase().padStart(6, "0") : undefined;
+}
+
+function buildSnifferDeviceNameMap() {
+  const map = new Map<string, { name: string; serial?: string; type?: string }>();
+  for (const device of latestCcuMasterdata?.devices ?? []) {
+    const name = device.name || device.address || "Unbenanntes Gerät";
+    const serial = device.address;
+    const type = device.type;
+    const keys = [
+      device.address,
+      hexAddress(device.address),
+      hexAddress((device as { rfAddress?: string | number }).rfAddress),
+      hexAddress((device as { radioAddress?: string | number }).radioAddress)
+    ].filter((key): key is string => Boolean(key));
+
+    for (const key of keys) {
+      map.set(key.toUpperCase(), { name, serial, type });
+    }
+  }
+  return map;
+}
+
+function snifferFlags(flagsInt: number) {
+  const flags: string[] = [];
+  if (flagsInt & 0x01) flags.push("WKUP");
+  if (flagsInt & 0x02) flags.push("WKMEUP");
+  if (flagsInt & 0x04) flags.push("BCAST");
+  if (flagsInt & 0x10) flags.push("BURST");
+  if (flagsInt & 0x20) flags.push("BIDI");
+  if (flagsInt & 0x40) flags.push("RPTED");
+  if (flagsInt & 0x80) flags.push("RPTEN");
+  if (flagsInt === 0) flags.push("HMIP_UNKNOWN");
+  return flags.sort();
+}
+
+function snifferTelegramType(typeInt: number) {
+  const knownTypes: Record<number, string> = {
+    0x00: "DEVINFO",
+    0x01: "CONFIG",
+    0x02: "RESPONSE",
+    0x03: "RESPONSE_AES",
+    0x04: "KEY_EXCHANGE",
+    0x10: "INFO",
+    0x11: "ACTION",
+    0x12: "HAVE_DATA",
+    0x3e: "SWITCH_EVENT",
+    0x3f: "TIMESTAMP",
+    0x40: "REMOTE_EVENT",
+    0x41: "SENSOR_EVENT",
+    0x53: "SENSOR_DATA",
+    0x58: "CLIMATE_EVENT",
+    0x5a: "CLIMATECTRL_EVENT",
+    0x5e: "POWER_EVENT",
+    0x5f: "POWER_EVENT_CYCLIC",
+    0x70: "WEATHER"
+  };
+  return typeInt >= 0x80 ? "HMIP_TYPE" : knownTypes[typeInt] ?? "";
+}
+
+function parseAskSinTelegram(line: string, deviceMap: Map<string, { name: string; serial?: string; type?: string }>) {
+  const trimmed = line.trim();
+  if (!/^:[0-9a-f]+;$/i.test(trimmed) || trimmed.length <= 23) return undefined;
+
+  const fromAddress = trimmed.substring(11, 17).toUpperCase();
+  const toAddress = trimmed.substring(17, 23).toUpperCase();
+  const fromDevice = deviceMap.get(fromAddress);
+  const toDevice = deviceMap.get(toAddress);
+  const length = parseInt(trimmed.substring(3, 5), 16);
+  const flags = snifferFlags(parseInt(trimmed.substring(7, 9), 16));
+  const type = snifferTelegramType(parseInt(trimmed.substring(9, 11), 16));
+  const sendTimeMs = flags.includes("BURST")
+    ? 360 + (length + 7) * 0.81
+    : (length + 11) * 0.81;
 
   return {
-    raw: line,
-    device,
-    rssi,
-    dutyCycle,
-    carrierSense
+    raw: trimmed,
+    rssi: -1 * parseInt(trimmed.substring(1, 3), 16),
+    len: length,
+    cnt: parseInt(trimmed.substring(5, 7), 16),
+    flags,
+    type,
+    fromAddress,
+    toAddress,
+    fromName: fromDevice?.name,
+    toName: toDevice?.name,
+    fromSerial: fromDevice?.serial,
+    toSerial: toDevice?.serial,
+    fromType: fromDevice?.type,
+    toType: toDevice?.type,
+    dutyCycle: sendTimeMs / 360,
+    sendTimeMs: Math.round(sendTimeMs * 10) / 10,
+    payload: trimmed.substring(23, trimmed.length - 1)
+  };
+}
+
+function parseRssiNoise(line: string) {
+  const trimmed = line.trim();
+  if (!/^;[0-9a-f]{2};$/i.test(trimmed)) return undefined;
+  return {
+    raw: trimmed,
+    rssi: -1 * parseInt(trimmed.substring(1, 3), 16)
   };
 }
 
@@ -225,7 +321,7 @@ async function readSerialSnifferLines(port?: string): Promise<string[]> {
   return new Promise((resolve) => {
     const command = [
       "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
-      "timeout 2s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
+      "timeout 8s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
     ].join("; ");
     const child = spawn("bash", ["-lc", command], {
       env: { ...process.env, SNIFFER_PORT: trimmedPort },
@@ -272,11 +368,54 @@ async function readSnifferSnapshot(port?: string) {
     }
   }
 
-  const events = lines.map(parseSnifferLine);
-  const devices = new Set(events.map((event) => event.device).filter(Boolean));
-  const rssiValues = events.map((event) => event.rssi).filter((value): value is number => value !== undefined);
-  const dutyValues = events.map((event) => event.dutyCycle).filter((value): value is number => value !== undefined);
-  const carrierValues = events.map((event) => event.carrierSense).filter((value): value is number => value !== undefined);
+  const deviceMap = buildSnifferDeviceNameMap();
+  const telegrams = lines.map((line) => parseAskSinTelegram(line, deviceMap)).filter((event): event is NonNullable<typeof event> => Boolean(event));
+  const rssiNoises = lines.map(parseRssiNoise).filter((event): event is NonNullable<typeof event> => Boolean(event));
+  const diagnostics = lines.filter((line) => !parseAskSinTelegram(line, deviceMap) && !parseRssiNoise(line)).slice(-20);
+  const rssiValues = telegrams.map((event) => event.rssi);
+  const totalDutyCycle = telegrams.reduce((sum, event) => sum + event.dutyCycle, 0);
+  const deviceRows = [...telegrams.reduce((map, telegram) => {
+    const key = telegram.fromAddress;
+    const current = map.get(key) ?? {
+      address: key,
+      name: telegram.fromName ?? key,
+      serial: telegram.fromSerial,
+      type: telegram.fromType,
+      telegrams: 0,
+      dutyCycle: 0,
+      sendTimeMs: 0,
+      rssiValues: [] as number[],
+      lastSeen: checkedAt
+    };
+    current.telegrams += 1;
+    current.dutyCycle += telegram.dutyCycle;
+    current.sendTimeMs += telegram.sendTimeMs;
+    current.rssiValues.push(telegram.rssi);
+    current.lastSeen = checkedAt;
+    map.set(key, current);
+    return map;
+  }, new Map<string, {
+    address: string;
+    name: string;
+    serial?: string;
+    type?: string;
+    telegrams: number;
+    dutyCycle: number;
+    sendTimeMs: number;
+    rssiValues: number[];
+    lastSeen: string;
+  }>()).values()].map((row) => ({
+    address: row.address,
+    name: row.name,
+    serial: row.serial,
+    type: row.type,
+    telegrams: row.telegrams,
+    dutyCycle: Math.round(row.dutyCycle * 10) / 10,
+    dutyShare: totalDutyCycle > 0 ? Math.round((row.dutyCycle / totalDutyCycle) * 1000) / 10 : 0,
+    sendTimeMs: Math.round(row.sendTimeMs),
+    avgRssi: row.rssiValues.length ? Math.round(row.rssiValues.reduce((sum, value) => sum + value, 0) / row.rssiValues.length) : undefined,
+    lastSeen: row.lastSeen
+  })).sort((left, right) => right.dutyCycle - left.dutyCycle || right.telegrams - left.telegrams);
 
   return {
     checkedAt,
@@ -285,13 +424,17 @@ async function readSnifferSnapshot(port?: string) {
     connected: lines.length > 0,
     source,
     summary: {
-      telegrams: events.length,
-      devices: devices.size,
-      dutyCycle: dutyValues.at(-1),
-      carrierSense: carrierValues.at(-1),
+      rawLines: lines.length,
+      telegrams: telegrams.length,
+      devices: deviceRows.length,
+      dutyCycle: Math.round(totalDutyCycle * 10) / 10,
+      carrierSense: rssiNoises.at(-1)?.rssi,
       weakestRssi: rssiValues.length ? Math.min(...rssiValues) : undefined
     },
-    events: events.slice(-40).reverse()
+    devices: deviceRows,
+    events: telegrams.slice(-40).reverse(),
+    rssiNoise: rssiNoises.slice(-80),
+    diagnostics
   };
 }
 
