@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,7 +191,7 @@ async function createUpdateRunStatus() {
           ? "completed"
           : "idle";
 
-  return {
+  const statusPayload = {
     status,
     running: updateRun.running,
     startedAt: updateRun.startedAt,
@@ -199,6 +200,18 @@ async function createUpdateRunStatus() {
     error: updateRun.error,
     log
   };
+
+  console.log("[Homematic Analyzer][Update] status", {
+    status: statusPayload.status,
+    running: statusPayload.running,
+    startedAt: statusPayload.startedAt,
+    finishedAt: statusPayload.finishedAt,
+    exitCode: statusPayload.exitCode,
+    error: statusPayload.error,
+    logLines: statusPayload.log ? statusPayload.log.split("\n").length : 0
+  });
+
+  return statusPayload;
 }
 
 function normalizeCcuUiTarget(ccuHost?: string) {
@@ -562,6 +575,7 @@ app.get("/api/system/update-status", async (_request, response) => {
 });
 
 app.get("/api/system/update-run", async (_request, response) => {
+  console.log("[Homematic Analyzer][Update] status requested");
   response.json(await createUpdateRunStatus());
 });
 
@@ -591,7 +605,14 @@ app.post("/api/settings/notifications/test", async (request, response) => {
 });
 
 app.post("/api/system/update", async (_request, response) => {
+  console.log("[Homematic Analyzer][Update] start requested", {
+    root,
+    updateLogFile,
+    alreadyRunning: updateRun.running
+  });
+
   if (updateRun.running) {
+    console.warn("[Homematic Analyzer][Update] start rejected because update is already running");
     response.status(409).json({
       ok: false,
       message: "Ein Update läuft bereits.",
@@ -602,41 +623,53 @@ app.post("/api/system/update", async (_request, response) => {
 
   const updateScript = join(root, "scripts", "install", "update-local.sh");
   await mkdir(dataDir, { recursive: true });
-  await writeFile(updateLogFile, "");
+  await writeFile(updateLogFile, `[${new Date().toISOString()}] Update per Footer gestartet\n`);
   updateRun = {
     running: true,
     startedAt: new Date().toISOString()
   };
 
+  const updateLogStream = createWriteStream(updateLogFile, { flags: "a" });
   const child = spawn("bash", [updateScript], {
     cwd: root,
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", updateLogStream, updateLogStream],
     env: {
       ...process.env,
-      ANALYZER_PID: String(process.pid)
+      ANALYZER_PID: String(process.pid),
+      UPDATE_LOG_FILE: updateLogFile
     }
   });
 
   child.on("exit", (code) => {
+    console.log("[Homematic Analyzer][Update] child exited", { code });
     updateRun = {
       ...updateRun,
       running: false,
       finishedAt: new Date().toISOString(),
       exitCode: code
     };
+    updateLogStream.end();
   });
 
   child.on("error", (error) => {
+    console.error("[Homematic Analyzer][Update] child error", error);
     updateRun = {
       ...updateRun,
       running: false,
       finishedAt: new Date().toISOString(),
       error: error.message
     };
+    updateLogStream.end();
   });
 
   child.unref();
+
+  console.log("[Homematic Analyzer][Update] child started", {
+    pid: child.pid,
+    script: updateScript,
+    log: updateLogFile
+  });
 
   response.json({
     ok: true,

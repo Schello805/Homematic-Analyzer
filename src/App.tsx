@@ -637,9 +637,11 @@ function App() {
 
   async function runAppUpdate() {
     if (!window.confirm("Update jetzt starten? Die App lädt Änderungen von GitHub, baut neu und startet danach neu.")) {
+      console.info("[Homematic Analyzer][Update] user cancelled update");
       return;
     }
 
+    console.info("[Homematic Analyzer][Update] start clicked");
     setUpdatingApp(true);
     setUpdateRunStatus({
       status: "running",
@@ -648,16 +650,32 @@ function App() {
       log: "Update wird gestartet ..."
     });
     try {
+      console.info("[Homematic Analyzer][Update] POST /api/system/update");
       const response = await fetch("/api/system/update", { method: "POST" });
-      if (!response.ok) throw new Error("Update konnte nicht gestartet werden.");
+      console.info("[Homematic Analyzer][Update] POST response", {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error("[Homematic Analyzer][Update] POST failed", {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        throw new Error("Update konnte nicht gestartet werden.");
+      }
 
       const result = (await response.json()) as { message?: string; log?: string };
+      console.info("[Homematic Analyzer][Update] started", result);
       showToast({
         type: "success",
         title: "Update gestartet",
         message: result.message ?? "Die App aktualisiert sich im Hintergrund."
       });
-    } catch {
+    } catch (error) {
+      console.error("[Homematic Analyzer][Update] start failed", error);
       setUpdatingApp(false);
       setUpdateRunStatus({
         status: "failed",
@@ -855,11 +873,34 @@ function App() {
 
     async function loadUpdateRunStatus() {
       try {
+        console.info("[Homematic Analyzer][Update] GET /api/system/update-run");
         const response = await fetch("/api/system/update-run");
-        if (!response.ok) throw new Error("Update-Status nicht erreichbar");
+        console.info("[Homematic Analyzer][Update] status response", {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          console.error("[Homematic Analyzer][Update] status failed", {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
+          throw new Error("Update-Status nicht erreichbar");
+        }
         const status = (await response.json()) as UpdateRunStatus;
         if (!isActive) return;
 
+        console.info("[Homematic Analyzer][Update] status payload", {
+          status: status.status,
+          running: status.running,
+          startedAt: status.startedAt,
+          finishedAt: status.finishedAt,
+          exitCode: status.exitCode,
+          error: status.error,
+          logLines: status.log ? status.log.split("\n").length : 0
+        });
         setUpdateRunStatus(status);
         setUpdatingApp(status.status === "running");
 
@@ -878,8 +919,9 @@ function App() {
             message: status.error ?? "Bitte Update-Log prüfen."
           });
         }
-      } catch {
+      } catch (error) {
         if (!isActive) return;
+        console.warn("[Homematic Analyzer][Update] polling failed", error);
         setUpdateRunStatus((current) => ({
           status: "running",
           running: true,
