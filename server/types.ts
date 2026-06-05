@@ -121,6 +121,14 @@ export type CollectorPayload = {
   backups?: Record<string, unknown>;
 };
 
+export type CollectorHistoryPoint = {
+  collectedAt: string;
+  cpu?: string;
+  memory?: string;
+  disk?: string;
+  temperature?: string;
+};
+
 export type CcuMasterdataPayload = {
   token?: string;
   source?: string;

@@ -1135,6 +1135,16 @@ pre {
   background: white;
 }
 
+.metric-card-warning {
+  border-color: #f79009;
+  background: #fffbeb;
+}
+
+.metric-card-danger {
+  border-color: #d92d20;
+  background: #fff1f0;
+}
+
 .metric-card__top {
   display: flex;
   justify-content: space-between;
@@ -1211,6 +1221,22 @@ pre {
   font-size: 0.76rem;
   font-style: normal;
   line-height: 1.25;
+}
+
+.metric-sparkline {
+  width: 100%;
+  height: 34px;
+  margin-top: 2px;
+  overflow: visible;
+}
+
+.metric-sparkline polyline {
+  fill: none;
+  stroke: #3478f6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
 }
 
 .check-layout {

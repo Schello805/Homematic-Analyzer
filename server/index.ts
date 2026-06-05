@@ -12,7 +12,7 @@ import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
 import packageInfo from "../package.json" with { type: "json" };
-import type { CcuMasterdataPayload, CollectorPayload, NotificationSettings } from "./types.js";
+import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings } from "./types.js";
 
 const app = express();
 const appVersion = packageInfo.version;
@@ -28,6 +28,7 @@ const notificationSettingsFile = join(dataDir, "notification-settings.json");
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
 let persistedNotificationSettings: NotificationSettings | undefined;
+let collectorHistory: CollectorHistoryPoint[] = [];
 
 const defaultNotificationSettings: NotificationSettings = {
   telegram: { enabled: false },
@@ -110,13 +111,13 @@ const notificationTestSchema = z.object({
 });
 
 const collectorSchema = z.object({
-  token: z.string().max(200).optional(),
-  host: z.string().max(160).optional(),
-  collectedAt: z.string().max(80).optional(),
+  token: z.coerce.string().max(300).optional(),
+  host: z.coerce.string().max(220).optional(),
+  collectedAt: z.coerce.string().max(120).optional(),
   system: z.record(z.unknown()).optional(),
-  logs: z.array(z.string().max(700)).max(80).optional(),
+  logs: z.array(z.coerce.string().max(2000)).max(200).optional(),
   network: z.object({
-    connections: z.array(z.string().max(700)).max(120).optional()
+    connections: z.array(z.coerce.string().max(2000)).max(250).optional()
   }).optional(),
   backups: z.record(z.unknown()).optional()
 });
@@ -173,6 +174,16 @@ function normalizeCcuUiTarget(ccuHost?: string) {
   }
 }
 
+function createHistoryPoint(collector: CollectorPayload): CollectorHistoryPoint {
+  return {
+    collectedAt: collector.collectedAt ?? new Date().toISOString(),
+    cpu: stringFromRecord(collector.system, "cpu"),
+    memory: stringFromRecord(collector.system, "memory"),
+    disk: stringFromRecord(collector.system, "disk"),
+    temperature: stringFromRecord(collector.system, "temperatureRaw")
+  };
+}
+
 function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, collector: CollectorPayload | undefined, ccuHost?: string) {
   const ccuSystem = masterdata?.system;
   const ccuBackups = masterdata?.backups;
@@ -196,7 +207,8 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     backups: stringFromRecord(ccuBackups, "count") ?? stringFromRecord(collector?.backups, "count"),
     backupPaths: stringArrayFromRecord(ccuBackups, "paths") ?? stringArrayFromRecord(collector?.backups, "paths"),
     logs: collector?.logs?.length ?? 0,
-    connections: collector?.network?.connections?.length ?? 0
+    connections: collector?.network?.connections?.length ?? 0,
+    history: collectorHistory.slice(-120)
   };
 }
 
@@ -275,6 +287,7 @@ async function loadPersistedCollector() {
   if (parsed.success) {
     latestCollector = parsed.data;
   }
+  collectorHistory = Array.isArray(database.collectorHistory) ? database.collectorHistory.slice(-120) : [];
 }
 
 async function persistCcuMasterdata(payload: CcuMasterdataPayload) {
@@ -285,9 +298,12 @@ async function persistCcuMasterdata(payload: CcuMasterdataPayload) {
 }
 
 async function persistCollector(payload: CollectorPayload) {
+  const point = createHistoryPoint(payload);
+  collectorHistory = [...collectorHistory, point].slice(-120);
   await updateLocalDatabase(localDatabaseFile, (currentDatabase) => ({
     ...currentDatabase,
-    latestCollector: payload
+    latestCollector: payload,
+    collectorHistory
   }));
 }
 
@@ -434,7 +450,15 @@ app.post("/api/collector", async (request, response) => {
   const parsed = collectorSchema.safeParse(request.body);
 
   if (!parsed.success) {
-    response.status(400).json({ error: "Ungültige Collector-Daten", issues: parsed.error.issues });
+    console.warn("Ungültige Collector-Daten", JSON.stringify(parsed.error.issues));
+    response.status(400).json({
+      error: "Ungültige Collector-Daten",
+      hint: "Bitte aktualisiere das Shell-Collector-Script in der Web-App und führe es erneut auf der CCU aus.",
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message
+      }))
+    });
     return;
   }
 

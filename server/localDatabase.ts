@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { CcuMasterdataPayload, CollectorPayload, NotificationSettings } from "./types.js";
+import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings } from "./types.js";
 
 export type SetupDefaults = {
   ccuHost?: string;
@@ -15,6 +15,7 @@ export type LocalDatabase = {
   notificationSettings?: NotificationSettings;
   ccuMasterdata?: CcuMasterdataPayload;
   latestCollector?: CollectorPayload;
+  collectorHistory?: CollectorHistoryPoint[];
   setupDefaults?: SetupDefaults;
 };
 

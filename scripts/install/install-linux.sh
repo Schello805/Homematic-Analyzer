@@ -392,7 +392,7 @@ configure_collector_delivery() {
   printf '  0) Gar nicht, später in der Web-App einrichten\n' > /dev/tty
   printf '  1) Einmalig jetzt an den Analyzer senden\n' > /dev/tty
   printf '  2) Regelmäßig täglich nachts senden (empfohlen)\n' > /dev/tty
-  printf '  3) Regelmäßig stündlich senden (nur temporär für Fehlersuche)\n' > /dev/tty
+  printf '  3) Regelmäßig minütlich senden (für CPU/RAM-Verlauf)\n' > /dev/tty
 
   choice="$(ask_text "Wie sollen Systemdaten an den Analyzer übertragen werden?" "2")"
 
@@ -411,7 +411,7 @@ configure_collector_delivery() {
       ;;
     3)
       mode="install"
-      interval="hourly"
+      interval="minute"
       ;;
     *)
       warn "Unbekannte Auswahl. System-Snapshot wird übersprungen."

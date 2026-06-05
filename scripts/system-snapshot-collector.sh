@@ -33,6 +33,10 @@ trap cleanup EXIT INT TERM
 install_cron_line() {
   interval="$1"
   case "$interval" in
+    minute|minutely)
+      cron_time="* * * * *"
+      interval_text="minütlich"
+      ;;
     hourly)
       cron_time="17 * * * *"
       interval_text="stündlich"
@@ -203,7 +207,8 @@ CONNECTION_LINES="$(
 
 if command -v curl >/dev/null 2>&1; then
   echo "Homematic Analyzer: Sende Daten an den Analyzer ..."
-  if curl --connect-timeout 5 --max-time 20 -fsS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" -o "$RESPONSE_FILE" "$ENDPOINT"; then
+  HTTP_STATUS="$(curl --connect-timeout 5 --max-time 20 -sS -H "Content-Type: application/json" -X POST --data-binary "@$TMP_FILE" -o "$RESPONSE_FILE" -w "%{http_code}" "$ENDPOINT" || echo "000")"
+  if [ "$HTTP_STATUS" = "200" ]; then
     echo "Homematic Analyzer: Daten erfolgreich gesendet."
     if grep -q '"ok":true' "$RESPONSE_FILE" 2>/dev/null; then
       echo "Homematic Analyzer: Analyzer hat den Snapshot angenommen."
@@ -214,12 +219,15 @@ if command -v curl >/dev/null 2>&1; then
     fi
     echo "Homematic Analyzer: Fertig. Du kannst jetzt in der Web-App die Analyse starten."
   else
-    echo "Homematic Analyzer: Fehler beim Senden an $ENDPOINT"
+    echo "Homematic Analyzer: Fehler beim Senden an $ENDPOINT (HTTP $HTTP_STATUS)"
     if [ -s "$RESPONSE_FILE" ]; then
       echo "Homematic Analyzer: Antwort vom Analyzer:"
       cat "$RESPONSE_FILE"
       echo
+    else
+      echo "Homematic Analyzer: Keine lesbare Antwort erhalten."
     fi
+    echo "Homematic Analyzer: Debug: Payload wurde nicht gespeichert. Führe den Befehl nach einem App-Update erneut aus."
     exit 1
   fi
 else

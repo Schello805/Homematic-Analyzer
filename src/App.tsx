@@ -52,6 +52,13 @@ type SystemDashboard = {
   backupPaths?: string[];
   logs: number;
   connections: number;
+  history?: Array<{
+    collectedAt: string;
+    cpu?: string;
+    memory?: string;
+    disk?: string;
+    temperature?: string;
+  }>;
 };
 
 type UpdateStatus = {
@@ -325,6 +332,53 @@ function metricNeedsHelp(value: string) {
   return value === "nicht verfügbar" || value === "nicht geprüft" || value === "keine gefunden" || value.startsWith("keine gefunden");
 }
 
+function parseCpuLoad(raw?: string) {
+  const line = firstLine(raw);
+  const value = line?.replace(/^.*load average:\s*/i, "").replace(/^Load\s*/i, "").match(/\d+(?:[.,]\d+)?/)?.[0];
+  if (!value) return undefined;
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseMemoryUsagePercent(raw?: string) {
+  const line = splitMetricLines(raw).find((entry) => /^Mem:/i.test(entry)) ?? firstLine(raw);
+  if (!line) return undefined;
+  const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
+  if (parts.length >= 3) {
+    const total = Number(parts[0]);
+    const used = Number(parts[1]);
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(used)) return Math.round((used / total) * 100);
+  }
+  const busyboxMatch = line.match(/Mem:\s*(\d+)\w*\s+used,?\s+(\d+)\w*\s+free/i);
+  if (busyboxMatch) {
+    const used = Number(busyboxMatch[1]);
+    const free = Number(busyboxMatch[2]);
+    if (Number.isFinite(used) && Number.isFinite(free) && used + free > 0) return Math.round((used / (used + free)) * 100);
+  }
+  return undefined;
+}
+
+function parseDiskUsagePercent(raw?: string) {
+  const line = splitMetricLines(raw).find((entry) => /\d+%/.test(entry));
+  const value = line?.match(/(\d+)%/)?.[1];
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function sparklinePoints(values: number[], width = 120, height = 34) {
+  if (values.length === 0) return "";
+  if (values.length === 1) return `0,${height - values[0]} ${width},${height - values[0]}`;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(max - min, 1);
+  return values.map((value, index) => {
+    const x = (index / (values.length - 1)) * width;
+    const y = height - ((value - min) / range) * height;
+    return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
+  }).join(" ");
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -341,7 +395,7 @@ function App() {
   const [masterdataStatus, setMasterdataStatus] = useState<MasterdataStatus | null>(null);
   const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
-  const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly">("daily");
+  const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [savingSettings, setSavingSettings] = useState(false);
   const [updatingApp, setUpdatingApp] = useState(false);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
@@ -815,6 +869,7 @@ function App() {
 
   async function runAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setCurrentPage("analysis");
     setLoading(true);
     setActiveAnalysisStep(0);
     setError(null);
@@ -1113,8 +1168,9 @@ function App() {
           </div>
 
           <button className="analyze-button" disabled={loading}>
-            {loading ? "Analyse läuft ..." : "Analyse starten"}
+            {loading ? "Analyse läuft ..." : "Zur Analyse wechseln und starten"}
           </button>
+          <p className="hint">Die Ergebnisse und die laufende Prüfung erscheinen auf der Analyse-Seite.</p>
           {error && <p className="error">{error}</p>}
         </section>
       </form>
@@ -1199,8 +1255,9 @@ function App() {
               <label>
                 Zyklus
                 <select value={collectorInterval} onChange={(event) => setCollectorInterval(event.target.value as typeof collectorInterval)} disabled={collectorMode === "once" || collectorMode === "uninstall"}>
-                  <option value="daily">Täglich nachts</option>
+                  <option value="minute">Minütlich für Verlauf</option>
                   <option value="hourly">Stündlich</option>
+                  <option value="daily">Täglich nachts</option>
                 </select>
               </label>
             </div>
@@ -1211,7 +1268,7 @@ function App() {
               </button>
             </div>
             <p className="muted">
-              Einmalig sendet nur einen Snapshot. „Regelmäßig einrichten“ legt auf der Zentrale einen Cronjob an, der die Daten automatisch erneut überträgt.
+              Für Verlaufsgrafiken ist minütlich sinnvoll. „Regelmäßig einrichten“ legt auf der Zentrale einen Cronjob an.
             </p>
             {collectorCommandPreview && (
               <label className="script-preview">
@@ -1342,13 +1399,17 @@ function App() {
                     label: "CPU",
                     value: formatCpu(analysis.systemDashboard.cpu),
                     hint: "Systemlast der CCU/RaspberryMatic.",
-                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen, „CCU-Daten täglich vorbereiten“ → „CCU-Script kopieren“, in der CCU WebUI als Script-Aktion einfügen und einmal manuell ausführen."
+                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen, „Logs und Verbindungen per Shell sammeln“ minütlich einrichten oder das CCU-WebUI-Script erneut ausführen.",
+                    sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseCpuLoad(point.cpu)).filter((value): value is number => value !== undefined)),
+                    sparklineLabel: "CPU-Verlauf aus Shell-Collector-Snapshots"
                   },
                   {
                     label: "RAM",
                     value: formatMemory(analysis.systemDashboard.memory),
                     hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
-                    help: "Wenn RAM nicht verfügbar ist: Das aktualisierte CCU-WebUI-Script erneut auf der Zentrale ausführen. Es liest `free -m` auf der CCU."
+                    help: "Wenn RAM nicht verfügbar ist: Shell-Collector minütlich einrichten oder das CCU-WebUI-Script erneut ausführen. RAM kommt von `free -m` auf der CCU.",
+                    sparkline: sparklinePoints((analysis.systemDashboard.history ?? []).map((point) => parseMemoryUsagePercent(point.memory)).filter((value): value is number => value !== undefined)),
+                    sparklineLabel: "RAM-Verlauf in Prozent"
                   },
                   {
                     label: "Temperatur",
@@ -1360,7 +1421,11 @@ function App() {
                     label: "Speicher",
                     value: formatDisk(analysis.systemDashboard.disk),
                     hint: "Freier Speicher der CCU/RaspberryMatic.",
-                    help: "Wenn Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen. Es prüft `df -h /usr/local` auf der Zentrale."
+                    help: "Wenn Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen. Es prüft `df -h /usr/local` auf der Zentrale. Gelb ab 80%, rot ab 95% Belegung.",
+                    usageStatus: (() => {
+                      const usage = parseDiskUsagePercent(analysis.systemDashboard.disk);
+                      return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
+                    })()
                   },
                   {
                     label: "Backups",
@@ -1387,7 +1452,7 @@ function App() {
                     help: "Verbindungen sind optional. Dafür den Shell-Zusatzbefehl auf der CCU ausführen; er nutzt `ss`/`netstat`, um Zugriffe auf typische CCU-Ports zu zählen."
                   }
                 ].map((metric) => (
-                  <div className="metric-card" key={metric.label}>
+                  <div className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""}`} key={metric.label}>
                     <div className="metric-card__top">
                       <span>{metric.label}</span>
                       <button type="button" className={metricNeedsHelp(metric.value) ? "metric-help needs-attention" : "metric-help"} aria-label={`Hilfe zu ${metric.label}`}>
@@ -1399,6 +1464,11 @@ function App() {
                     </div>
                     <strong>{metric.value}</strong>
                     <em>{metric.hint}</em>
+                    {metric.sparkline && (
+                      <svg className="metric-sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" role="img" aria-label={metric.sparklineLabel}>
+                        <polyline points={metric.sparkline} />
+                      </svg>
+                    )}
                   </div>
                 ))}
               </div>
