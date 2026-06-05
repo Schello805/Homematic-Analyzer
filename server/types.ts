@@ -203,7 +203,10 @@ export type SnifferSnapshot = {
     devices: number;
     dutyCycle?: number;
     carrierSense?: number;
+    carrierSenseAvg?: number;
     weakestRssi?: number;
+    weakestRssiDevice?: SnifferDeviceSummary;
+    gateways?: SnifferDeviceSummary[];
   };
   devices: SnifferDeviceSummary[];
   events: SnifferTelegram[];

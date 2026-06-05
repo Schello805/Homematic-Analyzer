@@ -125,7 +125,32 @@ type SnifferSnapshot = {
     devices: number;
     dutyCycle?: number;
     carrierSense?: number;
+    carrierSenseAvg?: number;
     weakestRssi?: number;
+    weakestRssiDevice?: {
+      address: string;
+      name: string;
+      serial?: string;
+      type?: string;
+      telegrams: number;
+      dutyCycle: number;
+      dutyShare: number;
+      sendTimeMs: number;
+      avgRssi?: number;
+      lastSeen: string;
+    };
+    gateways?: Array<{
+      address: string;
+      name: string;
+      serial?: string;
+      type?: string;
+      telegrams: number;
+      dutyCycle: number;
+      dutyShare: number;
+      sendTimeMs: number;
+      avgRssi?: number;
+      lastSeen: string;
+    }>;
   };
   devices: Array<{
     address: string;
@@ -148,6 +173,8 @@ type SnifferSnapshot = {
     toName?: string;
     fromSerial?: string;
     toSerial?: string;
+    fromType?: string;
+    toType?: string;
     rssi: number;
     len: number;
     cnt: number;
@@ -677,6 +704,14 @@ function App() {
   const backupPageSize = 25;
   const backupPageCount = Math.max(1, Math.ceil(backupItems.length / backupPageSize));
   const visibleBackupItems = backupItems.slice(backupPage * backupPageSize, (backupPage + 1) * backupPageSize);
+  const weakestRssiDevice = snifferSnapshot?.summary.weakestRssiDevice;
+  const gatewayDutyCycleCards = snifferSnapshot?.summary.gateways?.slice(0, 3) ?? [];
+  const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
+    ? `${snifferSnapshot.summary.carrierSense} dBm`
+    : "nicht gemessen";
+  const carrierSenseHint = snifferSnapshot?.summary.carrierSenseAvg !== undefined
+    ? `Letzter RSSI-Noise-Wert, Ø ${snifferSnapshot.summary.carrierSenseAvg} dBm.`
+    : "RSSI-Noise-Zeilen des Sniffers (`:xx;`).";
 
   const scriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
@@ -1355,6 +1390,7 @@ function App() {
 
     setDashboardRefreshProgress(0);
     setDashboardRefreshSecondsLeft(60);
+    void refreshAnalysisSnapshot();
 
     const refreshInterval = window.setInterval(() => {
       nextRefreshAt = Date.now() + refreshEveryMs;
@@ -1931,10 +1967,21 @@ function App() {
           <div className="dc-metric-grid">
             {[
               ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Berechnet wie AskSinAnalyzerXS aus Telegrammlänge und Flags."],
-              ["Carrier Sense", snifferSnapshot?.summary.carrierSense !== undefined ? `${snifferSnapshot.summary.carrierSense} dBm` : "nicht gemessen", "RSSI-Noise-Zeilen des Sniffers (`:xx;`)."],
+              ["Carrier Sense", carrierSenseText, carrierSenseHint],
+              ...gatewayDutyCycleCards.map((gateway, index) => [
+                `Gateway DC ${index + 1}`,
+                `${gateway.dutyCycle}%`,
+                `${gateway.name}${gateway.avgRssi !== undefined ? ` · Ø ${gateway.avgRssi} dBm` : ""}`
+              ]),
               ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
               ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
-              ["Schwächstes RSSI", snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen", "Schwächstes empfangenes Telegramm."]
+              [
+                "Schwächstes RSSI",
+                snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen",
+                weakestRssiDevice
+                  ? `${weakestRssiDevice.name}${weakestRssiDevice.type ? ` · ${weakestRssiDevice.type}` : ""}`
+                  : "Schwächstes empfangenes Telegramm."
+              ]
             ].map(([label, value, hint]) => (
               <div className="dc-metric" key={label}>
                 <span>{label}</span>

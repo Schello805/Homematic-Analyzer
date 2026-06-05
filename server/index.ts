@@ -332,6 +332,11 @@ function parseRssiNoise(line: string) {
   };
 }
 
+function isGatewaySnifferDevice(device: { name?: string; type?: string; serial?: string; address?: string }) {
+  const haystack = [device.name, device.type, device.serial, device.address].filter(Boolean).join(" ").toLowerCase();
+  return /\b(ccu-rf|hmrf|gateway|lan-gateway|lancfg|hap|drap|access point|access-point|hmip-hap|hmip-drap|hm-lgw)\b/i.test(haystack);
+}
+
 async function readSerialSnifferLines(port?: string): Promise<string[]> {
   const trimmedPort = port?.trim();
   if (!trimmedPort || !trimmedPort.startsWith("/dev/")) return [];
@@ -397,7 +402,6 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   const telegrams = lines.map((line) => parseAskSinTelegram(line, deviceMap)).filter((event): event is NonNullable<typeof event> => Boolean(event));
   const rssiNoises = lines.map(parseRssiNoise).filter((event): event is NonNullable<typeof event> => Boolean(event));
   const diagnostics = lines.filter((line) => !parseAskSinTelegram(line, deviceMap) && !parseRssiNoise(line)).slice(-20);
-  const rssiValues = telegrams.map((event) => event.rssi);
   const totalDutyCycle = telegrams.reduce((sum, event) => sum + event.dutyCycle, 0);
   const deviceRows = [...telegrams.reduce((map, telegram) => {
     const key = telegram.fromAddress;
@@ -441,6 +445,16 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     avgRssi: row.rssiValues.length ? Math.round(row.rssiValues.reduce((sum, value) => sum + value, 0) / row.rssiValues.length) : undefined,
     lastSeen: row.lastSeen
   })).sort((left, right) => right.dutyCycle - left.dutyCycle || right.telegrams - left.telegrams);
+  const weakestTelegram = telegrams
+    .filter((event) => Number.isFinite(event.rssi))
+    .sort((left, right) => left.rssi - right.rssi)[0];
+  const gatewayRows = deviceRows
+    .filter(isGatewaySnifferDevice)
+    .sort((left, right) => right.dutyCycle - left.dutyCycle || right.telegrams - left.telegrams);
+  const carrierSenseValues = rssiNoises.map((noise) => noise.rssi).filter((value): value is number => value !== undefined);
+  const carrierSenseAvg = carrierSenseValues.length
+    ? Math.round(carrierSenseValues.reduce((sum, value) => sum + value, 0) / carrierSenseValues.length)
+    : undefined;
 
   return {
     checkedAt,
@@ -453,8 +467,13 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
       telegrams: telegrams.length,
       devices: deviceRows.length,
       dutyCycle: Math.round(totalDutyCycle * 10) / 10,
-      carrierSense: rssiNoises.at(-1)?.rssi,
-      weakestRssi: rssiValues.length ? Math.min(...rssiValues) : undefined
+      carrierSense: carrierSenseValues.at(-1),
+      carrierSenseAvg,
+      weakestRssi: weakestTelegram?.rssi,
+      weakestRssiDevice: weakestTelegram
+        ? deviceRows.find((device) => device.address === weakestTelegram.fromAddress)
+        : undefined,
+      gateways: gatewayRows
     },
     devices: deviceRows,
     events: telegrams.slice(-40).reverse(),
