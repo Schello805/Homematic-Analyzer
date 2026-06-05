@@ -530,6 +530,7 @@ function App() {
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [savingSettings, setSavingSettings] = useState(false);
   const [updatingApp, setUpdatingApp] = useState(false);
+  const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
   const [updateRunStatus, setUpdateRunStatus] = useState<UpdateRunStatus | null>(null);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
@@ -761,12 +762,8 @@ function App() {
   }
 
   async function runAppUpdate() {
-    if (!window.confirm("Update jetzt starten? Die App lädt Änderungen von GitHub, baut neu und startet danach neu.")) {
-      console.info("[Homematic Analyzer][Update] user cancelled update");
-      return;
-    }
-
     console.info("[Homematic Analyzer][Update] start clicked");
+    setShowUpdateConfirm(false);
     setUpdatingApp(true);
     setUpdateRunStatus({
       status: "running",
@@ -829,6 +826,10 @@ function App() {
         message
       });
     }
+  }
+
+  function requestAppUpdate() {
+    setShowUpdateConfirm(true);
   }
 
   function resetNotificationSettings() {
@@ -2282,6 +2283,27 @@ function App() {
         </section>
       )}
 
+      {showUpdateConfirm && (
+        <div className="confirm-backdrop" role="presentation" onMouseDown={() => setShowUpdateConfirm(false)}>
+          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="update-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Update bestätigen</p>
+            <h2 id="update-confirm-title">Analyzer jetzt aktualisieren?</h2>
+            <p>
+              Die App lädt die neueste Version von GitHub, installiert Abhängigkeiten, baut neu und startet danach kurz neu.
+              Währenddessen kann die Oberfläche für einen Moment nicht erreichbar sein.
+            </p>
+            <div className="confirm-dialog__actions">
+              <button type="button" className="ghost-button" onClick={() => setShowUpdateConfirm(false)}>
+                Abbrechen
+              </button>
+              <button type="button" className="primary-button" onClick={() => void runAppUpdate()}>
+                OK, Update starten
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <footer className="app-footer">
         <div>
           <strong>Homematic Analyzer</strong>
@@ -2295,7 +2317,7 @@ function App() {
           <small>{updateStatus.detail}</small>
         </a>
         {updateStatus.state === "update" && (
-          <button type="button" className="footer-update-button" onClick={() => void runAppUpdate()} disabled={updatingApp}>
+          <button type="button" className="footer-update-button" onClick={requestAppUpdate} disabled={updatingApp}>
             {updatingApp ? "Update läuft ..." : "Update starten"}
           </button>
         )}

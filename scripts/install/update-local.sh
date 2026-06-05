@@ -18,8 +18,14 @@ git fetch origin
 current_branch="$(git rev-parse --abbrev-ref HEAD)"
 git pull --ff-only origin "$current_branch"
 
-printf '[INFO] Abhängigkeiten werden installiert ...\n'
-npm ci
+printf '[INFO] Abhängigkeiten inklusive Build-Werkzeuge werden installiert ...\n'
+npm ci --include=dev
+
+if ! [ -x ./node_modules/.bin/tsc ]; then
+  printf '[ERROR] TypeScript Compiler wurde nicht gefunden: ./node_modules/.bin/tsc\n'
+  printf '[HINWEIS] Prüfe, ob npm mit omit=dev oder NODE_ENV=production läuft.\n'
+  exit 1
+fi
 
 printf '[INFO] App wird gebaut ...\n'
 npm run build

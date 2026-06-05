@@ -205,6 +205,59 @@ h2 {
   background: white;
 }
 
+.primary-button {
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 15px;
+  color: white;
+  cursor: pointer;
+  font-weight: 760;
+  background: linear-gradient(135deg, #20a783, #3478f6);
+  box-shadow: 0 14px 30px rgba(52, 120, 246, 0.22);
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(8px);
+}
+
+.confirm-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(520px, 100%);
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 28px;
+  padding: 24px;
+  background: white;
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.22);
+}
+
+.confirm-dialog h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.9rem);
+  letter-spacing: -0.04em;
+}
+
+.confirm-dialog p:not(.eyebrow) {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .setup-warning {
   border-left: 5px solid #f79009;
   border-radius: 14px;
