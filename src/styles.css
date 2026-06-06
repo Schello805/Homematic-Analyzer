@@ -1493,7 +1493,7 @@ pre {
 .toast-region {
   position: fixed;
   z-index: 50;
-  top: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
   right: 18px;
   display: grid;
   gap: 10px;
@@ -2590,6 +2590,66 @@ pre {
     border-radius: 22px;
   }
 
+  .app-topbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 12px;
+  }
+
+  .app-brand {
+    min-width: 0;
+  }
+
+  .app-brand img {
+    width: 34px;
+    height: 34px;
+  }
+
+  .app-brand strong {
+    font-size: 0.94rem;
+  }
+
+  .app-brand span {
+    font-size: 0.74rem;
+  }
+
+  .page-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .page-tabs__left {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 1px 2px 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .page-tabs__left::-webkit-scrollbar {
+    display: none;
+  }
+
+  .page-tabs__right {
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .page-tabs button {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    white-space: nowrap;
+  }
+
+  .page-tabs__right button {
+    max-width: 100%;
+  }
+
   .form-grid,
     .event-grid,
     .summary-grid,
@@ -2635,5 +2695,16 @@ pre {
 
   .app-footer {
     grid-template-columns: 1fr;
+  }
+
+  .toast-region {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: min(360px, calc(100vw - 20px));
+  }
+
+  .toast {
+    border-radius: 16px;
+    padding: 11px 11px 11px 13px;
   }
 }
