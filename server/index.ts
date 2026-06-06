@@ -138,6 +138,13 @@ const snifferSnapshotSchema = z.object({
   port: z.string().max(300).optional()
 });
 
+const setupDefaultsSchema = z.object({
+  ccuHost: z.string().max(300).optional(),
+  ccuUser: z.string().max(120).optional(),
+  xmlApiToken: z.string().max(300).optional(),
+  snifferPort: z.string().max(300).optional()
+});
+
 const ccuMasterdataSchema = z.object({
   token: z.string().max(200).optional(),
   source: z.string().max(80).optional(),
@@ -816,6 +823,35 @@ app.post("/api/sniffer/snapshot", async (request, response) => {
 app.get("/api/setup/defaults", async (_request, response) => {
   const database = await readLocalDatabase(localDatabaseFile);
   response.json(database.setupDefaults ?? {});
+});
+
+app.post("/api/setup/defaults", async (request, response) => {
+  const parsed = setupDefaultsSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({ error: "Ungültige Setup-Daten", issues: parsed.error.issues });
+    return;
+  }
+
+  const cleanDefaults = Object.fromEntries(
+    Object.entries(parsed.data)
+      .map(([key, value]) => [key, typeof value === "string" ? value.trim() : value])
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  );
+  await updateLocalDatabase(localDatabaseFile, (currentDatabase) => {
+    const nextSetupDefaults = { ...currentDatabase.setupDefaults };
+    for (const [key, value] of Object.entries(cleanDefaults)) {
+      if (value) {
+        nextSetupDefaults[key as keyof typeof nextSetupDefaults] = value;
+      } else {
+        delete nextSetupDefaults[key as keyof typeof nextSetupDefaults];
+      }
+    }
+    return {
+      ...currentDatabase,
+      setupDefaults: nextSetupDefaults
+    };
+  });
+  response.json({ ok: true, setupDefaults: cleanDefaults });
 });
 
 app.post("/api/analyze", async (request, response) => {

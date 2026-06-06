@@ -666,6 +666,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "setup" | "settings">("analysis");
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
+  const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
@@ -798,6 +799,29 @@ function App() {
         title: "Speichern nicht möglich",
         message: "Der Browser lässt lokale Speicherung gerade nicht zu."
       });
+    }
+
+    if (setupDefaultsSyncTimer.current) {
+      window.clearTimeout(setupDefaultsSyncTimer.current);
+    }
+    setupDefaultsSyncTimer.current = window.setTimeout(() => {
+      void syncSetupDefaults(nextForm);
+    }, 450);
+  }
+
+  async function syncSetupDefaults(nextForm: SetupForm) {
+    try {
+      await fetch("/api/setup/defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ccuHost: nextForm.ccuHost.trim(),
+          ccuUser: nextForm.ccuUser.trim(),
+          xmlApiToken: (nextForm.xmlApiToken ?? "").trim(),
+          snifferPort: nextForm.snifferPort.trim()
+        })
+      });
+    } catch {
     }
   }
 
@@ -1099,6 +1123,7 @@ function App() {
       window.localStorage.removeItem(setupStorageKey);
     } catch {
     }
+    void syncSetupDefaults(initialForm);
     showToast({
       type: "info",
       title: "Zugangsdaten gelöscht",
@@ -1156,8 +1181,6 @@ function App() {
 
     async function loadSetupDefaults() {
       try {
-        if (window.localStorage.getItem(setupStorageKey)) return;
-
         const response = await fetch("/api/setup/defaults");
         if (!response.ok) return;
 
