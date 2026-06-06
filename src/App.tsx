@@ -90,6 +90,13 @@ type UpdateRunStatus = {
   log?: string;
 };
 
+type LogPayload = {
+  available: boolean;
+  collectedAt?: string;
+  host?: string;
+  logs: string[];
+};
+
 type Toast = {
   id: number;
   type: "info" | "success" | "warning" | "error";
@@ -663,7 +670,7 @@ function hasShellSystemData(systemDashboard?: SystemDashboard) {
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
-  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "setup" | "settings">("analysis");
+  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "logs" | "setup" | "settings">("analysis");
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
@@ -690,6 +697,10 @@ function App() {
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
   const [snifferSnapshot, setSnifferSnapshot] = useState<SnifferSnapshot | null>(null);
   const [snifferLoading, setSnifferLoading] = useState(false);
+  const [logPayload, setLogPayload] = useState<LogPayload | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [aiLogResult, setAiLogResult] = useState<AnalysisCheck | null>(null);
+  const [aiLogLoading, setAiLogLoading] = useState(false);
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
@@ -900,6 +911,65 @@ function App() {
     } finally {
       if (showLoading) setSnifferLoading(false);
       snifferAutoRefreshInFlight.current = false;
+    }
+  }
+
+  async function loadLogs(showSuccessToast = false) {
+    setLogsLoading(true);
+    try {
+      const response = await fetch("/api/logs/latest");
+      if (!response.ok) throw new Error("Logs konnten nicht geladen werden.");
+      const payload = (await response.json()) as LogPayload;
+      setLogPayload(payload);
+      if (showSuccessToast) {
+        showToast({
+          type: payload.available ? "success" : "info",
+          title: "Logs geladen",
+          message: payload.available ? `${payload.logs.length} Logzeilen geladen.` : "Noch keine Logzeilen vorhanden."
+        });
+      }
+    } catch {
+      if (showSuccessToast) {
+        showToast({
+          type: "warning",
+          title: "Logs nicht geladen",
+          message: "Prüfe, ob der Collector Logdaten an den Analyzer sendet."
+        });
+      }
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  async function analyzeLogsWithAi() {
+    setAiLogLoading(true);
+    setAiLogResult(null);
+    showToast({
+      type: "info",
+      title: "KI-Analyse gestartet",
+      message: "Erst jetzt werden die angezeigten Logdaten an den gewählten KI-Anbieter gesendet."
+    });
+    try {
+      const response = await fetch("/api/logs/analyze-ai", { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(payload.message ?? "KI-Analyse konnte nicht gestartet werden.");
+      }
+      const result = (await response.json()) as AnalysisCheck;
+      setAiLogResult(result);
+      showToast({
+        type: result.status === "critical" || result.status === "warning" ? "warning" : "success",
+        title: "KI-Analyse fertig",
+        message: result.summary
+      });
+    } catch (caughtError) {
+      showToast({
+        type: "warning",
+        title: "KI-Analyse nicht möglich",
+        message: caughtError instanceof Error ? caughtError.message : "Bitte Settings/API-Key prüfen."
+      });
+    } finally {
+      setAiLogLoading(false);
     }
   }
 
@@ -1452,6 +1522,11 @@ function App() {
     return () => window.clearInterval(interval);
   }, [currentPage, form.snifferPort]);
 
+  useEffect(() => {
+    if (currentPage !== "logs") return;
+    void loadLogs(false);
+  }, [currentPage]);
+
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -1631,6 +1706,9 @@ function App() {
             </button>
             <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => setCurrentPage("dc")}>
               DC-Analyzer
+            </button>
+            <button type="button" className={currentPage === "logs" ? "is-active" : ""} onClick={() => setCurrentPage("logs")}>
+              Logs
             </button>
             <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
               Einstellungen
@@ -2236,6 +2314,112 @@ function App() {
                 </details>
               ) : null}
             </div>
+          )}
+        </section>
+      )}
+
+      {currentPage === "logs" && (
+        <section className="panel logs-page">
+          <div className="panel__header logs-page__header">
+            <div>
+              <p className="eyebrow">Logs</p>
+              <h2>Logauswertung</h2>
+              <p>
+                Hier siehst du die zuletzt vom Collector übertragenen Logs 1:1. Die KI bekommt diese Daten erst,
+                wenn du unten ausdrücklich auf „Mit KI analysieren“ klickst.
+              </p>
+            </div>
+            <div className="logs-actions">
+              <button type="button" className="ghost-button" onClick={() => void loadLogs(true)} disabled={logsLoading}>
+                {logsLoading ? "Lade ..." : "Logs neu laden"}
+              </button>
+              <button
+                type="button"
+                className="analyze-button analyze-button-compact"
+                onClick={() => void analyzeLogsWithAi()}
+                disabled={aiLogLoading || !logPayload?.available || !notificationSettings.ai.enabled}
+              >
+                {aiLogLoading ? "KI analysiert ..." : "Mit KI analysieren"}
+              </button>
+            </div>
+          </div>
+
+          <div className="logs-privacy-note">
+            <strong>Datenschutz-Hinweis</strong>
+            <span>
+              Automatisch wird nichts an OpenAI oder Gemini gesendet. Erst der KI-Button überträgt die Logzeilen an den in den Settings gewählten Anbieter.
+            </span>
+          </div>
+
+          {!notificationSettings.ai.enabled && (
+            <div className="setup-note">
+              KI-Analyse ist in den Einstellungen deaktiviert. Du kannst die Logs trotzdem lokal lesen.
+            </div>
+          )}
+
+          <div className="logs-meta">
+            <span>{logPayload?.host ? `Quelle: ${logPayload.host}` : "Quelle: noch nicht bekannt"}</span>
+            <span>{logPayload?.collectedAt ? `Empfangen: ${new Date(logPayload.collectedAt).toLocaleString("de-DE")}` : "Noch kein Collector-Snapshot"}</span>
+            <span>{logPayload?.logs.length ?? 0} Zeilen</span>
+          </div>
+
+          {logPayload?.logs.length ? (
+            <pre className="raw-log-view" aria-label="Rohlog">{logPayload.logs.join("\n")}</pre>
+          ) : (
+            <div className="system-collector-empty">
+              <div>
+                <p className="eyebrow">Keine Logs</p>
+                <h3>Noch keine Logdaten empfangen</h3>
+                <p>Führe den Shell-Collector auf der CCU/RaspberryMatic aus, damit Logs hier 1:1 angezeigt werden.</p>
+              </div>
+              <div className="script-copy-row">
+                <code>{collectorCommand}</code>
+                <button type="button" onClick={() => void copyCollectorCommand()}>
+                  Kopieren
+                </button>
+              </div>
+            </div>
+          )}
+
+          {aiLogResult && (
+            <article className={`ai-log-result status-${aiLogResult.status}`}>
+              <div className="detail-title">
+                <span className={`pill status-${aiLogResult.status}`}>
+                  {getStatusIcon(aiLogResult.status, "status-icon-inline")}
+                  {statusLabel[aiLogResult.status]}
+                </span>
+                <h3>{aiLogResult.title}</h3>
+              </div>
+              <p className="lead">{aiLogResult.summary}</p>
+              <div className={`recommendation-banner status-${aiLogResult.status}`}>
+                <div className="banner-icon">
+                  {getStatusIcon(aiLogResult.status, "banner-svg")}
+                </div>
+                <div className="banner-content">
+                  <strong>Handlungsempfehlung</strong>
+                  <p>{aiLogResult.recommendation}</p>
+                </div>
+              </div>
+              {aiLogResult.evidence.length > 0 && (
+                <>
+                  <h4>Belege</h4>
+                  <ul className="evidence">
+                    {aiLogResult.evidence.map((item, index) => (
+                      <li key={`${item.source}-${index}`}>
+                        <strong>{item.source}</strong>
+                        <span>{item.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <h4>Details</h4>
+              <ul>
+                {aiLogResult.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            </article>
           )}
         </section>
       )}

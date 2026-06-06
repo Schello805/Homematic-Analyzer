@@ -875,10 +875,6 @@ app.post("/api/analyze", async (request, response) => {
     latestSnifferSnapshot = snifferSnapshot;
 
     const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot);
-    const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector);
-    if (aiLogAnalysis) {
-      checks.push(aiLogAnalysis);
-    }
     const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
     const notificationResult = parsed.data.notify === false
       ? {
@@ -945,6 +941,32 @@ app.get("/api/collector/latest", (_request, response) => {
     logs: latestCollector?.logs?.length ?? 0,
     connections: latestCollector?.network?.connections?.length ?? 0
   });
+});
+
+app.get("/api/logs/latest", (_request, response) => {
+  response.json({
+    available: Boolean(latestCollector?.logs?.length),
+    collectedAt: latestCollector?.collectedAt,
+    host: latestCollector?.host,
+    logs: latestCollector?.logs ?? []
+  });
+});
+
+app.post("/api/logs/analyze-ai", async (_request, response) => {
+  const notificationSettings = mergeNotificationSettings(persistedNotificationSettings);
+  const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector);
+
+  if (!aiLogAnalysis) {
+    response.status(400).json({
+      error: "KI-Loganalyse nicht möglich",
+      message: latestCollector?.logs?.length
+        ? "KI ist nicht aktiviert oder API-Key fehlt."
+        : "Es liegen noch keine Logzeilen vor."
+    });
+    return;
+  }
+
+  response.json(aiLogAnalysis);
 });
 
 app.get("/api/ccu-masterdata/latest", (_request, response) => {
