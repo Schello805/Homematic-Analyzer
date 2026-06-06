@@ -665,6 +665,7 @@ function App() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
   const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "setup" | "settings">("analysis");
   const updateReloadStarted = useRef(false);
+  const snifferAutoRefreshInFlight = useRef(false);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
@@ -705,6 +706,7 @@ function App() {
   const backupPageCount = Math.max(1, Math.ceil(backupItems.length / backupPageSize));
   const visibleBackupItems = backupItems.slice(backupPage * backupPageSize, (backupPage + 1) * backupPageSize);
   const weakestRssiDevice = snifferSnapshot?.summary.weakestRssiDevice;
+  const topDutyDevice = snifferSnapshot?.devices[0];
   const gatewayDutyCycleCards = snifferSnapshot?.summary.gateways?.slice(0, 3) ?? [];
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
     ? `${snifferSnapshot.summary.carrierSense} dBm`
@@ -837,8 +839,10 @@ function App() {
     }
   }
 
-  async function loadSnifferSnapshot(showSuccessToast = false) {
-    setSnifferLoading(true);
+  async function loadSnifferSnapshot(showSuccessToast = false, showLoading = true) {
+    if (snifferAutoRefreshInFlight.current) return;
+    snifferAutoRefreshInFlight.current = true;
+    if (showLoading) setSnifferLoading(true);
     try {
       const response = await fetch("/api/sniffer/snapshot", {
         method: "POST",
@@ -870,7 +874,8 @@ function App() {
         });
       }
     } finally {
-      setSnifferLoading(false);
+      if (showLoading) setSnifferLoading(false);
+      snifferAutoRefreshInFlight.current = false;
     }
   }
 
@@ -1415,8 +1420,14 @@ function App() {
   useEffect(() => {
     if (currentPage !== "dc") return;
     void loadUsbPorts(false);
-    void loadSnifferSnapshot(false);
-  }, [currentPage]);
+    void loadSnifferSnapshot(false, true);
+
+    const interval = window.setInterval(() => {
+      void loadSnifferSnapshot(false, false);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [currentPage, form.snifferPort]);
 
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
@@ -1967,6 +1978,13 @@ function App() {
           <div className="dc-metric-grid">
             {[
               ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Berechnet wie AskSinAnalyzerXS aus Telegrammlänge und Flags."],
+              [
+                "Top DC-Anteil",
+                topDutyDevice ? `${topDutyDevice.dutyShare}%` : "keine Telegramme",
+                topDutyDevice
+                  ? `${topDutyDevice.name} · ${topDutyDevice.dutyCycle}% DC · ${topDutyDevice.telegrams} Telegramm${topDutyDevice.telegrams === 1 ? "" : "e"}`
+                  : "Noch kein Gerät mit Funktelegrammen erkannt."
+              ],
               ["Carrier Sense", carrierSenseText, carrierSenseHint],
               ...gatewayDutyCycleCards.map((gateway, index) => [
                 `Gateway DC ${index + 1}`,
@@ -1997,7 +2015,7 @@ function App() {
                 <p className="eyebrow">Verlauf</p>
                 <h3>Telegramme und RSSI-Noise</h3>
                 <p>
-                  Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Momentaufnahme liest aktuell einige Sekunden vom seriellen Port.
+                  Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Ansicht aktualisiert sich sekündlich.
                 </p>
               </div>
               <div className="dc-chart">

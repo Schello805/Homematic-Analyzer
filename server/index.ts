@@ -351,7 +351,7 @@ async function readSerialSnifferLines(port?: string): Promise<string[]> {
   return new Promise((resolve) => {
     const command = [
       "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
-      "timeout 8s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
+      "timeout 1s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
     ].join("; ");
     const child = spawn("bash", ["-lc", command], {
       env: { ...process.env, SNIFFER_PORT: trimmedPort },
