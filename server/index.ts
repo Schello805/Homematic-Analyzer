@@ -791,7 +791,11 @@ app.use((error: unknown, request: express.Request, response: express.Response, n
 });
 
 app.get("/api/health", (_request, response) => {
-  response.json({ ok: true, service: "Homematic Analyzer API" });
+  response.json({
+    ok: true,
+    service: "Homematic Analyzer API",
+    version: appVersion
+  });
 });
 
 app.get("/api/system/usb-ports", async (_request, response) => {

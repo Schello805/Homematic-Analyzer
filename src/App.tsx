@@ -1090,35 +1090,56 @@ function App() {
   function scheduleReloadAfterUpdate(reason: string) {
     if (updateReloadStarted.current) return;
     updateReloadStarted.current = true;
-    console.info("[Homematic Analyzer][Update] auto reload scheduled", { reason });
+    console.info("[Homematic Analyzer][Update] waiting for new server version", {
+      reason,
+      currentVersion: appVersion
+    });
     showToast({
       type: "info",
-      title: "Neustart erkannt",
-      message: "Die Seite lädt automatisch neu, sobald der Analyzer wieder erreichbar ist."
+      title: "Update läuft",
+      message: "Die Seite bleibt geöffnet und lädt erst neu, wenn die aktualisierte Version gestartet ist."
     });
 
     const startedAt = Date.now();
-    const reloadWhenApiIsReady = async () => {
+    let analyzerWasUnavailable = false;
+    const reloadWhenNewVersionIsReady = async () => {
       try {
         const response = await fetch(`/api/health?reload=${Date.now()}`, { cache: "no-store" });
         if (response.ok) {
-          console.info("[Homematic Analyzer][Update] API reachable, reloading page");
-          window.setTimeout(() => window.location.reload(), 700);
-          return;
+          const health = (await response.json()) as { version?: string };
+          const versionChanged = Boolean(health.version && health.version !== appVersion);
+          console.info("[Homematic Analyzer][Update] health response", {
+            currentVersion: appVersion,
+            serverVersion: health.version,
+            analyzerWasUnavailable,
+            versionChanged
+          });
+
+          if (versionChanged) {
+            console.info("[Homematic Analyzer][Update] new version reachable, reloading page");
+            window.setTimeout(() => window.location.reload(), 700);
+            return;
+          }
         }
       } catch {
+        analyzerWasUnavailable = true;
       }
 
-      if (Date.now() - startedAt > 60000) {
-        console.warn("[Homematic Analyzer][Update] API wait timed out, reloading anyway");
-        window.location.reload();
+      if (Date.now() - startedAt > 180000) {
+        console.warn("[Homematic Analyzer][Update] new version wait timed out");
+        updateReloadStarted.current = false;
+        showToast({
+          type: "warning",
+          title: "Automatisches Neuladen wartet",
+          message: "Die neue Version wurde noch nicht erkannt. Der Update-Log bleibt sichtbar; lade die Seite erst nach Abschluss manuell neu."
+        });
         return;
       }
 
-      window.setTimeout(reloadWhenApiIsReady, 1500);
+      window.setTimeout(reloadWhenNewVersionIsReady, 1500);
     };
 
-    window.setTimeout(reloadWhenApiIsReady, 2500);
+    window.setTimeout(reloadWhenNewVersionIsReady, 2500);
   }
 
   async function runAppUpdate() {
