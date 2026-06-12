@@ -708,6 +708,7 @@ function App() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [aiLogResult, setAiLogResult] = useState<AnalysisCheck | null>(null);
   const [aiLogLoading, setAiLogLoading] = useState(false);
+  const [aiLogMode, setAiLogMode] = useState<"issues" | "full">("issues");
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
@@ -964,7 +965,11 @@ function App() {
       message: "Erst jetzt werden die angezeigten Logdaten an den gewählten KI-Anbieter gesendet."
     });
     try {
-      const response = await fetch("/api/logs/analyze-ai", { method: "POST" });
+      const response = await fetch("/api/logs/analyze-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: aiLogMode })
+      });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { message?: string };
         throw new Error(payload.message ?? "KI-Analyse konnte nicht gestartet werden.");
@@ -2470,28 +2475,43 @@ function App() {
               <h2>Logauswertung</h2>
               <p>
                 Hier siehst du die zuletzt vom Collector übertragenen Logs 1:1. Die KI bekommt diese Daten erst,
-                wenn du unten ausdrücklich auf „Mit KI analysieren“ klickst.
+                wenn du unten ausdrücklich „Fehler prüfen“ oder „Gesamten Log analysieren“ startest.
               </p>
             </div>
             <div className="logs-actions">
               <button type="button" className="ghost-button" onClick={() => void loadLogs(true)} disabled={logsLoading}>
                 {logsLoading ? "Lade ..." : "Logs neu laden"}
               </button>
-              <button
-                type="button"
-                className="analyze-button analyze-button-compact"
-                onClick={() => void analyzeLogsWithAi()}
-                disabled={aiLogLoading || !logPayload?.available || !notificationSettings.ai.enabled}
-              >
-                {aiLogLoading ? "KI analysiert ..." : "Mit KI analysieren"}
-              </button>
             </div>
+          </div>
+
+          <div className="ai-log-controls">
+            <div>
+              <strong>Was soll geprüft werden?</strong>
+              <span>Berücksichtigt werden höchstens die neuesten 500 vom Collector übertragenen Logzeilen.</span>
+            </div>
+            <label>
+              Analyseumfang
+              <select value={aiLogMode} onChange={(event) => setAiLogMode(event.target.value as "issues" | "full")}>
+                <option value="issues">Nur Fehler und Warnungen (empfohlen)</option>
+                <option value="full">Gesamten übertragenen Log prüfen</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="analyze-button analyze-button-compact"
+              onClick={() => void analyzeLogsWithAi()}
+              disabled={aiLogLoading || !logPayload?.available || !notificationSettings.ai.enabled}
+            >
+              {aiLogLoading ? "KI analysiert ..." : aiLogMode === "issues" ? "Fehler prüfen" : "Gesamten Log analysieren"}
+            </button>
           </div>
 
           <div className="logs-privacy-note">
             <strong>Datenschutz-Hinweis</strong>
             <span>
-              Automatisch wird nichts an OpenAI oder Gemini gesendet. Erst der KI-Button überträgt die Logzeilen an den in den Settings gewählten Anbieter.
+              Automatisch wird nichts an OpenAI oder Gemini gesendet. Im Modus „Nur Fehler und Warnungen“ erfolgt keine KI-Anfrage,
+              wenn der lokale Filter keine auffällige Zeile findet.
             </span>
           </div>
 

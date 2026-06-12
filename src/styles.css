@@ -1751,6 +1751,28 @@ pre {
   gap: 10px;
 }
 
+.ai-log-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.7fr) auto;
+  align-items: end;
+  gap: 14px;
+  border: 1px solid #cfe0f5;
+  border-radius: 20px;
+  padding: 14px;
+  background: #f7faff;
+}
+
+.ai-log-controls > div {
+  display: grid;
+  gap: 4px;
+}
+
+.ai-log-controls > div span {
+  color: #667085;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
 .logs-privacy-note {
   display: flex;
   gap: 12px;
@@ -2951,9 +2973,17 @@ pre {
     justify-content: stretch;
   }
 
+  .ai-log-controls {
+    grid-template-columns: 1fr;
+  }
+
   .logs-actions button {
     width: 100%;
     justify-content: center;
+  }
+
+  .ai-log-controls button {
+    width: 100%;
   }
 
   .dc-guidance-actions {

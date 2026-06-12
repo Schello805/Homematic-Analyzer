@@ -132,7 +132,7 @@ const collectorSchema = z.object({
   host: z.coerce.string().max(220).optional(),
   collectedAt: z.coerce.string().max(120).optional(),
   system: z.record(z.unknown()).optional(),
-  logs: z.array(z.coerce.string().max(2000)).max(200).optional(),
+  logs: z.array(z.coerce.string().max(2000)).max(500).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional()
   }).optional(),
@@ -141,6 +141,10 @@ const collectorSchema = z.object({
 
 const snifferSnapshotSchema = z.object({
   port: z.string().max(300).optional()
+});
+
+const aiLogAnalysisSchema = z.object({
+  mode: z.enum(["issues", "full"]).default("issues")
 });
 
 const setupDefaultsSchema = z.object({
@@ -948,9 +952,15 @@ app.get("/api/logs/latest", (_request, response) => {
   });
 });
 
-app.post("/api/logs/analyze-ai", async (_request, response) => {
+app.post("/api/logs/analyze-ai", async (request, response) => {
+  const parsed = aiLogAnalysisSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({ error: "Ungültiger KI-Analysemodus", issues: parsed.error.issues });
+    return;
+  }
+
   const notificationSettings = mergeNotificationSettings(persistedNotificationSettings);
-  const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector);
+  const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector, parsed.data.mode);
 
   if (!aiLogAnalysis) {
     response.status(400).json({

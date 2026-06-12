@@ -184,11 +184,13 @@ fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
-{
-  grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/messages 2>/dev/null
-  grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" /var/log/syslog 2>/dev/null
-  journalctl -n 80 --no-pager 2>/dev/null | grep -iE "error|warn|unreach|lowbat|duty|carrier|hmip|rfd|rega|multimacd" 2>/dev/null
-} | tail -n 25 > "$LOG_LIST_FILE" 2>/dev/null || true
+if [ -r /var/log/messages ]; then
+  tail -n 500 /var/log/messages > "$LOG_LIST_FILE" 2>/dev/null || true
+elif [ -r /var/log/syslog ]; then
+  tail -n 500 /var/log/syslog > "$LOG_LIST_FILE" 2>/dev/null || true
+elif command -v journalctl >/dev/null 2>&1; then
+  journalctl -n 500 --no-pager > "$LOG_LIST_FILE" 2>/dev/null || true
+fi
 
 {
   ss -Htanp 2>/dev/null

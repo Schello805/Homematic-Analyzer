@@ -8,23 +8,49 @@ type AiLogResponse = {
   details?: string[];
 };
 
+export type AiLogMode = "issues" | "full";
+
 const defaultOpenAiModel = "gpt-4o-mini";
 const defaultGeminiModel = "gemini-1.5-flash";
 const allowedStatuses = new Set<CheckStatus>(["ok", "improvement", "warning", "critical", "unavailable"]);
+const maxAiLogLines = 500;
+const maxAiLogCharacters = 120000;
+const issuePattern = /\b(error|errors|warn|warning|fatal|critical|failed|failure|exception|timeout|unreach|unreachable|lowbat|low battery|not reachable|communication error|config pending|overheat|corrupt|denied)\b|fehler|warnung|kritisch|gestört|störung|nicht erreichbar|batterie schwach|konfiguration ausstehend/i;
 
-function cleanLogLines(logs: string[]) {
-  return logs
+export function prepareLogLines(logs: string[], mode: AiLogMode) {
+  const cleanedLines = logs
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean)
-    .slice(-60)
-    .map((line) => line.slice(0, 500));
+    .slice(-maxAiLogLines)
+    .map((line) => line.slice(0, 1000));
+  const selectedLines = mode === "issues"
+    ? cleanedLines.filter((line) => issuePattern.test(line))
+    : cleanedLines;
+  const limitedLines: string[] = [];
+  let characterCount = 0;
+
+  for (const line of selectedLines.slice().reverse()) {
+    if (characterCount + line.length > maxAiLogCharacters) break;
+    limitedLines.push(line);
+    characterCount += line.length;
+  }
+
+  return {
+    totalLines: cleanedLines.length,
+    matchedLines: selectedLines.length,
+    lines: limitedLines.reverse(),
+    truncated: limitedLines.length < selectedLines.length
+  };
 }
 
-function buildPrompt(logLines: string[]) {
+function buildPrompt(logLines: string[], mode: AiLogMode, totalLines: number) {
   return [
     "Du bist ein vorsichtiger Homematic/RaspberryMatic Log-Analyst.",
     "Analysiere ausschließlich die folgenden Logzeilen.",
     "Erfinde keine Ursachen, Geräte oder Lösungen, die nicht durch die Logzeilen belegt sind.",
+    mode === "issues"
+      ? `Die Zeilen wurden aus ${totalLines} übertragenen Logzeilen auf mögliche Fehler und Warnungen vorgefiltert.`
+      : `Dies ist der vollständige vom Collector übertragene Logauszug mit ${totalLines} Zeilen.`,
     "Antworte nur als JSON mit diesen Feldern:",
     "{ \"severity\": \"ok|improvement|warning|critical\", \"summary\": string, \"recommendation\": string, \"evidence\": string[], \"details\": string[] }",
     "Schreibe für normale Anwender verständlich und kurz.",
@@ -51,7 +77,14 @@ function parseJsonObject(text: string): AiLogResponse {
   return JSON.parse(cleanedText.slice(start, end + 1)) as AiLogResponse;
 }
 
-function normalizeAiResult(result: AiLogResponse, collector: CollectorPayload): AnalysisCheck {
+function normalizeAiResult(
+  result: AiLogResponse,
+  collector: CollectorPayload,
+  mode: AiLogMode,
+  totalLines: number,
+  analyzedLines: number,
+  truncated: boolean
+): AnalysisCheck {
   const status = result.severity && allowedStatuses.has(result.severity) ? result.severity : "improvement";
   const evidence = Array.isArray(result.evidence) ? result.evidence.filter(Boolean).slice(0, 8) : [];
   const details = Array.isArray(result.details) ? result.details.filter(Boolean).slice(0, 8) : [];
@@ -69,9 +102,13 @@ function normalizeAiResult(result: AiLogResponse, collector: CollectorPayload): 
       detail,
       timestamp: collector.collectedAt
     })),
-    details: details.length > 0
-      ? details
-      : ["Die KI-Auswertung basiert nur auf den übermittelten Logzeilen.", "Sie ersetzt keine belegte Analyse, sondern übersetzt Logmeldungen in verständliche Hinweise."]
+    details: [
+      `Analysiert: ${analyzedLines} von ${totalLines} übertragenen Logzeilen · Modus: ${mode === "issues" ? "Nur Fehler und Warnungen" : "Gesamter übertragener Log"}.`,
+      ...(truncated ? ["Der Auszug wurde wegen der maximalen KI-Eingabegröße gekürzt; die neuesten passenden Zeilen wurden berücksichtigt."] : []),
+      ...(details.length > 0
+        ? details
+        : ["Die KI-Auswertung basiert nur auf den übermittelten Logzeilen.", "Sie ersetzt keine belegte Analyse, sondern übersetzt Logmeldungen in verständliche Hinweise."])
+    ].slice(0, 10)
   };
 }
 
@@ -129,11 +166,33 @@ async function analyzeWithGemini(settings: Required<NonNullable<NotificationSett
   return parseJsonObject(content);
 }
 
-export async function createAiLogAnalysis(settings: NotificationSettings, collector?: CollectorPayload): Promise<AnalysisCheck | undefined> {
+export async function createAiLogAnalysis(settings: NotificationSettings, collector?: CollectorPayload, mode: AiLogMode = "issues"): Promise<AnalysisCheck | undefined> {
   const aiSettings = settings.ai;
-  const logLines = cleanLogLines(collector?.logs ?? []);
+  const preparedLogs = prepareLogLines(collector?.logs ?? [], mode);
+  const logLines = preparedLogs.lines;
 
-  if (!aiSettings?.enabled || logLines.length === 0) return undefined;
+  if (!aiSettings?.enabled || preparedLogs.totalLines === 0) return undefined;
+
+  if (mode === "issues" && preparedLogs.matchedLines === 0) {
+    return {
+      id: "ai-log-analysis",
+      title: "KI-Logauswertung",
+      category: "Belege",
+      status: "ok",
+      summary: `In den ${preparedLogs.totalLines} übertragenen Logzeilen wurden keine Fehler oder Warnungen gefunden.`,
+      recommendation: "Keine Maßnahme erforderlich. Für eine breitere inhaltliche Prüfung kannst du optional den gesamten übertragenen Log analysieren lassen.",
+      access: ["ssh"],
+      evidence: [{
+        source: "Lokaler Logfilter",
+        detail: `${preparedLogs.totalLines} Zeilen wurden auf typische Fehler- und Warnbegriffe geprüft.`,
+        timestamp: collector?.collectedAt
+      }],
+      details: [
+        "Es wurden keine Logdaten an OpenAI oder Gemini gesendet, weil der lokale Filter keine Fehler- oder Warnzeile gefunden hat.",
+        "Die Aussage gilt nur für den aktuell vom Collector übertragenen Logauszug."
+      ]
+    };
+  }
 
   const provider = aiSettings.provider ?? "openai";
   const hasOpenAi = provider === "openai" && Boolean(aiSettings.openaiApiKey);
@@ -154,7 +213,7 @@ export async function createAiLogAnalysis(settings: NotificationSettings, collec
   }
 
   try {
-    const prompt = buildPrompt(logLines);
+    const prompt = buildPrompt(logLines, mode, preparedLogs.totalLines);
     const normalizedSettings = {
       enabled: Boolean(aiSettings.enabled),
       provider,
@@ -167,7 +226,14 @@ export async function createAiLogAnalysis(settings: NotificationSettings, collec
       ? await analyzeWithGemini(normalizedSettings, prompt)
       : await analyzeWithOpenAi(normalizedSettings, prompt);
 
-    return normalizeAiResult(aiResult, collector ?? {});
+    return normalizeAiResult(
+      aiResult,
+      collector ?? {},
+      mode,
+      preparedLogs.totalLines,
+      logLines.length,
+      preparedLogs.truncated
+    );
   } catch (error) {
     return {
       id: "ai-log-analysis",
