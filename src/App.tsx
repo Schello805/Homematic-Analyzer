@@ -719,6 +719,7 @@ function App() {
     url: repositoryUrl
   });
   const hasAnalysis = Boolean(analysis);
+  const isUpdateRunning = updatingApp || updateRunStatus?.status === "running";
   const backupItems = analysis?.systemDashboard?.backupItems ?? [];
   const backupPageSize = 25;
   const backupPageCount = Math.max(1, Math.ceil(backupItems.length / backupPageSize));
@@ -1120,6 +1121,7 @@ function App() {
   }
 
   async function runAppUpdate() {
+    if (isUpdateRunning) return;
     console.info("[Homematic Analyzer][Update] start clicked");
     setShowUpdateConfirm(false);
     setUpdatingApp(true);
@@ -1187,6 +1189,7 @@ function App() {
   }
 
   function requestAppUpdate() {
+    if (isUpdateRunning) return;
     setShowUpdateConfirm(true);
   }
 
@@ -3231,8 +3234,8 @@ function App() {
               <button type="button" className="ghost-button" onClick={() => setShowUpdateConfirm(false)}>
                 Abbrechen
               </button>
-              <button type="button" className="primary-button" onClick={() => void runAppUpdate()}>
-                OK, Update starten
+              <button type="button" className="primary-button" onClick={() => void runAppUpdate()} disabled={isUpdateRunning}>
+                {isUpdateRunning ? "Update läuft …" : "OK, Update starten"}
               </button>
             </div>
           </section>
@@ -3284,8 +3287,8 @@ function App() {
           <small>{updateStatus.detail}</small>
         </a>
         {updateStatus.state === "update" && (
-          <button type="button" className="footer-update-button" onClick={requestAppUpdate} disabled={updatingApp}>
-            {updatingApp ? "Update läuft ..." : "Update starten"}
+          <button type="button" className="footer-update-button" onClick={requestAppUpdate} disabled={isUpdateRunning}>
+            {isUpdateRunning ? "Update läuft …" : "Update starten"}
           </button>
         )}
         {updateRunStatus && updateRunStatus.status !== "idle" && (
