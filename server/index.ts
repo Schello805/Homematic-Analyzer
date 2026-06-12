@@ -309,7 +309,10 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
       .filter(Boolean)
       .map((raw) => ({ raw, receivedAt }));
     if (newLines.length > 0) {
-      snifferLineHistory = [...snifferLineHistory, ...newLines].slice(-1000);
+      const historyCutoff = Date.now() - 65 * 60 * 1000;
+      snifferLineHistory = [...snifferLineHistory, ...newLines]
+        .filter((line) => Date.parse(line.receivedAt) >= historyCutoff)
+        .slice(-20000);
     }
   });
   reader.on("error", (error) => {
@@ -339,7 +342,8 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   let source = "Noch keine Snifferdaten empfangen.";
 
   await ensureSerialSnifferReader(port);
-  lines = snifferLineHistory.slice(-300);
+  const firstTimestampOfHour = Date.parse(checkedAt) - 60 * 60 * 1000;
+  lines = snifferLineHistory.filter((line) => Date.parse(line.receivedAt) >= firstTimestampOfHour);
   if (lines.length > 0) {
     source = port?.trim() ? `Serieller Port ${port.trim()}` : "Serieller Port";
   }
@@ -381,7 +385,6 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     .filter((line) => !parseAskSinTelegram(line.raw, deviceMap, line.receivedAt) && !parseRssiNoise(line.raw, line.receivedAt))
     .map((line) => line.raw);
   const diagnostics = invalidSnifferLines.slice(-20);
-  const firstTimestampOfHour = Date.parse(checkedAt) - 60 * 60 * 1000;
   const telegrams = parsedTelegrams.filter((telegram) => Date.parse(telegram.tstamp) >= firstTimestampOfHour);
   const rssiNoises = parsedRssiNoises.filter((noise) => Date.parse(noise.tstamp) >= firstTimestampOfHour);
   const totalDutyCycle = telegrams.reduce((sum, event) => sum + event.dutyCycle, 0);
@@ -452,6 +455,7 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
       invalidLines: invalidSnifferLines.length,
       protocolCompatible: telegrams.length > 0 || rssiNoises.length > 0,
       telegrams: telegrams.length,
+      rssiSamples: rssiNoises.length,
       devices: deviceRows.length,
       dutyCycle: Math.round(totalDutyCycle * 10) / 10,
       carrierSense: carrierSenseValues.at(-1),

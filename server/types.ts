@@ -204,6 +204,7 @@ export type SnifferSnapshot = {
     invalidLines: number;
     protocolCompatible: boolean;
     telegrams: number;
+    rssiSamples: number;
     devices: number;
     dutyCycle?: number;
     carrierSense?: number;

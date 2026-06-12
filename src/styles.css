@@ -681,6 +681,16 @@ h2 {
   color: #667085;
 }
 
+.dc-chart-note {
+  border-left: 3px solid #f59e0b;
+  border-radius: 0 12px 12px 0;
+  padding: 9px 12px;
+  color: #5d687d;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  background: #fffbeb;
+}
+
 .dc-chart {
   display: grid;
   gap: 8px;

@@ -133,6 +133,7 @@ type SnifferSnapshot = {
     invalidLines: number;
     protocolCompatible: boolean;
     telegrams: number;
+    rssiSamples: number;
     devices: number;
     dutyCycle?: number;
     carrierSense?: number;
@@ -737,8 +738,8 @@ function App() {
     ? `${snifferSnapshot.summary.carrierSense} dBm`
     : "nicht gemessen";
   const carrierSenseHint = snifferSnapshot?.summary.carrierSenseAvg !== undefined
-    ? `Letzter RSSI-Noise-Wert, Ø ${snifferSnapshot.summary.carrierSenseAvg} dBm.`
-    : "RSSI-Noise-Zeilen des Sniffers (`:xx;`).";
+    ? `Aktueller Rauschpegel, Ø ${snifferSnapshot.summary.carrierSenseAvg} dBm in den letzten 60 Minuten. Kein Prozentwert.`
+    : "Rauschpegel-Messwerte des Sniffers (`:xx;`) in dBm, nicht in Prozent.";
 
   const scriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
@@ -2157,15 +2158,15 @@ function App() {
 
           <div className="dc-metric-grid">
             {[
-              ["Duty Cycle", snifferSnapshot?.summary.dutyCycle !== undefined ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Berechnet wie AskSinAnalyzerXS aus Telegrammlänge und Flags."],
+              ["Duty Cycle · 60 Min.", snifferSnapshot?.summary.telegrams ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Gleitender Wert der letzten 60 Minuten, berechnet wie AskSinAnalyzerXS."],
               [
-                "Top DC-Anteil",
+                "Top Funkzeit-Anteil · 60 Min.",
                 topDutyDevice ? `${topDutyDevice.dutyShare}%` : "keine Telegramme",
                 topDutyDevice
-                  ? `${topDutyDevice.name} · ${topDutyDevice.dutyCycle}% DC · ${topDutyDevice.telegrams} Telegramm${topDutyDevice.telegrams === 1 ? "" : "e"}`
+                  ? `${topDutyDevice.name} · Anteil an der gemessenen Sendezeit, nicht am gesamten Funkkanal.`
                   : "Noch kein Gerät mit Funktelegrammen erkannt."
               ],
-              ["Carrier Sense", carrierSenseText, carrierSenseHint],
+              ["Rauschpegel / Carrier Sense", carrierSenseText, carrierSenseHint],
               ...gatewayDutyCycleCards.map((gateway, index) => [
                 `Gateway DC ${index + 1}`,
                 `${gateway.dutyCycle}%`,
@@ -2205,13 +2206,13 @@ function App() {
           <div className="dc-chart-card">
             <div>
               <p className="eyebrow">Verlauf</p>
-              <h3>Telegramme und RSSI-Noise</h3>
+              <h3>Telegramme und gemessener Rauschpegel</h3>
               <p>
-                Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Ansicht aktualisiert sich sekündlich und behält empfangene Daten im Verlauf.
+                Blau = empfangene Homematic-Telegramme. Orange = regelmäßige Rauschpegel-Messpunkte des Sniffers – nicht einzelne Störsignale.
               </p>
             </div>
             <div className="dc-chart">
-              <div className="dc-chart-bars" aria-label="Telegramm- und RSSI-Noise-Verlauf">
+              <div className="dc-chart-bars" aria-label="Verlauf von Telegrammen und gemessenem Rauschpegel">
                 {(() => {
                   const telegrams = snifferSnapshot?.events.slice().reverse() ?? [];
                   const noises = snifferSnapshot?.rssiNoise.slice(-40) ?? [];
@@ -2226,7 +2227,7 @@ function App() {
                         const noiseHeight = noise?.rssi !== undefined ? Math.max(8, Math.min(100, ((120 + noise.rssi) / 60) * 100)) : 0;
                         return (
                           <div className="dc-chart-column" key={`dc-chart-${index}`}>
-                            <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `RSSI-Noise ${noise.rssi} dBm` : ""} />
+                            <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `Gemessener Rauschpegel ${noise.rssi} dBm` : ""} />
                             <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} title={telegram ? `${telegram.fromName ?? telegram.fromAddress}: ${telegram.type || "Telegramm"}` : ""} />
                           </div>
                         );
@@ -2242,8 +2243,12 @@ function App() {
                 })()}
               </div>
               <div className="dc-chart-axis">
-                <span>Telegramme: {snifferSnapshot?.events.length ?? 0}</span>
-                <span>RSSI-Noise: {snifferSnapshot?.rssiNoise.length ?? 0}</span>
+                <span>Telegramme in 60 Min.: {snifferSnapshot?.summary.telegrams ?? 0}</span>
+                <span>Rauschpegel-Messpunkte in 60 Min.: {snifferSnapshot?.summary.rssiSamples ?? 0}</span>
+              </div>
+              <div className="dc-chart-note">
+                Viele orange Messpunkte bedeuten nur, dass der Sniffer häufig gemessen hat. Entscheidend ist der dBm-Wert:
+                Ein stärker negativer Wert wie −100 dBm steht für einen ruhigeren Funkhintergrund als beispielsweise −70 dBm.
               </div>
             </div>
           </div>
@@ -2253,7 +2258,8 @@ function App() {
             <div className="dc-duty-panel">
               <div>
                 <p className="eyebrow">Funklast</p>
-                <h3>Duty-Cycle-Anteil pro Gerät</h3>
+                <h3>Anteil an der gemessenen Funkzeit pro Gerät</h3>
+                <p>Gleitender Zeitraum: letzte 60 Minuten. Die Prozentzahl verteilt nur die gemessene Sendezeit auf die Geräte und ist nicht deren absoluter Duty Cycle.</p>
               </div>
               <div className="dc-duty-bars">
                 {snifferSnapshot.devices.slice(0, 5).map((device) => (
@@ -2398,8 +2404,8 @@ function App() {
           ) : (
             <div className="system-collector-empty">
               <div>
-                <p className="eyebrow">{snifferSnapshot?.rssiNoise?.length ? "RSSI-Noise empfangen" : snifferSnapshot?.connected ? "Noch keine Funktelegramme" : "Noch leer"}</p>
-                <h3>{snifferSnapshot?.rssiNoise?.length ? "Der Sniffer misst Funkrauschen, aber noch keine Homematic-Telegramme" : snifferSnapshot?.connected ? "Der Sniffer sendet Startmeldungen, aber noch keine Homematic-Telegramme" : "Der DC-Analyzer wartet auf echte Snifferdaten"}</h3>
+                <p className="eyebrow">{snifferSnapshot?.rssiNoise?.length ? "Rauschpegel wird gemessen" : snifferSnapshot?.connected ? "Noch keine Funktelegramme" : "Noch leer"}</p>
+                <h3>{snifferSnapshot?.rssiNoise?.length ? "Der Sniffer misst den Funkhintergrund, aber noch keine Homematic-Telegramme" : snifferSnapshot?.connected ? "Der Sniffer sendet Startmeldungen, aber noch keine Homematic-Telegramme" : "Der DC-Analyzer wartet auf echte Snifferdaten"}</h3>
                 <p>
                   Wichtig: Kurze Zeilen wie `:8A;` sind RSSI-Noise/Carrier-Sense. Für die Telegramm-Tabelle müssen längere
                   AskSin-Zeilen im Format `:...;` ankommen. Löse dafür ein Homematic-Gerät in Funkreichweite aus.
