@@ -13,7 +13,7 @@ import { sendNotificationSummaries, sendTestNotification } from "./notifications
 import { checkRepositoryRelease } from "./releases.js";
 import { parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
-import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferSnapshot } from "./types.js";
+import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
 
 const app = express();
 const appVersion = packageInfo.version;
@@ -32,12 +32,16 @@ const snifferLogFile = join(dataDir, "sniffer-lines.log");
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
 let latestSnifferSnapshot: SnifferSnapshot | undefined;
+let latestCcuSnapshot: Awaited<ReturnType<typeof readCcuSnapshot>>;
 let snifferLineHistory: Array<{ raw: string; receivedAt: string }> = [];
 let activeSnifferPort = "";
 let snifferReader: ReturnType<typeof spawn> | undefined;
 let snifferReaderBuffer = "";
 let persistedNotificationSettings: NotificationSettings | undefined;
 let collectorHistory: CollectorHistoryPoint[] = [];
+let analysisHistory: AnalysisHistoryEntry[] = [];
+let snifferHistory: SnifferHistoryPoint[] = [];
+let lastPersistedSnifferHistoryAt = 0;
 let updateRun: {
   running: boolean;
   startedAt?: string;
@@ -152,6 +156,14 @@ const setupDefaultsSchema = z.object({
   ccuUser: z.string().max(120).optional(),
   xmlApiToken: z.string().max(300).optional(),
   snifferPort: z.string().max(300).optional()
+});
+
+const ccuConnectionTestSchema = z.object({
+  ccuHost: z.string().min(1).max(300),
+  ccuUser: z.string().max(120).optional(),
+  ccuPassword: z.string().max(300).optional(),
+  xmlApiToken: z.string().max(300).optional(),
+  hasCcuPassword: z.boolean().optional()
 });
 
 const ccuMasterdataSchema = z.object({
@@ -446,7 +458,7 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     : undefined;
   const readerActive = Boolean(snifferReader && activeSnifferPort === port?.trim() && snifferReader.exitCode === null);
 
-  return {
+  const snapshot: SnifferSnapshot = {
     checkedAt,
     port: port?.trim() || undefined,
     configured: Boolean(port?.trim()),
@@ -477,8 +489,38 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
       ? diagnostics
       : readerActive && lines.length === 0
         ? ["Serieller Leser ist aktiv und wartet auf Sniffer-Zeilen."]
-        : []
+      : []
   };
+  if (snapshot.configured && (snapshot.readerActive || snapshot.connected)) {
+    void persistSnifferHistory(snapshot);
+  }
+  return snapshot;
+}
+
+function dataAgeStatus(timestamp?: string, staleAfterMinutes = 10) {
+  if (!timestamp) return { state: "missing" as const, ageMinutes: undefined };
+  const ageMinutes = Math.max(0, Math.round((Date.now() - Date.parse(timestamp)) / 60000));
+  return {
+    state: ageMinutes > staleAfterMinutes ? "stale" as const : "fresh" as const,
+    ageMinutes
+  };
+}
+
+function latestHistoryChange() {
+  const current = analysisHistory.at(-1);
+  const previous = analysisHistory.at(-2);
+  if (!current || !previous) return [];
+
+  return current.checks.flatMap((check) => {
+    const oldCheck = previous.checks.find((candidate) => candidate.id === check.id);
+    if (!oldCheck || oldCheck.status === check.status) return [];
+    return [{
+      id: check.id,
+      title: check.title,
+      from: oldCheck.status,
+      to: check.status
+    }];
+  });
 }
 
 async function readUpdateLogTail() {
@@ -667,6 +709,11 @@ async function loadPersistedCollector() {
     latestCollector = parsed.data;
   }
   collectorHistory = Array.isArray(database.collectorHistory) ? database.collectorHistory.slice(-120) : [];
+  analysisHistory = Array.isArray(database.analysisHistory) ? database.analysisHistory.slice(-100) : [];
+  const historyCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  snifferHistory = Array.isArray(database.snifferHistory)
+    ? database.snifferHistory.filter((point) => Date.parse(point.collectedAt) >= historyCutoff)
+    : [];
 }
 
 async function persistCcuMasterdata(payload: CcuMasterdataPayload) {
@@ -683,6 +730,48 @@ async function persistCollector(payload: CollectorPayload) {
     ...currentDatabase,
     latestCollector: payload,
     collectorHistory
+  }));
+}
+
+function analysisSummary(checks: AnalysisCheck[]) {
+  return checks.reduce<Record<AnalysisCheck["status"], number>>(
+    (summary, check) => {
+      summary[check.status] += 1;
+      return summary;
+    },
+    { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
+  );
+}
+
+async function persistAnalysisHistory(entry: AnalysisHistoryEntry) {
+  analysisHistory = [...analysisHistory, entry].slice(-100);
+  await updateLocalDatabase(localDatabaseFile, (database) => ({
+    ...database,
+    analysisHistory
+  }));
+}
+
+async function persistSnifferHistory(snapshot: SnifferSnapshot) {
+  const now = Date.now();
+  if (now - lastPersistedSnifferHistoryAt < 60 * 1000) return;
+  lastPersistedSnifferHistoryAt = now;
+
+  const point: SnifferHistoryPoint = {
+    collectedAt: snapshot.checkedAt,
+    dutyCycle: snapshot.summary.telegrams > 0 ? snapshot.summary.dutyCycle : undefined,
+    carrierSense: snapshot.summary.carrierSense,
+    carrierSenseAvg: snapshot.summary.carrierSenseAvg,
+    telegrams: snapshot.summary.telegrams,
+    devices: snapshot.summary.devices,
+    weakestRssi: snapshot.summary.weakestRssi
+  };
+  const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+  snifferHistory = [...snifferHistory, point]
+    .filter((historyPoint) => Date.parse(historyPoint.collectedAt) >= cutoff)
+    .slice(-43200);
+  await updateLocalDatabase(localDatabaseFile, (database) => ({
+    ...database,
+    snifferHistory
   }));
 }
 
@@ -809,6 +898,115 @@ app.get("/api/system/usb-ports", async (_request, response) => {
   });
 });
 
+app.get("/api/diagnostics", async (_request, response) => {
+  const database = await readLocalDatabase(localDatabaseFile);
+  const setup = database.setupDefaults ?? {};
+  const collectorAge = dataAgeStatus(latestCollector?.collectedAt, 3);
+  const masterdataAge = dataAgeStatus(latestCcuMasterdata?.collectedAt, 36 * 60);
+  const snifferAge = dataAgeStatus(latestSnifferSnapshot?.checkedAt, 2);
+  const analysisAge = dataAgeStatus(analysisHistory.at(-1)?.generatedAt, 60);
+
+  response.json({
+    checkedAt: new Date().toISOString(),
+    sources: [
+      {
+        id: "setup",
+        label: "Setup",
+        status: setup.ccuHost ? "ok" : "missing",
+        detail: setup.ccuHost ? "CCU-Adresse ist serverseitig gespeichert." : "Keine CCU-Adresse gespeichert.",
+        lastSuccessAt: setup.ccuHost ? database.updatedAt : undefined
+      },
+      {
+        id: "ccu",
+        label: "CCU Live-Verbindung",
+        status: latestCcuSnapshot?.reachable ? "ok" : latestCcuSnapshot ? "error" : "missing",
+        detail: latestCcuSnapshot?.reachable
+          ? `${latestCcuSnapshot.counters.devices} Geräte zuletzt live gelesen.`
+          : latestCcuSnapshot?.error ?? "Noch kein Live-Verbindungstest durchgeführt.",
+        lastSuccessAt: latestCcuSnapshot?.reachable ? latestCcuSnapshot.collectedAt : undefined,
+        lastAttemptAt: latestCcuSnapshot?.collectedAt,
+        diagnostics: latestCcuSnapshot?.diagnostics
+      },
+      {
+        id: "collector",
+        label: "CCU System-Collector",
+        status: collectorAge.state,
+        detail: latestCollector
+          ? `${latestCollector.logs?.length ?? 0} Logzeilen; Daten ${collectorAge.ageMinutes ?? 0} Minuten alt.`
+          : "Noch kein Collector-Snapshot empfangen.",
+        lastSuccessAt: latestCollector?.collectedAt,
+        ageMinutes: collectorAge.ageMinutes
+      },
+      {
+        id: "masterdata",
+        label: "CCU Stammdaten",
+        status: masterdataAge.state,
+        detail: latestCcuMasterdata
+          ? `${latestCcuMasterdata.deviceCount ?? latestCcuMasterdata.devices?.length ?? 0} Geräte; Daten ${masterdataAge.ageMinutes ?? 0} Minuten alt.`
+          : "Noch keine Stammdaten empfangen.",
+        lastSuccessAt: latestCcuMasterdata?.collectedAt,
+        ageMinutes: masterdataAge.ageMinutes
+      },
+      {
+        id: "sniffer",
+        label: "AskSin Sniffer",
+        status: latestSnifferSnapshot?.readerActive ? snifferAge.state : setup.snifferPort ? "error" : "optional",
+        detail: latestSnifferSnapshot?.readerActive
+          ? `${latestSnifferSnapshot.summary.telegrams} Telegramme im aktuellen 60-Minuten-Fenster.`
+          : setup.snifferPort ? "Port ist gespeichert, aber kein aktiver Leser wurde bestätigt." : "Optional – kein Sniffer eingerichtet.",
+        lastSuccessAt: latestSnifferSnapshot?.checkedAt,
+        ageMinutes: snifferAge.ageMinutes
+      },
+      {
+        id: "analysis",
+        label: "Letzte Analyse",
+        status: analysisAge.state,
+        detail: analysisHistory.length
+          ? `${analysisHistory.length} Analysen gespeichert; letzte vor ${analysisAge.ageMinutes ?? 0} Minuten.`
+          : "Noch keine serverseitige Analysehistorie vorhanden.",
+        lastSuccessAt: analysisHistory.at(-1)?.generatedAt,
+        ageMinutes: analysisAge.ageMinutes
+      }
+    ]
+  });
+});
+
+app.get("/api/analysis/history", (_request, response) => {
+  response.json({
+    entries: analysisHistory.slice().reverse(),
+    changes: latestHistoryChange()
+  });
+});
+
+app.get("/api/sniffer/history", (_request, response) => {
+  response.json({
+    retentionDays: 30,
+    points: snifferHistory
+  });
+});
+
+app.post("/api/ccu/test", async (request, response) => {
+  const parsed = ccuConnectionTestSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({ error: "Ungültige CCU-Testdaten", issues: parsed.error.issues });
+    return;
+  }
+
+  const snapshot = await readCcuSnapshot(parsed.data);
+  latestCcuSnapshot = snapshot;
+  response.json({
+    checkedAt: new Date().toISOString(),
+    reachable: Boolean(snapshot?.reachable),
+    webUiReachable: snapshot?.webUiReachable,
+    xmlApiReachable: snapshot?.xmlApiReachable,
+    authentication: snapshot?.authentication,
+    devices: snapshot?.counters.devices ?? 0,
+    errorCode: snapshot?.errorCode,
+    error: snapshot?.error,
+    diagnostics: snapshot?.diagnostics ?? []
+  });
+});
+
 app.post("/api/sniffer/snapshot", async (request, response) => {
   const parsed = snifferSnapshotSchema.safeParse(request.body ?? {});
   if (!parsed.success) {
@@ -864,6 +1062,7 @@ app.post("/api/analyze", async (request, response) => {
     }
 
     const ccuSnapshot = await readCcuSnapshot(parsed.data);
+    latestCcuSnapshot = ccuSnapshot;
     const notificationSettings = mergeNotificationSettings(parsed.data.notificationSettings ?? persistedNotificationSettings ?? {
       telegram: { enabled: parsed.data.telegramEnabled },
       events: { critical: true }
@@ -883,10 +1082,29 @@ app.post("/api/analyze", async (request, response) => {
       }
       : await sendNotificationSummaries(notificationSettings, checks, analyzerUrl);
 
+    const generatedAt = new Date().toISOString();
+    const systemDashboard = createSystemDashboard(latestCcuMasterdata, latestCollector, parsed.data.ccuHost);
+    await persistAnalysisHistory({
+      generatedAt,
+      summary: analysisSummary(checks),
+      checks: checks.map((check) => ({
+        id: check.id,
+        title: check.title,
+        status: check.status,
+        summary: check.summary
+      })),
+      sources: {
+        ccu: ccuSnapshot?.collectedAt,
+        collector: latestCollector?.collectedAt,
+        masterdata: latestCcuMasterdata?.collectedAt,
+        sniffer: snifferSnapshot?.checkedAt
+      }
+    });
+
     response.json({
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       checks,
-      systemDashboard: createSystemDashboard(latestCcuMasterdata, latestCollector, parsed.data.ccuHost),
+      systemDashboard,
       notifications: {
         telegram: notificationResult.telegram,
         email: notificationResult.email

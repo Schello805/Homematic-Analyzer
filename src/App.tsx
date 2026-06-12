@@ -37,6 +37,75 @@ type AnalysisResponse = {
   };
 };
 
+type DiagnosticSource = {
+  id: string;
+  label: string;
+  status: "ok" | "fresh" | "stale" | "error" | "missing" | "optional";
+  detail: string;
+  lastSuccessAt?: string;
+  lastAttemptAt?: string;
+  ageMinutes?: number;
+  diagnostics?: Array<{
+    step: string;
+    status: "ok" | "failed" | "skipped";
+    detail: string;
+  }>;
+};
+
+type DiagnosticsPayload = {
+  checkedAt: string;
+  sources: DiagnosticSource[];
+};
+
+type AnalysisHistoryPayload = {
+  entries: Array<{
+    generatedAt: string;
+    summary: Record<CheckStatus, number>;
+    checks: Array<{ id: string; title: string; status: CheckStatus; summary: string }>;
+    sources: {
+      ccu?: string;
+      collector?: string;
+      masterdata?: string;
+      sniffer?: string;
+    };
+  }>;
+  changes: Array<{
+    id: string;
+    title: string;
+    from: CheckStatus;
+    to: CheckStatus;
+  }>;
+};
+
+type CcuTestResult = {
+  checkedAt: string;
+  reachable: boolean;
+  webUiReachable?: boolean;
+  xmlApiReachable?: boolean;
+  authentication?: "ok" | "failed" | "not-tested";
+  devices: number;
+  errorCode?: string;
+  error?: string;
+  diagnostics: Array<{
+    step: string;
+    status: "ok" | "failed" | "skipped";
+    detail: string;
+  }>;
+};
+
+type SnifferHistoryPayload = {
+  retentionDays: number;
+  points: Array<{
+    collectedAt: string;
+    dutyCycle?: number;
+    carrierSense?: number;
+    carrierSenseAvg?: number;
+    telegrams: number;
+    devices: number;
+    weakestRssi?: number;
+  }>;
+};
+
 type SystemDashboard = {
   available: boolean;
   host?: string;
@@ -576,6 +645,15 @@ function formatSnifferTime(value?: string) {
   return new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function formatDataAge(value?: string) {
+  if (!value) return { label: "keine Daten", state: "missing" };
+  const ageMinutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+  if (ageMinutes < 2) return { label: "live / gerade eben", state: "fresh" };
+  if (ageMinutes < 60) return { label: `vor ${ageMinutes} Min.`, state: ageMinutes <= 10 ? "fresh" : "stale" };
+  const hours = Math.round(ageMinutes / 60);
+  return { label: `vor ${hours} Std.`, state: "stale" };
+}
+
 function rssiClass(value?: number) {
   if (value === undefined) return "";
   if (value >= -65) return "good";
@@ -675,7 +753,7 @@ function hasShellSystemData(systemDashboard?: SystemDashboard) {
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
-  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "logs" | "setup" | "settings">("analysis");
+  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "logs" | "diagnostics" | "setup" | "settings">("analysis");
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
@@ -701,6 +779,7 @@ function App() {
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
   const [snifferSnapshot, setSnifferSnapshot] = useState<SnifferSnapshot | null>(null);
+  const [snifferHistory, setSnifferHistory] = useState<SnifferHistoryPayload | null>(null);
   const [snifferLoading, setSnifferLoading] = useState(false);
   const [showAllSnifferDevices, setShowAllSnifferDevices] = useState(false);
   const [showAllSnifferEvents, setShowAllSnifferEvents] = useState(false);
@@ -709,6 +788,11 @@ function App() {
   const [aiLogResult, setAiLogResult] = useState<AnalysisCheck | null>(null);
   const [aiLogLoading, setAiLogLoading] = useState(false);
   const [aiLogMode, setAiLogMode] = useState<"issues" | "full">("issues");
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsPayload | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistoryPayload | null>(null);
+  const [ccuTestResult, setCcuTestResult] = useState<CcuTestResult | null>(null);
+  const [ccuTestLoading, setCcuTestLoading] = useState(false);
   const [manualSnifferPort, setManualSnifferPort] = useState(false);
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
@@ -904,6 +988,10 @@ function App() {
 
       const snapshot = (await response.json()) as SnifferSnapshot;
       setSnifferSnapshot(snapshot);
+      const historyResponse = await fetch("/api/sniffer/history", { cache: "no-store" });
+      if (historyResponse.ok) {
+        setSnifferHistory((await historyResponse.json()) as SnifferHistoryPayload);
+      }
       if (showSuccessToast) {
         showToast({
           type: snapshot.connected ? "success" : snapshot.configured ? "warning" : "info",
@@ -953,6 +1041,72 @@ function App() {
       }
     } finally {
       setLogsLoading(false);
+    }
+  }
+
+  async function loadDiagnostics(showSuccessToast = false) {
+    setDiagnosticsLoading(true);
+    try {
+      const [diagnosticsResponse, historyResponse] = await Promise.all([
+        fetch("/api/diagnostics", { cache: "no-store" }),
+        fetch("/api/analysis/history", { cache: "no-store" })
+      ]);
+      if (!diagnosticsResponse.ok || !historyResponse.ok) throw new Error("Diagnosedaten konnten nicht geladen werden.");
+      setDiagnostics((await diagnosticsResponse.json()) as DiagnosticsPayload);
+      setAnalysisHistory((await historyResponse.json()) as AnalysisHistoryPayload);
+      if (showSuccessToast) {
+        showToast({
+          type: "success",
+          title: "Status aktualisiert",
+          message: "Alle lokalen Datenquellen wurden neu eingelesen."
+        });
+      }
+    } catch {
+      if (showSuccessToast) {
+        showToast({
+          type: "warning",
+          title: "Status nicht geladen",
+          message: "Die lokale Diagnose-API ist momentan nicht erreichbar."
+        });
+      }
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
+
+  async function testCcuConnection() {
+    setCcuTestLoading(true);
+    setCcuTestResult(null);
+    try {
+      const response = await fetch("/api/ccu/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ccuHost: form.ccuHost.trim(),
+          ccuUser: form.ccuUser.trim(),
+          ccuPassword: form.ccuPassword,
+          xmlApiToken: (form.xmlApiToken ?? "").trim(),
+          hasCcuPassword: Boolean(form.ccuPassword)
+        })
+      });
+      const result = (await response.json()) as CcuTestResult & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "CCU-Test fehlgeschlagen.");
+      setCcuTestResult(result);
+      showToast({
+        type: result.reachable ? "success" : result.webUiReachable ? "warning" : "error",
+        title: result.reachable ? "CCU-Verbindung funktioniert" : "CCU-Test abgeschlossen",
+        message: result.reachable
+          ? `${result.devices} Geräte wurden gelesen.`
+          : result.error ?? "Die Prüfschritte zeigen, wo die Verbindung scheitert."
+      });
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: "CCU-Test nicht möglich",
+        message: error instanceof Error ? error.message : "Bitte lokale API prüfen."
+      });
+    } finally {
+      setCcuTestLoading(false);
     }
   }
 
@@ -1610,6 +1764,11 @@ function App() {
     void loadLogs(false);
   }, [currentPage]);
 
+  useEffect(() => {
+    if (currentPage !== "diagnostics") return;
+    void loadDiagnostics(false);
+  }, [currentPage]);
+
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -1793,6 +1952,9 @@ function App() {
             <button type="button" className={currentPage === "logs" ? "is-active" : ""} onClick={() => setCurrentPage("logs")}>
               Logs
             </button>
+            <button type="button" className={currentPage === "diagnostics" ? "is-active" : ""} onClick={() => setCurrentPage("diagnostics")}>
+              Status
+            </button>
             <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
               Einstellungen
             </button>
@@ -1879,6 +2041,28 @@ function App() {
                   <li>Die Token-ID hier ohne `@` eintragen und Analyse erneut starten.</li>
                 </ol>
               </details>
+              <div className="ccu-test-actions">
+                <button type="button" className="primary-button" onClick={() => void testCcuConnection()} disabled={ccuTestLoading || !form.ccuHost.trim()}>
+                  {ccuTestLoading ? "Verbindung wird geprüft …" : "CCU-Verbindung testen"}
+                </button>
+                <span>Prüft nacheinander Netzwerk, WebUI, Anmeldung, XML-API und Geräteliste.</span>
+              </div>
+              {ccuTestResult && (
+                <div className={`ccu-test-result ${ccuTestResult.reachable ? "is-ok" : "has-error"}`}>
+                  <div>
+                    <strong>{ccuTestResult.reachable ? "CCU-Daten vollständig lesbar" : ccuTestResult.webUiReachable ? "WebUI erreichbar, XML-API noch nicht nutzbar" : "CCU vom Analyzer aus nicht erreichbar"}</strong>
+                    <span>{ccuTestResult.reachable ? `${ccuTestResult.devices} Geräte gelesen.` : ccuTestResult.error ?? "Siehe Prüfschritte."}</span>
+                  </div>
+                  <ol>
+                    {ccuTestResult.diagnostics.map((diagnostic) => (
+                      <li className={`diagnostic-${diagnostic.status}`} key={`${diagnostic.step}-${diagnostic.detail}`}>
+                        <strong>{diagnostic.step}</strong>
+                        <span>{diagnostic.detail}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </fieldset>
 
             <fieldset className="setup-card setup-card-optional">
@@ -2276,6 +2460,13 @@ function App() {
                 Viele orange Messpunkte bedeuten nur, dass der Sniffer häufig gemessen hat. Entscheidend ist der dBm-Wert:
                 Ein stärker negativer Wert wie −100 dBm steht für einen ruhigeren Funkhintergrund als beispielsweise −70 dBm.
               </div>
+              <div className="sniffer-retention-note">
+                <strong>Langzeitdaten lokal gespeichert</strong>
+                <span>
+                  {snifferHistory?.points.length ?? 0} Minuten-Messpunkte · Aufbewahrung {snifferHistory?.retentionDays ?? 30} Tage.
+                  API-Keys, Passwörter und Tokens sind darin nicht enthalten.
+                </span>
+              </div>
             </div>
           </div>
 
@@ -2464,6 +2655,90 @@ function App() {
               ) : null}
             </div>
           )}
+        </section>
+      )}
+
+      {currentPage === "diagnostics" && (
+        <section className="panel diagnostics-page">
+          <div className="panel__header diagnostics-page__header">
+            <div>
+              <p className="eyebrow">Status & Diagnose</p>
+              <h2>Welche Datenquelle funktioniert?</h2>
+              <p>Diese Ansicht zeigt den letzten Erfolg, das Datenalter und den konkreten Fehler jeder Quelle. Passwörter und Tokens werden niemals angezeigt.</p>
+            </div>
+            <button type="button" className="ghost-button" onClick={() => void loadDiagnostics(true)} disabled={diagnosticsLoading}>
+              {diagnosticsLoading ? "Status wird geladen …" : "Status aktualisieren"}
+            </button>
+          </div>
+
+          <div className="diagnostics-grid">
+            {(diagnostics?.sources ?? []).map((source) => (
+              <article className={`diagnostic-card diagnostic-card-${source.status}`} key={source.id}>
+                <div className="diagnostic-card__header">
+                  <div>
+                    <span>{source.status === "ok" || source.status === "fresh" ? "Bereit" : source.status === "stale" ? "Veraltet" : source.status === "optional" ? "Optional" : source.status === "missing" ? "Fehlt" : "Fehler"}</span>
+                    <h3>{source.label}</h3>
+                  </div>
+                  {source.lastSuccessAt && (
+                    <small className={`data-age data-age-${formatDataAge(source.lastSuccessAt).state}`}>
+                      {formatDataAge(source.lastSuccessAt).label}
+                    </small>
+                  )}
+                </div>
+                <p>{source.detail}</p>
+                {source.diagnostics?.length ? (
+                  <details>
+                    <summary>Prüfschritte anzeigen</summary>
+                    <ol>
+                      {source.diagnostics.map((diagnostic) => (
+                        <li className={`diagnostic-${diagnostic.status}`} key={`${diagnostic.step}-${diagnostic.detail}`}>
+                          <strong>{diagnostic.step}</strong>
+                          <span>{diagnostic.detail}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                ) : null}
+              </article>
+            ))}
+          </div>
+
+          {!diagnostics?.sources.length && !diagnosticsLoading && (
+            <div className="system-collector-empty">
+              <div>
+                <p className="eyebrow">Noch keine Statusdaten</p>
+                <h3>Diagnose konnte noch nicht geladen werden</h3>
+                <p>Prüfe, ob die lokale Analyzer-API läuft, und klicke anschließend auf „Status aktualisieren“.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="history-panel">
+            <div>
+              <p className="eyebrow">Analysehistorie</p>
+              <h3>Veränderungen zwischen den letzten Analysen</h3>
+            </div>
+            {analysisHistory?.changes.length ? (
+              <div className="history-changes">
+                {analysisHistory.changes.map((change) => (
+                  <div key={change.id}>
+                    <strong>{change.title}</strong>
+                    <span>{statusLabel[change.from]} → {statusLabel[change.to]}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">Noch keine Statusänderung zwischen zwei gespeicherten Analysen erkannt.</p>
+            )}
+            <div className="history-list">
+              {(analysisHistory?.entries ?? []).slice(0, 10).map((entry) => (
+                <article key={entry.generatedAt}>
+                  <strong>{new Date(entry.generatedAt).toLocaleString("de-DE")}</strong>
+                  <span>{entry.summary.critical} kritisch · {entry.summary.warning} Hinweise · {entry.summary.improvement} Optimierungen · {entry.summary.ok} OK</span>
+                </article>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
@@ -2693,11 +2968,18 @@ function App() {
                     </a>
                   )}
                 </div>
-                <span>
-                  {analysis.systemDashboard.collectedAt
-                    ? `Systemwerte zuletzt ${new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}`
-                    : "Aktueller Snapshot"}
-                </span>
+                <div className="system-dashboard__freshness">
+                  {analysis.systemDashboard.collectedAt ? (
+                    <>
+                      <small className={`data-age data-age-${formatDataAge(analysis.systemDashboard.collectedAt).state}`}>
+                        {formatDataAge(analysis.systemDashboard.collectedAt).label}
+                      </small>
+                      <span>Systemwerte vom {new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}</span>
+                    </>
+                  ) : (
+                    <span>Zeitpunkt des Snapshots unbekannt</span>
+                  )}
+                </div>
               </div>
               {hasShellSystemData(analysis.systemDashboard) && (
                 <div className="dashboard-refresh-timer" aria-label={`Nächste Aktualisierung in ${dashboardRefreshSecondsLeft} Sekunden`}>

@@ -39,7 +39,7 @@ Während der Installation fragt das Script optional nach:
 - CCU-Benutzer
 - XML-API Token-ID / `sid`
 - AskSin Analyzer XS USB-Port
-- ob Systemdaten per Collector gar nicht, einmalig, täglich oder stündlich an den Analyzer gesendet werden sollen
+- ob Systemdaten per Collector gar nicht, einmalig oder regelmäßig an den Analyzer gesendet werden sollen
 
 Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
 Auch in der Web-App kann der Sniffer-Port später per Dropdown neu gesucht und ausgewählt werden. Falls der Port nicht sichtbar ist, kann er weiterhin manuell eingetragen werden.
@@ -172,13 +172,16 @@ Bereits umgesetzt:
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
 - DC-Analyzer mit AskSin-kompatibler Telegramm-Auswertung, Duty-Cycle-Anteil pro Gerät und optionaler Namensauflösung über `AskSinAnalyzerDevList`.
+- Status- und Diagnoseseite mit Datenalter, CCU-Verbindungstest und verständlichen Prüfschritten je Datenquelle.
+- Lokale Analysehistorie mit erkennbaren Statusänderungen zwischen den letzten Analysen.
+- Persistente Sniffer-Messpunkte für bis zu 30 Tage statt ausschließlich flüchtiger Momentaufnahmen.
 
 Noch offen bzw. bewusst nur vorbereitet:
 
 - Echte HmIP-Routing-Topologie aus HmIPServer-Daten oder belastbaren Logquellen ableiten.
 - Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
 - Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
-- Längere Sniffer-Historie, Carrier-Sense-Verlauf und Live-Streaming statt kurzer Momentaufnahme.
+- Ausführlichere Langzeitdiagramme und Filter für die bereits gespeicherten Sniffer-Messpunkte.
 
 ## Dokumentation
 

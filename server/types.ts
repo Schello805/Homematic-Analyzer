@@ -232,6 +232,33 @@ export type SnifferSnapshot = {
   diagnostics: string[];
 };
 
+export type AnalysisHistoryEntry = {
+  generatedAt: string;
+  summary: Record<CheckStatus, number>;
+  checks: Array<{
+    id: string;
+    title: string;
+    status: CheckStatus;
+    summary: string;
+  }>;
+  sources: {
+    ccu?: string;
+    collector?: string;
+    masterdata?: string;
+    sniffer?: string;
+  };
+};
+
+export type SnifferHistoryPoint = {
+  collectedAt: string;
+  dutyCycle?: number;
+  carrierSense?: number;
+  carrierSenseAvg?: number;
+  telegrams: number;
+  devices: number;
+  weakestRssi?: number;
+};
+
 export type ReleaseCheck = {
   available: boolean;
   currentVersion: string;
