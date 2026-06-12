@@ -16,13 +16,17 @@ const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
 
 class CcuRequestError extends Error {
   status?: number;
+  code?: CcuSnapshot["errorCode"];
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, code?: CcuSnapshot["errorCode"]) {
     super(message);
     this.name = "CcuRequestError";
     this.status = status;
+    this.code = code;
   }
 }
+
+type CcuDiagnostic = NonNullable<CcuSnapshot["diagnostics"]>[number];
 
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (!value) return [];
@@ -221,12 +225,75 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
     });
 
     if (!response.ok) {
-      throw new CcuRequestError(`${path} antwortet mit HTTP ${response.status}`, response.status);
+      throw new CcuRequestError(`${path} antwortet mit HTTP ${response.status}`, response.status, response.status === 404 ? "xml-api-missing" : "http");
     }
 
     const decoded = decodeXmlBuffer(Buffer.from(await response.arrayBuffer()));
     console.info(`[CCU DEBUG] XML ${path}: encoding=${decoded.encoding}, chars=${decoded.text.length}, replacements=${replacementCount(decoded.text)}`);
     return asRecord(parser.parse(decoded.text));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function classifyCcuConnectionError(error: unknown): {
+  code: NonNullable<CcuSnapshot["errorCode"]>;
+  detail: string;
+} {
+  if (error instanceof CcuRequestError && error.code) {
+    return { code: error.code, detail: error.message };
+  }
+
+  if (error instanceof Error && error.name === "AbortError") {
+    return {
+      code: "timeout",
+      detail: `Zeitüberschreitung nach ${requestTimeoutMs / 1000} Sekunden. Der Analyzer-Server erhielt keine rechtzeitige Antwort.`
+    };
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const causeCode = error instanceof Error && typeof error.cause === "object" && error.cause !== null && "code" in error.cause
+    ? String((error.cause as { code?: unknown }).code ?? "")
+    : "";
+
+  if (/ENOTFOUND|EAI_AGAIN/i.test(`${causeCode} ${message}`)) {
+    return { code: "dns", detail: "Der Hostname konnte vom Analyzer-Server nicht in eine IP-Adresse aufgelöst werden." };
+  }
+  if (/ECONNREFUSED/i.test(`${causeCode} ${message}`)) {
+    return { code: "connection-refused", detail: "Die Zieladresse wurde erreicht, aber die Verbindung wurde am angegebenen Port abgelehnt." };
+  }
+  if (/EHOSTUNREACH|ENETUNREACH|ECONNRESET/i.test(`${causeCode} ${message}`)) {
+    return { code: "network", detail: "Der Analyzer-Server hat keine funktionierende Netzwerkroute zur CCU oder die Verbindung wurde unterwegs getrennt." };
+  }
+  if (/CERT_|certificate|self.signed|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY/i.test(`${causeCode} ${message}`)) {
+    return { code: "tls", detail: "Die HTTPS-Verbindung wurde wegen eines nicht vertrauenswürdigen oder selbstsignierten CCU-Zertifikats abgelehnt." };
+  }
+  if (/not_authenticated|Nicht authentifiziert/i.test(message)) {
+    return { code: "authentication", detail: message };
+  }
+
+  return { code: "unknown", detail: message || "Unbekannter Verbindungsfehler." };
+}
+
+async function probeCcuWebUi(endpoint: CcuEndpoint): Promise<{ reachable: boolean; detail: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  try {
+    const response = await fetch(endpoint.baseUrl, {
+      method: "GET",
+      redirect: "manual",
+      signal: controller.signal
+    });
+    return {
+      reachable: true,
+      detail: `Die CCU antwortet dem Analyzer-Server unter ${endpoint.baseUrl} mit HTTP ${response.status}.`
+    };
+  } catch (error) {
+    return {
+      reachable: false,
+      detail: classifyCcuConnectionError(error).detail
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -665,15 +732,38 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
   let activeSid: string | undefined = endpoint.sid;
   let sessionWasCreated = false;
   const collectedAt = new Date().toISOString();
+  const diagnostics: CcuDiagnostic[] = [];
+  const webUiProbe = await probeCcuWebUi(endpoint);
+  diagnostics.push({
+    step: "Netzwerk / WebUI",
+    status: webUiProbe.reachable ? "ok" : "failed",
+    detail: webUiProbe.detail
+  });
 
   try {
     if (!activeSid && hasCredentials) {
       activeSid = await loginToCcu(endpoint, config) ?? await loginToXmlApi(endpoint, config);
       if (activeSid) {
         sessionWasCreated = true;
+        diagnostics.push({
+          step: "CCU-Anmeldung",
+          status: "ok",
+          detail: "Der Analyzer-Server konnte eine Sitzung bei der CCU anlegen."
+        });
       } else {
         activeSid = undefined;
+        diagnostics.push({
+          step: "CCU-Anmeldung",
+          status: "failed",
+          detail: "Mit Benutzername und Passwort konnte keine CCU-Sitzung erzeugt werden. Ein separat eingetragener XML-API-Token wird trotzdem geprüft."
+        });
       }
+    } else if (activeSid) {
+      diagnostics.push({
+        step: "XML-API-Token",
+        status: "ok",
+        detail: "Ein XML-API-Token ist eingetragen und wird für die Abfrage verwendet."
+      });
     }
 
     const endpointWithAuth = {
@@ -689,12 +779,17 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
 
     const xmlError = detectXmlError(stateList);
     if (xmlError) {
-      throw new CcuRequestError(xmlError);
+      throw new CcuRequestError(xmlError, undefined, "authentication");
     }
 
     if (!hasStateList(stateList)) {
-      throw new CcuRequestError("XML-API wurde erreicht, lieferte aber keine Geräteliste. Bitte stelle sicher, dass Geräte in der CCU angelernt sind.");
+      throw new CcuRequestError("XML-API wurde erreicht, lieferte aber keine Geräteliste. Bitte stelle sicher, dass Geräte in der CCU angelernt sind.", undefined, "empty-data");
     }
+    diagnostics.push({
+      step: "XML-API",
+      status: "ok",
+      detail: `${endpoint.basePath ?? "/addons/xmlapi"}/statelist.cgi lieferte eine Geräteliste.`
+    });
 
     const nameMap = collectNameMap(stateList);
     const serviceMessages = collectServiceMessages(notifications, nameMap);
@@ -706,6 +801,10 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     return {
       reachable: true,
       xmlApiInstalled: true,
+      webUiReachable: webUiProbe.reachable,
+      xmlApiReachable: true,
+      authentication: "ok",
+      diagnostics,
       source: "xml-api",
       collectedAt,
       devices,
@@ -723,6 +822,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     };
   } catch (error) {
     const status = error instanceof CcuRequestError ? error.status : undefined;
+    const classified = classifyCcuConnectionError(error);
     const xmlApiInstalled = status !== 404;
     const message = error instanceof Error ? error.message : "CCU konnte nicht gelesen werden.";
     const isNotAuthenticated = /not_authenticated|Nicht authentifiziert/i.test(message);
@@ -733,10 +833,20 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
           ? `${message} Der eingetragene XML-API Token wurde abgelehnt. Bitte Token in der XML-API Zusatzsoftware neu kopieren oder neu registrieren. Geprüfter Pfad: ${endpoint.basePath ?? "/addons/xmlapi"}.`
           : `${message} Das normale CCU-Passwort reicht für XML-API v2 nicht aus. Bitte in der XML-API Zusatzsoftware einen Token registrieren und im Feld „XML-API Token / sid“ eintragen. Geprüfter Pfad: ${endpoint.basePath ?? "/addons/xmlapi"}.`
         : `${message} Geprüfter Pfad: ${endpoint.basePath ?? "/addons/xmlapi"}.`;
+    diagnostics.push({
+      step: "XML-API Geräteliste",
+      status: "failed",
+      detail: classified.detail
+    });
 
     return {
       reachable: false,
       xmlApiInstalled,
+      webUiReachable: webUiProbe.reachable,
+      xmlApiReachable: !["dns", "timeout", "connection-refused", "network", "tls"].includes(classified.code),
+      authentication: classified.code === "authentication" || isNotAuthenticated ? "failed" : activeSid ? "not-tested" : "failed",
+      errorCode: classified.code,
+      diagnostics,
       source: "xml-api",
       collectedAt,
       error: detail,

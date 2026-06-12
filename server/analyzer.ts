@@ -41,6 +41,50 @@ function isLocalOrPrivateHost(host?: string): boolean {
   return isPrivateIp(normalizedHost);
 }
 
+function ccuConnectionSummary(ccu?: CcuSnapshot): string {
+  if (!ccu) return "Vom Analyzer-Server liegt noch kein Verbindungstest vor.";
+  if (ccu.webUiReachable) {
+    return "Die CCU-WebUI antwortet dem Analyzer-Server, aber die XML-API-Gerätedaten konnten nicht gelesen werden.";
+  }
+
+  return "Der Analyzer-Server konnte die eingetragene CCU-Adresse nicht erreichen. Das kann sich von deinem Browser unterscheiden.";
+}
+
+function ccuConnectionRecommendation(ccu?: CcuSnapshot): string {
+  switch (ccu?.errorCode) {
+    case "dns":
+      return "Verwende im Setup testweise die lokale IP-Adresse der CCU statt eines Hostnamens. Prüfe außerdem die DNS-Einstellungen des Analyzer-Servers/LXC.";
+    case "timeout":
+      return "Prüfe vom Analyzer-System aus die Route zur CCU, Firewall-Regeln und bei Proxmox die Netzwerkfreigabe des LXC. Ein Browserzugriff von deinem PC beweist diesen Netzwerkweg nicht.";
+    case "connection-refused":
+      return "Prüfe Protokoll und Port im CCU-Host. Eventuell wurde HTTPS eingetragen, obwohl die CCU nur HTTP anbietet – oder umgekehrt.";
+    case "network":
+      return "Prüfe Routing und Firewall des Analyzer-Servers/LXC. Bei Proxmox muss der Container das lokale Netz der CCU erreichen dürfen.";
+    case "tls":
+      return "Der Analyzer-Server vertraut dem HTTPS-Zertifikat der CCU nicht. Nutze im lokalen, geschützten Netz testweise die HTTP-Adresse oder hinterlege ein vertrauenswürdiges Zertifikat.";
+    case "authentication":
+      return "Die CCU antwortet, lehnt aber die XML-API-Anmeldung ab. Prüfe besonders den XML-API-Token (`sid`); das WebUI-Passwort allein reicht bei XML-API v2 nicht.";
+    case "xml-api-missing":
+      return "Die CCU antwortet, aber der XML-API-Pfad wurde nicht gefunden. Prüfe Installation und Pfad des Add-ons.";
+    case "empty-data":
+      return "Die XML-API antwortet, liefert aber keine Geräteliste. Öffne `statelist.cgi` mit demselben Token und prüfe, ob dort Geräte enthalten sind.";
+    case "http":
+      return "Die CCU antwortet mit einem HTTP-Fehler. Prüfe den in den Belegen genannten Statuscode sowie Protokoll, Port und XML-API-Pfad.";
+    default:
+      return ccu?.webUiReachable
+        ? "Die Netzwerkverbindung funktioniert. Prüfe nun XML-API-Token, Pfad und Add-on-Version."
+        : "Teste die CCU-Adresse direkt vom Analyzer-Server/LXC aus und prüfe Netzwerk, Firewall, Protokoll und Port.";
+  }
+}
+
+function ccuDiagnosticEvidence(ccu?: CcuSnapshot): Evidence[] {
+  return (ccu?.diagnostics ?? []).map((diagnostic) => ({
+    source: diagnostic.step,
+    detail: `${diagnostic.status === "ok" ? "Erfolgreich" : diagnostic.status === "failed" ? "Fehlgeschlagen" : "Übersprungen"}: ${diagnostic.detail}`,
+    timestamp: ccu?.collectedAt
+  }));
+}
+
 function statusForCount(count: number, criticalAt = 1): "ok" | "critical" {
   return count >= criticalAt ? "critical" : "ok";
 }
@@ -276,26 +320,31 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const checks: AnalysisCheck[] = [
     {
       id: "ccu-connection",
-      title: "Zentrale erreichbar",
+      title: "Verbindung zur Zentrale",
       category: "Grundlage",
-      status: hasCcuData ? "ok" : hasCcuCredentials ? "critical" : "unavailable",
+      status: hasCcuData ? "ok" : hasCcuCredentials ? ccu?.webUiReachable ? "warning" : "critical" : "unavailable",
       summary: hasCcuData
         ? `${ccu?.counters.devices ?? 0} Geräte wurden über die CCU gelesen.`
         : hasCcuCredentials
-          ? "Die Zugangsdaten sind eingetragen, aber die CCU-Daten konnten nicht gelesen werden."
+          ? ccuConnectionSummary(ccu)
           : "CCU-Zugang wurde noch nicht eingerichtet.",
       recommendation: hasCcuData
         ? "Die wichtigste Datenquelle funktioniert. Geräte, Servicemeldungen und viele Zustände können bewertet werden."
         : hasCcuCredentials
-          ? "Prüfe Host, Benutzer, Passwort und ob die XML-API auf der CCU verfügbar ist."
+          ? ccuConnectionRecommendation(ccu)
           : "Im Setup Host, Benutzer, Passwort und XML-API-Token der CCU/RaspberryMatic eintragen.",
       access: ["ccu"],
       evidence: hasCcuData
         ? [{ source: "CCU XML-API", detail: `${ccu?.counters.devices ?? 0} Geräte, ${ccu?.counters.serviceMessages ?? 0} Servicemeldungen gelesen.`, timestamp: ccu?.collectedAt }]
-        : hasCcuCredentials && ccu?.error
-          ? [{ source: "CCU XML-API", detail: ccu.error, timestamp: ccu.collectedAt }]
+        : hasCcuCredentials
+          ? [
+              ...ccuDiagnosticEvidence(ccu),
+              ...(ccu?.error ? [{ source: "Technischer Fehler", detail: ccu.error, timestamp: ccu.collectedAt }] : [])
+            ]
           : [],
       details: [
+        "Die Prüfung läuft vom Gerät aus, auf dem der Homematic Analyzer installiert ist – nicht von deinem PC oder Smartphone.",
+        "Deshalb kann die WebUI in deinem Browser funktionieren, während ein Proxmox-LXC, Raspberry oder Docker-Host die CCU wegen Netzwerk, DNS oder Firewall nicht erreicht.",
         "Die XML-API ist die zentrale Quelle für Geräte, Servicemeldungen und Live-Zustände.",
         "Ohne diese Quelle bewertet der Analyzer keine Homematic-Probleme."
       ]
@@ -334,23 +383,27 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? "XML-API ist installiert und liefert Daten."
         : hasCcuCredentials && ccu?.xmlApiInstalled === false
           ? "XML-API wurde auf der Zentrale nicht gefunden."
+          : hasCcuCredentials && ccu?.webUiReachable
+            ? "Die CCU antwortet, aber die XML-API-Geräteliste konnte nicht verwendet werden."
           : hasCcuCredentials
-            ? "XML-API konnte noch nicht eindeutig geprüft werden."
+            ? "Die XML-API konnte nicht geprüft werden, weil bereits der Netzwerkweg vom Analyzer zur CCU scheitert."
             : "XML-API wird geprüft, sobald CCU-Zugangsdaten eingetragen sind.",
       recommendation: hasCcuData
         ? "Kein Handlungsbedarf."
         : hasCcuCredentials && ccu?.xmlApiInstalled === false
           ? "Installiere das XML-API Add-on über die WebUI: Systemsteuerung → Zusatzsoftware → Add-on hochladen/installieren → CCU neu starten."
           : hasCcuCredentials
-            ? "Prüfe Host, Login, Firewall und ob die XML-API unter /addons/xmlapi erreichbar ist."
+            ? ccuConnectionRecommendation(ccu)
             : "CCU-Zugangsdaten eintragen und Analyse starten.",
       access: ["ccu"],
       evidence: hasCcuData
         ? [{ source: "CCU XML-API", detail: "/addons/xmlapi/statelist.cgi hat Daten geliefert.", timestamp: ccu?.collectedAt }]
-        : hasCcuCredentials && ccu?.error
-          ? [{ source: "CCU XML-API", detail: ccu.error, timestamp: ccu.collectedAt, url: xmlApiInstallUrl }]
+        : hasCcuCredentials
+          ? ccuDiagnosticEvidence(ccu).map((item) => ({ ...item, url: xmlApiInstallUrl }))
           : [],
       details: [
+        "WebUI erreichbar und XML-API nutzbar sind zwei getrennte Prüfungen.",
+        "Ein erfolgreicher Browserzugriff bestätigt nicht automatisch, dass der Analyzer-Server denselben Netzwerkzugriff hat.",
         "Download: https://github.com/homematic-community/XML-API/releases",
         "Installation: WebUI öffnen, Systemsteuerung → Zusatzsoftware, Add-on-Datei hochladen und installieren.",
         "Nach der Installation die Zentrale neu starten und die Analyse erneut ausführen."

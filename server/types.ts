@@ -94,6 +94,15 @@ export type CcuDevice = {
 export type CcuSnapshot = {
   reachable: boolean;
   xmlApiInstalled: boolean;
+  webUiReachable?: boolean;
+  xmlApiReachable?: boolean;
+  authentication?: "ok" | "failed" | "not-tested";
+  errorCode?: "dns" | "timeout" | "connection-refused" | "network" | "tls" | "http" | "xml-api-missing" | "authentication" | "empty-data" | "unknown";
+  diagnostics?: Array<{
+    step: string;
+    status: "ok" | "failed" | "skipped";
+    detail: string;
+  }>;
   source: "xml-api";
   collectedAt: string;
   error?: string;
