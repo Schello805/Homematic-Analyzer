@@ -1263,6 +1263,11 @@ function App() {
 
   useEffect(() => {
     let isActive = true;
+    let updateCheckInFlight = false;
+    let lastUpdateCheckAt = 0;
+    let lastNotifiedUpdateDetail = "";
+    const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
+    const updateCheckCooldownMs = 30 * 1000;
 
     async function loadSetupDefaults() {
       try {
@@ -1313,20 +1318,28 @@ function App() {
     }
 
     async function checkForUpdates() {
+      const now = Date.now();
+      if (updateCheckInFlight || now - lastUpdateCheckAt < updateCheckCooldownMs) return;
+      updateCheckInFlight = true;
+      lastUpdateCheckAt = now;
+
       try {
-        const response = await fetch("/api/system/update-status");
+        const response = await fetch(`/api/system/update-status?checkedAt=${now}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Lokale API nicht erreichbar");
         const status = (await response.json()) as UpdateStatus;
 
         if (!isActive) return;
 
         setUpdateStatus(status);
-        if (status.state === "update") {
+        if (status.state === "update" && status.detail !== lastNotifiedUpdateDetail) {
+          lastNotifiedUpdateDetail = status.detail;
           showToast({
             type: "warning",
             title: "Update verfügbar",
             message: status.detail
           });
+        } else if (status.state !== "update") {
+          lastNotifiedUpdateDetail = "";
         }
       } catch {
         if (!isActive) return;
@@ -1342,6 +1355,14 @@ function App() {
           title: "Update-Check nicht möglich",
           message: "Der lokale Update-Status konnte gerade nicht geladen werden."
         });
+      } finally {
+        updateCheckInFlight = false;
+      }
+    }
+
+    function checkForUpdatesWhenVisible() {
+      if (document.visibilityState === "visible") {
+        void checkForUpdates();
       }
     }
 
@@ -1349,9 +1370,15 @@ function App() {
     void loadNotificationSettings();
     void checkForUpdates();
     void loadUsbPorts(false);
+    const updateCheckInterval = window.setInterval(() => void checkForUpdates(), updateCheckIntervalMs);
+    document.addEventListener("visibilitychange", checkForUpdatesWhenVisible);
+    window.addEventListener("focus", checkForUpdatesWhenVisible);
 
     return () => {
       isActive = false;
+      window.clearInterval(updateCheckInterval);
+      document.removeEventListener("visibilitychange", checkForUpdatesWhenVisible);
+      window.removeEventListener("focus", checkForUpdatesWhenVisible);
     };
   }, []);
 
