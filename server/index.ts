@@ -486,6 +486,8 @@ async function createUpdateRunStatus() {
   const log = await readUpdateLogTail();
   const logFailed = /\bfatal:|npm ERR!|\[ERROR\]|error Command failed/i.test(log);
   const logCompleted = /\[OK\] Update abgeschlossen\./.test(log);
+  const logStarted = /Update per Footer gestartet|Homematic Analyzer Update gestartet/.test(log);
+  const startedAtFromLog = log.match(/^\[([^\]]+)\] (?:Update per Footer|Homematic Analyzer Update) gestartet/m)?.[1];
   const status = updateRun.running
     ? "running"
     : updateRun.error || updateRun.exitCode
@@ -494,12 +496,14 @@ async function createUpdateRunStatus() {
         ? "failed"
         : logCompleted
           ? "completed"
+          : logStarted
+            ? "running"
           : "idle";
 
   const statusPayload = {
     status,
-    running: updateRun.running,
-    startedAt: updateRun.startedAt,
+    running: status === "running",
+    startedAt: updateRun.startedAt ?? startedAtFromLog,
     finishedAt: updateRun.finishedAt,
     exitCode: updateRun.exitCode,
     error: updateRun.error,

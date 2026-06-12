@@ -1360,6 +1360,19 @@ function App() {
       }
     }
 
+    async function loadPreviousUpdateRun() {
+      try {
+        const response = await fetch("/api/system/update-run", { cache: "no-store" });
+        if (!response.ok) return;
+        const status = (await response.json()) as UpdateRunStatus;
+        if (!isActive || status.status === "idle") return;
+
+        setUpdateRunStatus(status);
+        setUpdatingApp(status.status === "running");
+      } catch {
+      }
+    }
+
     function checkForUpdatesWhenVisible() {
       if (document.visibilityState === "visible") {
         void checkForUpdates();
@@ -1369,6 +1382,7 @@ function App() {
     void loadSetupDefaults();
     void loadNotificationSettings();
     void checkForUpdates();
+    void loadPreviousUpdateRun();
     void loadUsbPorts(false);
     const updateCheckInterval = window.setInterval(() => void checkForUpdates(), updateCheckIntervalMs);
     document.addEventListener("visibilitychange", checkForUpdatesWhenVisible);
