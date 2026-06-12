@@ -125,6 +125,7 @@ type SnifferSnapshot = {
   port?: string;
   configured: boolean;
   connected: boolean;
+  readerActive: boolean;
   source: string;
   summary: {
     rawLines: number;
@@ -2063,11 +2064,19 @@ function App() {
               )}
             </fieldset>
 
-            <div className={`dc-status-card ${snifferSnapshot?.connected ? "is-connected" : ""}`}>
-              <strong>{snifferSnapshot?.connected ? "Snifferdaten vorhanden" : "Noch keine Snifferdaten"}</strong>
+            <div className={`dc-status-card ${snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-connected" : ""}`}>
+              <strong>
+                {snifferSnapshot?.connected
+                  ? "Snifferdaten vorhanden"
+                  : snifferSnapshot?.readerActive
+                    ? "Sniffer verbunden – wartet auf Funkdaten"
+                    : "Noch keine Snifferdaten"}
+              </strong>
               <span>
                 {snifferSnapshot?.connected
                   ? `Quelle: ${snifferSnapshot.source}`
+                  : snifferSnapshot?.readerActive
+                    ? `Der Analyzer überwacht ${form.snifferPort.trim()} dauerhaft. Löse jetzt ein Homematic-Gerät aus.`
                   : form.snifferPort.trim()
                     ? `Port ${form.snifferPort.trim()} ist eingetragen, aber noch wurden keine auswertbaren Zeilen gefunden.`
                     : "Bitte zuerst einen Sniffer-Port eintragen oder die normale Analyse ohne Sniffer nutzen."}
@@ -2110,42 +2119,51 @@ function App() {
             ))}
           </div>
 
-          {snifferSnapshot && (snifferSnapshot.events.length > 0 || snifferSnapshot.rssiNoise.length > 0) && (
-            <div className="dc-chart-card">
-              <div>
-                <p className="eyebrow">Verlauf</p>
-                <h3>Telegramme und RSSI-Noise</h3>
-                <p>
-                  Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Ansicht aktualisiert sich sekündlich.
-                </p>
-              </div>
-              <div className="dc-chart">
-                <div className="dc-chart-bars" aria-label="Telegramm- und RSSI-Noise-Verlauf">
-                  {(() => {
-                    const telegrams = snifferSnapshot.events.slice().reverse();
-                    const noises = snifferSnapshot.rssiNoise.slice(-40);
-                    const maxItems = Math.max(telegrams.length, noises.length, 12);
-                    return Array.from({ length: maxItems }).map((_, index) => {
-                      const telegram = telegrams[index];
-                      const noise = noises[index];
-                      const telegramHeight = telegram ? Math.max(14, Math.min(100, (telegram.len / 32) * 100)) : 0;
-                      const noiseHeight = noise?.rssi !== undefined ? Math.max(8, Math.min(100, ((120 + noise.rssi) / 60) * 100)) : 0;
-                      return (
-                        <div className="dc-chart-column" key={`dc-chart-${index}`}>
-                          <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `RSSI-Noise ${noise.rssi} dBm` : ""} />
-                          <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} title={telegram ? `${telegram.fromName ?? telegram.fromAddress}: ${telegram.type || "Telegramm"}` : ""} />
+          <div className="dc-chart-card">
+            <div>
+              <p className="eyebrow">Verlauf</p>
+              <h3>Telegramme und RSSI-Noise</h3>
+              <p>
+                Blau = empfangene Homematic-Telegramme, orange = Stör-/RSSI-Noise. Die Ansicht aktualisiert sich sekündlich und behält empfangene Daten im Verlauf.
+              </p>
+            </div>
+            <div className="dc-chart">
+              <div className="dc-chart-bars" aria-label="Telegramm- und RSSI-Noise-Verlauf">
+                {(() => {
+                  const telegrams = snifferSnapshot?.events.slice().reverse() ?? [];
+                  const noises = snifferSnapshot?.rssiNoise.slice(-40) ?? [];
+                  const maxItems = Math.max(telegrams.length, noises.length, 12);
+                  const hasChartData = telegrams.length > 0 || noises.length > 0;
+                  return (
+                    <>
+                      {Array.from({ length: maxItems }).map((_, index) => {
+                        const telegram = telegrams[index];
+                        const noise = noises[index];
+                        const telegramHeight = telegram ? Math.max(14, Math.min(100, (telegram.len / 32) * 100)) : 0;
+                        const noiseHeight = noise?.rssi !== undefined ? Math.max(8, Math.min(100, ((120 + noise.rssi) / 60) * 100)) : 0;
+                        return (
+                          <div className="dc-chart-column" key={`dc-chart-${index}`}>
+                            <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `RSSI-Noise ${noise.rssi} dBm` : ""} />
+                            <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} title={telegram ? `${telegram.fromName ?? telegram.fromAddress}: ${telegram.type || "Telegramm"}` : ""} />
+                          </div>
+                        );
+                      })}
+                      {!hasChartData && (
+                        <div className="dc-chart-empty">
+                          <strong>Warte auf Snifferdaten</strong>
+                          <span>Der Port wird dauerhaft überwacht. Löse ein Homematic-Gerät aus.</span>
                         </div>
-                      );
-                    });
-                  })()}
-                </div>
-                <div className="dc-chart-axis">
-                  <span>Telegramme: {snifferSnapshot.events.length}</span>
-                  <span>RSSI-Noise: {snifferSnapshot.rssiNoise.length}</span>
-                </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="dc-chart-axis">
+                <span>Telegramme: {snifferSnapshot?.events.length ?? 0}</span>
+                <span>RSSI-Noise: {snifferSnapshot?.rssiNoise.length ?? 0}</span>
               </div>
             </div>
-          )}
+          </div>
 
           {snifferSnapshot?.devices.length ? (
             <>

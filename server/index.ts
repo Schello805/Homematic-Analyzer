@@ -31,6 +31,10 @@ const snifferLogFile = join(dataDir, "sniffer-lines.log");
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
 let latestSnifferSnapshot: SnifferSnapshot | undefined;
+let snifferLineHistory: string[] = [];
+let activeSnifferPort = "";
+let snifferReader: ReturnType<typeof spawn> | undefined;
+let snifferReaderBuffer = "";
 let persistedNotificationSettings: NotificationSettings | undefined;
 let collectorHistory: CollectorHistoryPoint[] = [];
 let updateRun: {
@@ -344,35 +348,68 @@ function isGatewaySnifferDevice(device: { name?: string; type?: string; serial?:
   return /\b(ccu-rf|hmrf|gateway|lan-gateway|lancfg|hap|drap|access point|access-point|hmip-hap|hmip-drap|hm-lgw)\b/i.test(haystack);
 }
 
-async function readSerialSnifferLines(port?: string): Promise<string[]> {
+async function ensureSerialSnifferReader(port?: string): Promise<void> {
   const trimmedPort = port?.trim();
-  if (!trimmedPort || !trimmedPort.startsWith("/dev/")) return [];
+  if (!trimmedPort || !trimmedPort.startsWith("/dev/")) return;
 
   try {
     const stats = await lstat(trimmedPort);
-    if (!stats.isCharacterDevice() && !stats.isSymbolicLink()) return [];
+    if (!stats.isCharacterDevice() && !stats.isSymbolicLink()) return;
   } catch {
-    return [];
+    return;
   }
 
-  return new Promise((resolve) => {
-    const command = [
-      "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
-      "timeout 1s cat \"$SNIFFER_PORT\" 2>/dev/null || true"
-    ].join("; ");
-    const child = spawn("bash", ["-lc", command], {
-      env: { ...process.env, SNIFFER_PORT: trimmedPort },
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let output = "";
+  if (snifferReader && activeSnifferPort === trimmedPort && snifferReader.exitCode === null) {
+    return;
+  }
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      output += chunk.toString("utf8");
+  if (snifferReader && snifferReader.exitCode === null) {
+    snifferReader.kill("SIGTERM");
+  }
+
+  if (activeSnifferPort !== trimmedPort) {
+    activeSnifferPort = trimmedPort;
+    snifferLineHistory = [];
+    latestSnifferSnapshot = undefined;
+  }
+  snifferReaderBuffer = "";
+
+  const reader = spawn("bash", ["-lc", [
+    "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
+    "exec cat \"$SNIFFER_PORT\""
+  ].join("; ")], {
+    env: { ...process.env, SNIFFER_PORT: trimmedPort },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  snifferReader = reader;
+
+  reader.stdout.on("data", (chunk: Buffer) => {
+    snifferReaderBuffer += chunk.toString("utf8");
+    const parts = snifferReaderBuffer.split(/\r?\n/);
+    snifferReaderBuffer = parts.pop() ?? "";
+    const newLines = parts.map((line) => line.trim()).filter(Boolean);
+    if (newLines.length > 0) {
+      snifferLineHistory = [...snifferLineHistory, ...newLines].slice(-1000);
+    }
+  });
+  reader.on("error", (error) => {
+    console.warn("[Homematic Analyzer][Sniffer] Serieller Leser konnte nicht gestartet werden", {
+      port: trimmedPort,
+      message: error.message
     });
-    child.on("error", () => resolve([]));
-    child.on("close", () => {
-      resolve(output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(-300));
+  });
+  reader.on("close", (exitCode) => {
+    if (snifferReader === reader) {
+      snifferReader = undefined;
+    }
+    console.info("[Homematic Analyzer][Sniffer] Serieller Leser beendet", {
+      port: trimmedPort,
+      exitCode
     });
+  });
+
+  console.info("[Homematic Analyzer][Sniffer] Serieller Leser gestartet", {
+    port: trimmedPort
   });
 }
 
@@ -381,7 +418,8 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   let lines: string[] = [];
   let source = "Noch keine Snifferdaten empfangen.";
 
-  lines = await readSerialSnifferLines(port);
+  await ensureSerialSnifferReader(port);
+  lines = snifferLineHistory.slice(-300);
   if (lines.length > 0) {
     source = port?.trim() ? `Serieller Port ${port.trim()}` : "Serieller Port";
   }
@@ -462,12 +500,14 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   const carrierSenseAvg = carrierSenseValues.length
     ? Math.round(carrierSenseValues.reduce((sum, value) => sum + value, 0) / carrierSenseValues.length)
     : undefined;
+  const readerActive = Boolean(snifferReader && activeSnifferPort === port?.trim() && snifferReader.exitCode === null);
 
   return {
     checkedAt,
     port: port?.trim() || undefined,
     configured: Boolean(port?.trim()),
     connected: lines.length > 0,
+    readerActive,
     source,
     summary: {
       rawLines: lines.length,
@@ -485,7 +525,11 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     devices: deviceRows,
     events: telegrams.slice(-40).reverse(),
     rssiNoise: rssiNoises.slice(-80),
-    diagnostics
+    diagnostics: diagnostics.length > 0
+      ? diagnostics
+      : readerActive && lines.length === 0
+        ? ["Serieller Leser ist aktiv und wartet auf Sniffer-Zeilen."]
+        : []
   };
 }
 

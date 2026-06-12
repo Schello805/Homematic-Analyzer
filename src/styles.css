@@ -568,6 +568,7 @@ h2 {
 }
 
 .dc-chart-bars {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 4px;
@@ -578,6 +579,27 @@ h2 {
   background:
     linear-gradient(to top, rgba(224, 231, 242, 0.9) 1px, transparent 1px) 0 0 / 100% 25%,
     linear-gradient(135deg, #ffffff, #f8fbff);
+}
+
+.dc-chart-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  padding: 20px;
+  text-align: center;
+  color: #667085;
+  pointer-events: none;
+}
+
+.dc-chart-empty strong {
+  color: #344054;
+  font-size: 1rem;
+}
+
+.dc-chart-empty span {
+  font-size: 0.86rem;
 }
 
 .dc-chart-column {

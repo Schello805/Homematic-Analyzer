@@ -196,6 +196,7 @@ export type SnifferSnapshot = {
   port?: string;
   configured: boolean;
   connected: boolean;
+  readerActive: boolean;
   source: string;
   summary: {
     rawLines: number;
