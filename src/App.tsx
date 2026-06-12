@@ -701,6 +701,8 @@ function App() {
   const [usbPortsLoading, setUsbPortsLoading] = useState(false);
   const [snifferSnapshot, setSnifferSnapshot] = useState<SnifferSnapshot | null>(null);
   const [snifferLoading, setSnifferLoading] = useState(false);
+  const [showAllSnifferDevices, setShowAllSnifferDevices] = useState(false);
+  const [showAllSnifferEvents, setShowAllSnifferEvents] = useState(false);
   const [logPayload, setLogPayload] = useState<LogPayload | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
   const [aiLogResult, setAiLogResult] = useState<AnalysisCheck | null>(null);
@@ -724,6 +726,12 @@ function App() {
   const weakestRssiDevice = snifferSnapshot?.summary.weakestRssiDevice;
   const topDutyDevice = snifferSnapshot?.devices[0];
   const gatewayDutyCycleCards = snifferSnapshot?.summary.gateways?.slice(0, 3) ?? [];
+  const visibleSnifferDevices = showAllSnifferDevices
+    ? snifferSnapshot?.devices ?? []
+    : snifferSnapshot?.devices.slice(0, 10) ?? [];
+  const visibleSnifferEvents = showAllSnifferEvents
+    ? snifferSnapshot?.events ?? []
+    : snifferSnapshot?.events.slice(0, 10) ?? [];
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
     ? `${snifferSnapshot.summary.carrierSense} dBm`
     : "nicht gemessen";
@@ -1986,10 +1994,9 @@ function App() {
           <div className="panel__header dc-page__header">
             <div>
               <p className="eyebrow">DC-Analyzer</p>
-              <h2>AskSin Analyzer XS Snifferdaten</h2>
+              <h2>Funkverkehr verständlich prüfen</h2>
               <p>
-                Diese Seite ist für echte Funkmesswerte gedacht: Duty Cycle, Carrier Sense, Telegramme und RSSI werden nur angezeigt,
-                wenn ein Sniffer Daten liefert.
+                Live-Messwerte vom AskSin-Sniffer. Die wichtigsten Ergebnisse bleiben sichtbar, technische Details öffnest du nur bei Bedarf.
               </p>
             </div>
             <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true)} disabled={snifferLoading}>
@@ -1997,39 +2004,55 @@ function App() {
             </button>
           </div>
 
-          <div className="dc-source-card">
+          <div className="dc-overview-strip">
+            <div className={snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-ok" : "needs-action"}>
+              <span>Sniffer</span>
+              <strong>
+                {snifferSnapshot?.connected
+                  ? "Daten werden empfangen"
+                  : snifferSnapshot?.readerActive
+                    ? "Verbunden, wartet auf Funk"
+                    : "Noch nicht verbunden"}
+              </strong>
+              <small>{form.snifferPort.trim() || "Kein USB-Port ausgewählt"}</small>
+            </div>
+            <div className={masterdataStatus?.askSinDevListAvailable ? "is-ok" : "needs-action"}>
+              <span>Gerätenamen</span>
+              <strong>{masterdataStatus?.askSinDevListAvailable ? "Namen werden aufgelöst" : "Einrichtung fehlt"}</strong>
+              <small>
+                {masterdataStatus?.askSinDevListAvailable
+                  ? `${masterdataStatus.askSinDevListCount ?? 0} Einträge vorhanden`
+                  : "AskSinAnalyzerDevList einmalig vorbereiten"}
+              </small>
+            </div>
             <div>
-              <strong>Quelle</strong>
-              <span>
-                Orientiert an AskSinAnalyzerXS: Der AskSinSniffer328P sendet Funktelegramme über UART/USB an den Analyzer.
-                Ohne empfangene Sniffer-Zeilen wird hier kein Funkproblem behauptet.
-              </span>
+              <span>Messzeitraum</span>
+              <strong>Letzte 60 Minuten</strong>
+              <small>{snifferSnapshot?.checkedAt ? `Aktualisiert ${formatSnifferTime(snifferSnapshot.checkedAt)}` : "Noch keine Messung"}</small>
             </div>
             <a href="https://github.com/psi-4ward/AskSinAnalyzerXS" target="_blank" rel="noreferrer">
-              AskSinAnalyzerXS öffnen
+              <span>Technische Grundlage</span>
+              <strong>AskSinAnalyzerXS</strong>
+              <small>Projekt öffnen ↗</small>
             </a>
           </div>
 
-          <div className={`dc-guidance-card ${masterdataStatus?.askSinDevListAvailable ? "is-ok" : "needs-action"}`}>
-            <div>
-              <strong>{masterdataStatus?.askSinDevListAvailable ? "Gerätenamen vorbereitet" : "Gerätenamen fehlen noch"}</strong>
-              <span>
-                {masterdataStatus?.askSinDevListAvailable
-                  ? `AskSinAnalyzerDevList ist vorhanden (${masterdataStatus.askSinDevListCount ?? 0} Einträge). Funkadressen können zu Namen aufgelöst werden.`
-                  : "Der Sniffer liefert Funkadressen. Für Namen braucht der Analyzer die kompatible CCU-Systemvariable AskSinAnalyzerDevList."}
-              </span>
-            </div>
-            {!masterdataStatus?.askSinDevListAvailable && (
+          {!masterdataStatus?.askSinDevListAvailable && (
+            <div className="dc-guidance-card needs-action">
+              <div>
+                <strong>Gerätenamen einmalig vorbereiten</strong>
+                <span>Ohne Geräteliste kann der Analyzer nur Funkadressen anzeigen. Das Script legt die kompatible CCU-Systemvariable an.</span>
+              </div>
               <div className="dc-guidance-actions">
                 <button type="button" onClick={() => void copyAskSinDevListScript()}>
-                  AskSin-Geräteliste Script kopieren
+                  Script kopieren
                 </button>
                 <a href="https://homematic-forum.de/forum/viewtopic.php?t=84237" target="_blank" rel="noreferrer">
-                  Original/Forum ansehen
+                  Anleitung
                 </a>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {askSinScriptPreview && (
             <label className="script-preview">
@@ -2038,55 +2061,55 @@ function App() {
             </label>
           )}
 
-          <div className="dc-setup-grid">
-            <fieldset className="setup-card">
-              <legend>Sniffer-Port</legend>
-              <p>Wenn der Sniffer per USB am Analyzer-System steckt, wähle hier den seriellen Port. In Proxmox muss der Port vorher an den LXC durchgereicht werden.</p>
-              <div className="usb-port-picker">
-                <label>
-                  USB-Port
-                  <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
-                    <option value="">Kein Sniffer / später einrichten</option>
-                    {usbPorts.map((usbPort) => (
-                      <option value={usbPort.path} key={usbPort.path}>
-                        {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
-                      </option>
-                    ))}
-                    <option value="__manual__">Manuell eintragen</option>
-                  </select>
-                </label>
-                <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
-                  {usbPortsLoading ? "Suche läuft ..." : "Ports suchen"}
-                </button>
-              </div>
-              {showManualSnifferPort && (
-                <label>
-                  Manueller USB-Port
-                  <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
-                </label>
-              )}
-            </fieldset>
-
-            <div className={`dc-status-card ${snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-connected" : ""}`}>
-              <strong>
-                {snifferSnapshot?.connected
-                  ? "Snifferdaten vorhanden"
-                  : snifferSnapshot?.readerActive
-                    ? "Sniffer verbunden – wartet auf Funkdaten"
-                    : "Noch keine Snifferdaten"}
-              </strong>
+          <details className="dc-config-details" open={!form.snifferPort.trim()}>
+            <summary>
               <span>
-                {snifferSnapshot?.connected
-                  ? `Quelle: ${snifferSnapshot.source}`
-                  : snifferSnapshot?.readerActive
-                    ? `Der Analyzer überwacht ${form.snifferPort.trim()} dauerhaft. Löse jetzt ein Homematic-Gerät aus.`
-                  : form.snifferPort.trim()
-                    ? `Port ${form.snifferPort.trim()} ist eingetragen, aber noch wurden keine auswertbaren Zeilen gefunden.`
-                    : "Bitte zuerst einen Sniffer-Port eintragen oder die normale Analyse ohne Sniffer nutzen."}
+                <strong>Sniffer-Verbindung</strong>
+                <small>{form.snifferPort.trim() ? `${form.snifferPort.trim()} ausgewählt` : "USB-Port auswählen, um Funkdaten zu empfangen"}</small>
               </span>
-              {snifferSnapshot?.checkedAt && <small>Geprüft: {new Date(snifferSnapshot.checkedAt).toLocaleString("de-DE")}</small>}
+              <b>{form.snifferPort.trim() ? "Ändern" : "Einrichten"}</b>
+            </summary>
+            <div className="dc-setup-grid">
+              <fieldset className="setup-card">
+                <legend>USB-Port</legend>
+                <p>Der Sniffer steckt am Analyzer-System. Bei Proxmox muss der Port vorher an den LXC durchgereicht werden.</p>
+                <div className="usb-port-picker">
+                  <label>
+                    Serieller Port
+                    <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
+                      <option value="">Kein Sniffer / später einrichten</option>
+                      {usbPorts.map((usbPort) => (
+                        <option value={usbPort.path} key={usbPort.path}>
+                          {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
+                        </option>
+                      ))}
+                      <option value="__manual__">Manuell eintragen</option>
+                    </select>
+                  </label>
+                  <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
+                    {usbPortsLoading ? "Suche läuft ..." : "Ports suchen"}
+                  </button>
+                </div>
+                {showManualSnifferPort && (
+                  <label>
+                    Manueller USB-Port
+                    <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
+                  </label>
+                )}
+              </fieldset>
+
+              <div className={`dc-status-card ${snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-connected" : ""}`}>
+                <strong>{snifferSnapshot?.connected ? "Empfang läuft" : snifferSnapshot?.readerActive ? "Port wird überwacht" : "Keine Verbindung"}</strong>
+                <span>
+                  {snifferSnapshot?.connected
+                    ? `Quelle: ${snifferSnapshot.source}`
+                    : snifferSnapshot?.readerActive
+                      ? "Löse jetzt ein Homematic-Gerät aus. Neue Daten werden automatisch geladen."
+                      : "Wähle einen Port und starte anschließend die Prüfung."}
+                </span>
+              </div>
             </div>
-          </div>
+          </details>
 
           <div className="dc-metric-grid">
             {[
@@ -2189,7 +2212,7 @@ function App() {
                 <h3>Duty-Cycle-Anteil pro Gerät</h3>
               </div>
               <div className="dc-duty-bars">
-                {snifferSnapshot.devices.slice(0, 10).map((device) => (
+                {snifferSnapshot.devices.slice(0, 5).map((device) => (
                   <div className="dc-duty-row" key={device.address}>
                     <div>
                       <strong>{device.name}</strong>
@@ -2204,11 +2227,14 @@ function App() {
               </div>
             </div>
 
-            <div className="dc-table-card">
-              <div>
-                <p className="eyebrow">Geräte</p>
-                <h3>Telegramme nach Funklast</h3>
-              </div>
+            <details className="dc-table-card dc-data-details">
+              <summary>
+                <span>
+                  <small>Geräte-Details</small>
+                  <strong>Funklast und Signalwerte</strong>
+                </span>
+                <b>{snifferSnapshot.devices.length} Geräte · anzeigen</b>
+              </summary>
               <div className="dc-table-wrap">
                 <table className="dc-table">
                   <thead>
@@ -2222,7 +2248,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {snifferSnapshot.devices.map((device) => (
+                    {visibleSnifferDevices.map((device) => (
                       <tr key={device.address}>
                         <td>
                           <strong>{device.name}</strong>
@@ -2241,6 +2267,11 @@ function App() {
                   </tbody>
                 </table>
               </div>
+              {snifferSnapshot.devices.length > 10 && (
+                <button type="button" className="dc-more-button" onClick={() => setShowAllSnifferDevices((current) => !current)}>
+                  {showAllSnifferDevices ? "Nur die 10 höchsten Funklasten" : `Alle ${snifferSnapshot.devices.length} Geräte anzeigen`}
+                </button>
+              )}
               {snifferSnapshot.devices.some((device) => device.name === device.address) && (
                 <div className="dc-guidance-card needs-action">
                   <div>
@@ -2257,13 +2288,16 @@ function App() {
                   </div>
                 </div>
               )}
-            </div>
+            </details>
 
-            <div className="dc-table-card">
-              <div>
-                <p className="eyebrow">Telegramme</p>
-                <h3>{snifferSnapshot.events.length} empfangene Funktelegramme</h3>
-              </div>
+            <details className="dc-table-card dc-data-details">
+              <summary>
+                <span>
+                  <small>Telegramm-Details</small>
+                  <strong>Neueste Funktelegramme</strong>
+                </span>
+                <b>{snifferSnapshot.events.length} gespeichert · anzeigen</b>
+              </summary>
               <div className="dc-table-wrap">
                 <table className="dc-table dc-telegram-table">
                   <thead>
@@ -2281,7 +2315,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {snifferSnapshot.events.slice(0, 80).map((event, index) => (
+                    {visibleSnifferEvents.map((event, index) => (
                       <tr key={`${event.raw}-${index}`}>
                         <td>{formatSnifferTime(event.tstamp)}</td>
                         <td>
@@ -2310,7 +2344,12 @@ function App() {
                   </tbody>
                 </table>
               </div>
-            </div>
+              {snifferSnapshot.events.length > 10 && (
+                <button type="button" className="dc-more-button" onClick={() => setShowAllSnifferEvents((current) => !current)}>
+                  {showAllSnifferEvents ? "Nur die neuesten 10" : `Alle ${snifferSnapshot.events.length} Telegramme anzeigen`}
+                </button>
+              )}
+            </details>
             </>
           ) : (
             <div className="system-collector-empty">
