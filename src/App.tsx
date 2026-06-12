@@ -129,6 +129,9 @@ type SnifferSnapshot = {
   source: string;
   summary: {
     rawLines: number;
+    validLines: number;
+    invalidLines: number;
+    protocolCompatible: boolean;
     telegrams: number;
     devices: number;
     dutyCycle?: number;
@@ -2103,6 +2106,19 @@ function App() {
               ]),
               ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
               ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
+              [
+                "Datenformat",
+                snifferSnapshot?.summary.protocolCompatible
+                  ? "AskSin erkannt"
+                  : snifferSnapshot?.readerActive
+                    ? "wartet"
+                    : "nicht geprüft",
+                snifferSnapshot?.summary.protocolCompatible
+                  ? `${snifferSnapshot.summary.validLines} gültige Zeilen · ${snifferSnapshot.summary.invalidLines} sonstige Meldungen`
+                  : snifferSnapshot?.summary.invalidLines
+                    ? `${snifferSnapshot.summary.invalidLines} Zeilen entsprechen noch nicht dem AskSin-Format.`
+                    : "Parser folgt dem Referenzformat von AskSinAnalyzerXS."
+              ],
               [
                 "Schwächstes RSSI",
                 snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen",

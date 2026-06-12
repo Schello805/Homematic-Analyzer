@@ -204,7 +204,7 @@ function isHmIpType(type?: string): boolean {
 }
 
 function isLikelyHmIpSerial(serial?: string): boolean {
-  return Boolean(serial && /^00[A-Z0-9]{12,}$/i.test(serial));
+  return Boolean(serial && (serial.length === 14 || serial === "HmIP-RF"));
 }
 
 function isHmIpSnifferDevice(device: SnifferDeviceSummary): boolean {

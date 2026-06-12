@@ -1,6 +1,6 @@
 {
   "name": "homematic-analyzer",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "private": true,
   "homepage": "https://github.com/Schello805/Homematic-Analyzer",
   "repository": {
@@ -15,6 +15,7 @@
     "build": "tsc && vite build",
     "start": "tsx server/index.ts",
     "check": "tsc --noEmit",
+    "test": "tsx --test server/snifferProtocol.test.ts",
     "release:push": "node scripts/release/push-with-version.mjs"
   },
   "dependencies": {

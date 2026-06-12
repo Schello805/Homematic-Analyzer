@@ -11,6 +11,7 @@ import { readCcuSnapshot } from "./ccuClient.js";
 import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
+import { parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
 import type { CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferSnapshot } from "./types.js";
 
@@ -31,7 +32,7 @@ const snifferLogFile = join(dataDir, "sniffer-lines.log");
 let latestCollector: CollectorPayload | undefined;
 let latestCcuMasterdata: CcuMasterdataPayload | undefined;
 let latestSnifferSnapshot: SnifferSnapshot | undefined;
-let snifferLineHistory: string[] = [];
+let snifferLineHistory: Array<{ raw: string; receivedAt: string }> = [];
 let activeSnifferPort = "";
 let snifferReader: ReturnType<typeof spawn> | undefined;
 let snifferReaderBuffer = "";
@@ -258,91 +259,6 @@ function buildSnifferDeviceNameMap() {
   return map;
 }
 
-function snifferFlags(flagsInt: number) {
-  const flags: string[] = [];
-  if (flagsInt & 0x01) flags.push("WKUP");
-  if (flagsInt & 0x02) flags.push("WKMEUP");
-  if (flagsInt & 0x04) flags.push("BCAST");
-  if (flagsInt & 0x10) flags.push("BURST");
-  if (flagsInt & 0x20) flags.push("BIDI");
-  if (flagsInt & 0x40) flags.push("RPTED");
-  if (flagsInt & 0x80) flags.push("RPTEN");
-  if (flagsInt === 0) flags.push("HMIP_UNKNOWN");
-  return flags.sort();
-}
-
-function snifferTelegramType(typeInt: number) {
-  const knownTypes: Record<number, string> = {
-    0x00: "DEVINFO",
-    0x01: "CONFIG",
-    0x02: "RESPONSE",
-    0x03: "RESPONSE_AES",
-    0x04: "KEY_EXCHANGE",
-    0x10: "INFO",
-    0x11: "ACTION",
-    0x12: "HAVE_DATA",
-    0x3e: "SWITCH_EVENT",
-    0x3f: "TIMESTAMP",
-    0x40: "REMOTE_EVENT",
-    0x41: "SENSOR_EVENT",
-    0x53: "SENSOR_DATA",
-    0x58: "CLIMATE_EVENT",
-    0x5a: "CLIMATECTRL_EVENT",
-    0x5e: "POWER_EVENT",
-    0x5f: "POWER_EVENT_CYCLIC",
-    0x70: "WEATHER"
-  };
-  return typeInt >= 0x80 ? "HMIP_TYPE" : knownTypes[typeInt] ?? "";
-}
-
-function parseAskSinTelegram(line: string, deviceMap: Map<string, { name: string; serial?: string; type?: string }>) {
-  const trimmed = line.trim();
-  if (!/^:[0-9a-f]+;$/i.test(trimmed) || trimmed.length <= 23) return undefined;
-  const tstamp = new Date().toISOString();
-
-  const fromAddress = trimmed.substring(11, 17).toUpperCase();
-  const toAddress = trimmed.substring(17, 23).toUpperCase();
-  const fromDevice = deviceMap.get(fromAddress);
-  const toDevice = deviceMap.get(toAddress);
-  const length = parseInt(trimmed.substring(3, 5), 16);
-  const flags = snifferFlags(parseInt(trimmed.substring(7, 9), 16));
-  const type = snifferTelegramType(parseInt(trimmed.substring(9, 11), 16));
-  const sendTimeMs = flags.includes("BURST")
-    ? 360 + (length + 7) * 0.81
-    : (length + 11) * 0.81;
-
-  return {
-    tstamp,
-    raw: trimmed,
-    rssi: -1 * parseInt(trimmed.substring(1, 3), 16),
-    len: length,
-    cnt: parseInt(trimmed.substring(5, 7), 16),
-    flags,
-    type,
-    fromAddress,
-    toAddress,
-    fromName: fromDevice?.name,
-    toName: toDevice?.name,
-    fromSerial: fromDevice?.serial,
-    toSerial: toDevice?.serial,
-    fromType: fromDevice?.type,
-    toType: toDevice?.type,
-    dutyCycle: sendTimeMs / 360,
-    sendTimeMs: Math.round(sendTimeMs * 10) / 10,
-    payload: trimmed.substring(23, trimmed.length - 1)
-  };
-}
-
-function parseRssiNoise(line: string) {
-  const trimmed = line.trim();
-  if (!/^:[0-9a-f]{2};$/i.test(trimmed)) return undefined;
-  return {
-    tstamp: new Date().toISOString(),
-    raw: trimmed,
-    rssi: -1 * parseInt(trimmed.substring(1, 3), 16)
-  };
-}
-
 function isGatewaySnifferDevice(device: { name?: string; type?: string; serial?: string; address?: string }) {
   const haystack = [device.name, device.type, device.serial, device.address].filter(Boolean).join(" ").toLowerCase();
   return /\b(ccu-rf|hmrf|gateway|lan-gateway|lancfg|hap|drap|access point|access-point|hmip-hap|hmip-drap|hm-lgw)\b/i.test(haystack);
@@ -387,7 +303,11 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
     snifferReaderBuffer += chunk.toString("utf8");
     const parts = snifferReaderBuffer.split(/\r?\n/);
     snifferReaderBuffer = parts.pop() ?? "";
-    const newLines = parts.map((line) => line.trim()).filter(Boolean);
+    const receivedAt = new Date().toISOString();
+    const newLines = parts
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((raw) => ({ raw, receivedAt }));
     if (newLines.length > 0) {
       snifferLineHistory = [...snifferLineHistory, ...newLines].slice(-1000);
     }
@@ -415,7 +335,7 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
 
 async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   const checkedAt = new Date().toISOString();
-  let lines: string[] = [];
+  let lines: Array<{ raw: string; receivedAt: string }> = [];
   let source = "Noch keine Snifferdaten empfangen.";
 
   await ensureSerialSnifferReader(port);
@@ -429,7 +349,10 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
       const parsed = JSON.parse(await readFile(snifferEventsFile, "utf8"));
       const parsedRecord = parsed && typeof parsed === "object" ? parsed as { events?: unknown[] } : {};
       const entries: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsedRecord.events) ? parsedRecord.events : [];
-      lines = entries.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).slice(-300);
+      lines = entries.map((entry) => ({
+        raw: typeof entry === "string" ? entry : JSON.stringify(entry),
+        receivedAt: checkedAt
+      })).slice(-300);
       if (lines.length > 0) source = snifferEventsFile;
     }
   } catch {
@@ -437,16 +360,30 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
 
   if (lines.length === 0) {
     try {
-      lines = (await readFile(snifferLogFile, "utf8")).split(/\r?\n/).filter(Boolean).slice(-300);
+      lines = (await readFile(snifferLogFile, "utf8"))
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .slice(-300)
+        .map((raw) => ({ raw, receivedAt: checkedAt }));
       if (lines.length > 0) source = snifferLogFile;
     } catch {
     }
   }
 
   const deviceMap = buildSnifferDeviceNameMap();
-  const telegrams = lines.map((line) => parseAskSinTelegram(line, deviceMap)).filter((event): event is NonNullable<typeof event> => Boolean(event));
-  const rssiNoises = lines.map(parseRssiNoise).filter((event): event is NonNullable<typeof event> => Boolean(event));
-  const diagnostics = lines.filter((line) => !parseAskSinTelegram(line, deviceMap) && !parseRssiNoise(line)).slice(-20);
+  const parsedTelegrams = lines
+    .map((line) => parseAskSinTelegram(line.raw, deviceMap, line.receivedAt))
+    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+  const parsedRssiNoises = lines
+    .map((line) => parseRssiNoise(line.raw, line.receivedAt))
+    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+  const invalidSnifferLines = lines
+    .filter((line) => !parseAskSinTelegram(line.raw, deviceMap, line.receivedAt) && !parseRssiNoise(line.raw, line.receivedAt))
+    .map((line) => line.raw);
+  const diagnostics = invalidSnifferLines.slice(-20);
+  const firstTimestampOfHour = Date.parse(checkedAt) - 60 * 60 * 1000;
+  const telegrams = parsedTelegrams.filter((telegram) => Date.parse(telegram.tstamp) >= firstTimestampOfHour);
+  const rssiNoises = parsedRssiNoises.filter((noise) => Date.parse(noise.tstamp) >= firstTimestampOfHour);
   const totalDutyCycle = telegrams.reduce((sum, event) => sum + event.dutyCycle, 0);
   const deviceRows = [...telegrams.reduce((map, telegram) => {
     const key = telegram.fromAddress;
@@ -511,6 +448,9 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     source,
     summary: {
       rawLines: lines.length,
+      validLines: telegrams.length + rssiNoises.length,
+      invalidLines: invalidSnifferLines.length,
+      protocolCompatible: telegrams.length > 0 || rssiNoises.length > 0,
       telegrams: telegrams.length,
       devices: deviceRows.length,
       dutyCycle: Math.round(totalDutyCycle * 10) / 10,

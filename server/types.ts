@@ -200,6 +200,9 @@ export type SnifferSnapshot = {
   source: string;
   summary: {
     rawLines: number;
+    validLines: number;
+    invalidLines: number;
+    protocolCompatible: boolean;
     telegrams: number;
     devices: number;
     dutyCycle?: number;
