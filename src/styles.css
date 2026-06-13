@@ -2482,10 +2482,75 @@ pre {
 }
 
 .ai-log-result {
+  scroll-margin-top: 20px;
   border: 1px solid #dbe4f0;
+  border-left: 5px solid #3478f6;
   border-radius: 22px;
   padding: clamp(16px, 2.5vw, 24px);
-  background: rgba(255, 255, 255, 0.78);
+  background: linear-gradient(135deg, #ffffff, #f7fbff);
+  box-shadow: 0 16px 38px rgba(23, 32, 51, 0.08);
+  outline: none;
+}
+
+.ai-log-result:focus {
+  box-shadow: 0 0 0 3px rgba(52, 120, 246, 0.18), 0 16px 38px rgba(23, 32, 51, 0.08);
+}
+
+.ai-log-result.status-critical {
+  border-left-color: #d92d20;
+}
+
+.ai-log-result.status-warning {
+  border-left-color: #f79009;
+}
+
+.ai-log-result.status-ok {
+  border-left-color: #12b76a;
+}
+
+.ai-log-progress {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid #bfdbfe;
+  border-radius: 18px;
+  padding: 14px 16px;
+  color: #173b83;
+  background: #eff6ff;
+}
+
+.ai-log-progress > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ai-log-progress span {
+  color: #52647f;
+}
+
+.ai-log-progress__spinner {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 3px solid #bfd5ff;
+  border-top-color: #3478f6;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-log-evidence li {
+  border-left: 4px solid #8eb6ff;
+  background: #f8fbff;
+}
+
+.ai-log-evidence span {
+  line-height: 1.45;
 }
 
 .results {

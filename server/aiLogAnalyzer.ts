@@ -1,4 +1,4 @@
-import type { AnalysisCheck, CheckStatus, CollectorPayload, NotificationSettings } from "./types.js";
+import type { AnalysisCheck, CcuMasterdataPayload, CheckStatus, CollectorPayload, NotificationSettings } from "./types.js";
 
 type AiLogResponse = {
   severity?: CheckStatus;
@@ -54,10 +54,47 @@ function buildPrompt(logLines: string[], mode: AiLogMode, totalLines: number) {
     "Antworte nur als JSON mit diesen Feldern:",
     "{ \"severity\": \"ok|improvement|warning|critical\", \"summary\": string, \"recommendation\": string, \"evidence\": string[], \"details\": string[] }",
     "Schreibe für normale Anwender verständlich und kurz.",
+    "Jeder Eintrag in evidence muss zuerst in Alltagssprache erklären, was die Meldung bedeutet und welches Gerät oder welcher Kanal betroffen ist.",
+    "Hänge den technischen Originalbeleg erst danach an. Gib niemals nur einen Parameternamen, eine Adresse oder eine rohe Logzeile als Erklärung aus.",
+    "Erkläre ausdrücklich, ob eine Meldung allein bereits einen Defekt beweist oder nur beobachtet werden sollte.",
     "",
     "Logzeilen:",
     logLines.map((line, index) => `${index + 1}. ${line}`).join("\n")
   ].join("\n");
+}
+
+function resolveDeviceLabel(channel: string, masterdata?: CcuMasterdataPayload): string {
+  const address = channel.split(":")[0].trim().toUpperCase();
+  const device = masterdata?.devices?.find((item) =>
+    [item.serial, item.address, item.rfAddress, item.radioAddress]
+      .some((identifier) => String(identifier ?? "").trim().toUpperCase() === address)
+  );
+  return device?.name?.trim() ? `${device.name} (${channel})` : `Kanal ${channel}`;
+}
+
+export function explainAiEvidence(detail: string, masterdata?: CcuMasterdataPayload): string {
+  const cleaned = detail.trim();
+  const energyOverflow = cleaned.match(/^Event="([^"]+)"\."ENERGY_COUNTER_OVERFLOW"=(true|false)$/i);
+  if (energyOverflow) {
+    const [, channel, active] = energyOverflow;
+    const deviceLabel = resolveDeviceLabel(channel, masterdata);
+    return active.toLowerCase() === "true"
+      ? `Der Energiezähler von ${deviceLabel} meldet einen Überlauf. Der fortlaufende Zähler hat seinen darstellbaren Bereich erreicht oder neu begonnen. Das beweist allein keinen Gerätedefekt; prüfe, ob Verbrauchs- und Energiewerte anschließend plausibel weiterlaufen. Technischer Beleg: ${cleaned}`
+      : `Der zuvor gemeldete Überlauf des Energiezählers von ${deviceLabel} ist nicht aktiv. Allein aus dieser Zeile ergibt sich kein Handlungsbedarf. Technischer Beleg: ${cleaned}`;
+  }
+
+  const event = cleaned.match(/^Event="([^"]+)"\."([^"]+)"=(.+)$/i);
+  if (event) {
+    const [, channel, parameter, value] = event;
+    return `${resolveDeviceLabel(channel, masterdata)} meldet den technischen Zustand „${parameter}“ mit dem Wert ${value}. Die Zeile ist ein Beleg, erklärt ohne weitere passende Logmeldungen aber noch keine Ursache und beweist keinen Defekt. Technischer Beleg: ${cleaned}`;
+  }
+
+  const looksLikeRawLog = /(?:^|\s)(?:Event=|[A-Z][A-Z0-9_]{3,}=|local\d+\.|ReGaHss:|HmIPServer|rfd:)/.test(cleaned);
+  if (looksLikeRawLog) {
+    return `Technische Logmeldung erkannt. Sie dient als Beleg, ist für sich allein aber noch keine verständliche Ursache oder Fehlerdiagnose. Original: ${cleaned}`;
+  }
+
+  return cleaned;
 }
 
 function parseJsonObject(text: string): AiLogResponse {
@@ -83,10 +120,13 @@ function normalizeAiResult(
   mode: AiLogMode,
   totalLines: number,
   analyzedLines: number,
-  truncated: boolean
+  truncated: boolean,
+  masterdata?: CcuMasterdataPayload
 ): AnalysisCheck {
   const status = result.severity && allowedStatuses.has(result.severity) ? result.severity : "improvement";
-  const evidence = Array.isArray(result.evidence) ? result.evidence.filter(Boolean).slice(0, 8) : [];
+  const evidence = Array.isArray(result.evidence)
+    ? result.evidence.filter(Boolean).slice(0, 8).map((detail) => explainAiEvidence(detail, masterdata))
+    : [];
   const details = Array.isArray(result.details) ? result.details.filter(Boolean).slice(0, 8) : [];
 
   return {
@@ -166,7 +206,12 @@ async function analyzeWithGemini(settings: Required<NonNullable<NotificationSett
   return parseJsonObject(content);
 }
 
-export async function createAiLogAnalysis(settings: NotificationSettings, collector?: CollectorPayload, mode: AiLogMode = "issues"): Promise<AnalysisCheck | undefined> {
+export async function createAiLogAnalysis(
+  settings: NotificationSettings,
+  collector?: CollectorPayload,
+  mode: AiLogMode = "issues",
+  masterdata?: CcuMasterdataPayload
+): Promise<AnalysisCheck | undefined> {
   const aiSettings = settings.ai;
   const preparedLogs = prepareLogLines(collector?.logs ?? [], mode);
   const logLines = preparedLogs.lines;
@@ -232,7 +277,8 @@ export async function createAiLogAnalysis(settings: NotificationSettings, collec
       mode,
       preparedLogs.totalLines,
       logLines.length,
-      preparedLogs.truncated
+      preparedLogs.truncated,
+      masterdata
     );
   } catch (error) {
     return {

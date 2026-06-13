@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { prepareLogLines } from "./aiLogAnalyzer.js";
+import { explainAiEvidence, prepareLogLines } from "./aiLogAnalyzer.js";
 
 test("filtert im Einsteiger-Modus nur Fehler und Warnungen", () => {
   const result = prepareLogLines([
@@ -37,4 +37,28 @@ test("begrenzt die vollständige Analyse auf die neuesten 500 Zeilen", () => {
   assert.equal(result.lines.length, 500);
   assert.equal(result.lines[0], "Logzeile 21");
   assert.equal(result.lines.at(-1), "Logzeile 520");
+});
+
+test("übersetzt ENERGY_COUNTER_OVERFLOW in eine verständliche Erklärung", () => {
+  const result = explainAiEvidence('Event="0001D569A581EA:6"."ENERGY_COUNTER_OVERFLOW"=true');
+
+  assert.match(result, /Energiezähler/);
+  assert.match(result, /beweist allein keinen Gerätedefekt/);
+  assert.match(result, /0001D569A581EA:6/);
+});
+
+test("kennzeichnet unbekannte technische Events als Beleg statt Diagnose", () => {
+  const result = explainAiEvidence('Event="0001D569A581EA:6"."SOME_UNKNOWN_STATE"=42');
+
+  assert.match(result, /noch keine Ursache/);
+  assert.match(result, /SOME_UNKNOWN_STATE/);
+});
+
+test("setzt vorhandenen Gerätenamen in die Erklärung ein", () => {
+  const result = explainAiEvidence(
+    'Event="0001D569A581EA:6"."ENERGY_COUNTER_OVERFLOW"=true',
+    { devices: [{ name: "Steckdose Wärmepumpe", serial: "0001D569A581EA", type: "HmIP-PSM" }] }
+  );
+
+  assert.match(result, /Steckdose Wärmepumpe/);
 });

@@ -1108,6 +1108,7 @@ function App() {
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
+  const aiLogResultRef = useRef<HTMLElement | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
@@ -2069,6 +2070,14 @@ function App() {
     setActionModal(null);
     setActionModalCheckId(null);
   }
+
+  useEffect(() => {
+    if (!aiLogResult || aiLogLoading || currentPage !== "logs") return;
+    window.requestAnimationFrame(() => {
+      aiLogResultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      aiLogResultRef.current?.focus({ preventScroll: true });
+    });
+  }, [aiLogResult, aiLogLoading, currentPage]);
 
   useEffect(() => {
     if (!analysis) return;
@@ -3647,6 +3656,62 @@ function App() {
             </div>
           )}
 
+          {aiLogLoading && (
+            <div className="ai-log-progress" role="status" aria-live="polite">
+              <span className="ai-log-progress__spinner" />
+              <div>
+                <strong>KI analysiert die ausgewählten Logzeilen …</strong>
+                <span>Das Ergebnis erscheint genau hier. Du wirst nach Abschluss automatisch dorthin geführt.</span>
+              </div>
+            </div>
+          )}
+
+          {aiLogResult && (
+            <article
+              className={`ai-log-result status-${aiLogResult.status}`}
+              ref={aiLogResultRef}
+              tabIndex={-1}
+              aria-live="polite"
+            >
+              <div className="detail-title">
+                <span className={`pill status-${aiLogResult.status}`}>
+                  {getStatusIcon(aiLogResult.status, "status-icon-inline")}
+                  {statusLabel[aiLogResult.status]}
+                </span>
+                <h3>{aiLogResult.title}</h3>
+              </div>
+              <p className="lead">{aiLogResult.summary}</p>
+              <div className={`recommendation-banner status-${aiLogResult.status}`}>
+                <div className="banner-icon">
+                  {getStatusIcon(aiLogResult.status, "banner-svg")}
+                </div>
+                <div className="banner-content">
+                  <strong>Was solltest du jetzt tun?</strong>
+                  <p>{aiLogResult.recommendation}</p>
+                </div>
+              </div>
+              {aiLogResult.evidence.length > 0 && (
+                <>
+                  <h4>Was wurde im Log erkannt?</h4>
+                  <ul className="evidence ai-log-evidence">
+                    {aiLogResult.evidence.map((item, index) => (
+                      <li key={`${item.source}-${index}`}>
+                        <strong>{item.source}</strong>
+                        <span>{item.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <h4>Einordnung</h4>
+              <ul>
+                {aiLogResult.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            </article>
+          )}
+
           <div className="logs-meta">
             <span>{logPayload?.host ? `Quelle: ${logPayload.host}` : "Quelle: noch nicht bekannt"}</span>
             <span>{logPayload?.collectedAt ? `Empfangen: ${new Date(logPayload.collectedAt).toLocaleString("de-DE")}` : "Noch kein Collector-Snapshot"}</span>
@@ -3687,46 +3752,6 @@ function App() {
             </div>
           )}
 
-          {aiLogResult && (
-            <article className={`ai-log-result status-${aiLogResult.status}`}>
-              <div className="detail-title">
-                <span className={`pill status-${aiLogResult.status}`}>
-                  {getStatusIcon(aiLogResult.status, "status-icon-inline")}
-                  {statusLabel[aiLogResult.status]}
-                </span>
-                <h3>{aiLogResult.title}</h3>
-              </div>
-              <p className="lead">{aiLogResult.summary}</p>
-              <div className={`recommendation-banner status-${aiLogResult.status}`}>
-                <div className="banner-icon">
-                  {getStatusIcon(aiLogResult.status, "banner-svg")}
-                </div>
-                <div className="banner-content">
-                  <strong>Handlungsempfehlung</strong>
-                  <p>{aiLogResult.recommendation}</p>
-                </div>
-              </div>
-              {aiLogResult.evidence.length > 0 && (
-                <>
-                  <h4>Belege</h4>
-                  <ul className="evidence">
-                    {aiLogResult.evidence.map((item, index) => (
-                      <li key={`${item.source}-${index}`}>
-                        <strong>{item.source}</strong>
-                        <span>{item.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <h4>Details</h4>
-              <ul>
-                {aiLogResult.details.map((detail) => (
-                  <li key={detail}>{detail}</li>
-                ))}
-              </ul>
-            </article>
-          )}
         </section>
       )}
 

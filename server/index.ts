@@ -1274,7 +1274,7 @@ app.post("/api/logs/analyze-ai", async (request, response) => {
   }
 
   const notificationSettings = mergeNotificationSettings(persistedNotificationSettings);
-  const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector, parsed.data.mode);
+  const aiLogAnalysis = await createAiLogAnalysis(notificationSettings, latestCollector, parsed.data.mode, latestCcuMasterdata);
 
   if (!aiLogAnalysis) {
     response.status(400).json({
