@@ -8,6 +8,7 @@ import { z } from "zod";
 import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
 import { createAnalysis } from "./analyzer.js";
 import { readCcuSnapshot } from "./ccuClient.js";
+import { decodeBase64Lines } from "./collectorPayload.js";
 import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
@@ -140,6 +141,7 @@ const collectorSchema = z.object({
   system: z.record(z.unknown()).optional(),
   logs: z.array(z.coerce.string().max(2000)).max(500).optional(),
   hmipLogs: z.array(z.coerce.string().max(4000)).max(250).optional(),
+  hmipLogsBase64: z.array(z.string().max(8000)).max(250).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional()
   }).optional(),
@@ -1156,8 +1158,12 @@ app.post("/api/collector", async (request, response) => {
     return;
   }
 
+  const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
+  const { hmipLogsBase64: _hmipLogsBase64, ...collectorData } = parsed.data;
+
   latestCollector = {
-    ...parsed.data,
+    ...collectorData,
+    hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
     collectedAt: parsed.data.collectedAt ?? new Date().toISOString()
   };
   await persistCollector(latestCollector);

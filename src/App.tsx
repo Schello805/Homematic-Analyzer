@@ -910,6 +910,16 @@ function App() {
     });
     return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
   }, []);
+  const collectorUninstallCommand = useMemo(() => {
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({
+      url: baseUrl,
+      token: "homematic-analyzer-demo-token",
+      mode: "uninstall",
+      interval: "minute"
+    });
+    return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
+  }, []);
   const ccuUiUrl = useMemo(() => getCcuUiUrl(form.ccuHost), [form.ccuHost]);
 
   const usesLocalAnalyzerUrl = useMemo(() => {
@@ -2512,7 +2522,8 @@ function App() {
               </button>
             </div>
             <p className="muted">
-              Für Verlaufsgrafiken ist minütlich sinnvoll. „Regelmäßig einrichten“ legt auf der Zentrale einen Cronjob an.
+              Für Verlaufsgrafiken ist minütlich sinnvoll. „Regelmäßig einrichten“ legt ausschließlich einen markierten Analyzer-Cronjob an.
+              „Regelmäßige Übertragung entfernen“ löscht nur diesen Eintrag sowie die eigenen temporären Dateien.
             </p>
             {collectorCommandPreview && (
               <label className="script-preview">
@@ -3697,14 +3708,20 @@ function App() {
                           type="checkbox"
                           checked={form.hmipRoutingLogLevelSet}
                           onChange={(event) => updateForm({ ...form, hmipRoutingLogLevelSet: event.target.checked })}
-                          aria-label="HmIP-Logging auf DEBUG oder TRACE gestellt"
+                          aria-label="Homematic IP auf Alles loggen gestellt"
                         />
                         <div>
-                          <strong>HmIP-Logging auf DEBUG oder TRACE stellen</strong>
+                          <strong>Homematic IP auf „Alles loggen“ stellen</strong>
                           <span>
                             In der CCU WebUI unter Einstellungen → Systemsteuerung → Zentralen-Wartung → Fehlerprotokoll.
                             {ccuUiUrl && <> <a href={ccuUiUrl} target="_blank" rel="noreferrer">CCU WebUI öffnen</a></>}
                           </span>
+                          <figure className="routing-help-image">
+                            <a href="/docs/hmip-routing-loglevel.png" target="_blank" rel="noreferrer">
+                              <img src="/docs/hmip-routing-loglevel.png" alt="OpenCCU Zentralen-Wartung mit Fehlerprotokoll und Auswahl Alles loggen für Homematic IP" />
+                            </a>
+                            <figcaption>Bei „Homematic IP“ → „Alles loggen“ auswählen und „Einstellungen übernehmen“ klicken.</figcaption>
+                          </figure>
                         </div>
                       </li>
                       <li className={form.hmipRoutingRestarted ? "is-complete" : ""}>
@@ -3758,6 +3775,11 @@ function App() {
                       </button>
                     </div>
 
+                    <div className="routing-result-location">
+                      <strong>Wo erscheint das Ergebnis?</strong>
+                      <span>Nach erfolgreichem Empfang: Analyse öffnen → „Neu analysieren“ → Prüfpunkt „HmIP Routing“ auswählen.</span>
+                    </div>
+
                     {routingStatus?.sample.length ? (
                       <details className="routing-log-sample">
                         <summary>Empfangene HmIPServer-Zeilen ansehen</summary>
@@ -3766,8 +3788,17 @@ function App() {
                     ) : null}
 
                     <p className="routing-warning">
-                      Nach erfolgreicher Datenerfassung kannst du das HmIP-Loglevel wieder auf INFO stellen. DEBUG/TRACE erzeugt deutlich mehr Logdaten.
+                      Nach erfolgreicher Datenerfassung „Homematic IP“ wieder auf „Nur Fehler protokollieren“ oder den vorherigen Wert stellen. „Alles loggen“ erzeugt deutlich mehr Logdaten.
                     </p>
+
+                    <details className="routing-remove">
+                      <summary>Collector später rückstandslos entfernen</summary>
+                      <p>Der Befehl entfernt nur den vom Analyzer markierten Cronjob und seine temporären Dateien. Andere CCU-Cronjobs, Backups und Systemdateien bleiben unberührt.</p>
+                      <div className="routing-command">
+                        <code>{collectorUninstallCommand}</code>
+                        <button type="button" onClick={() => void copyText(collectorUninstallCommand)}>Kopieren</button>
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>

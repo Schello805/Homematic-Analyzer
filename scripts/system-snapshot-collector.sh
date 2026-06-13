@@ -12,6 +12,7 @@ HOSTNAME_VALUE="$(hostname 2>/dev/null || echo unknown)"
 COLLECTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date)"
 TMP_DIR="${TMPDIR:-/tmp}"
 CRON_MARKER="Homematic Analyzer system snapshot"
+HMIP_LOG_SOURCE="${HMIP_LOG_SOURCE:-/var/log/hmserver.log}"
 
 make_tmp_file() {
   mktemp "$TMP_DIR/homematic-analyzer-$1.XXXXXX" 2>/dev/null || echo "$TMP_DIR/homematic-analyzer-$1.$$.tmp"
@@ -110,7 +111,10 @@ remove_cron_line() {
   killall -HUP crond 2>/dev/null || true
   /etc/init.d/S98crond restart 2>/dev/null || true
   /etc/init.d/S90crond restart 2>/dev/null || true
+  rm -f /tmp/homematic-analyzer-collector.log /tmp/homematic-analyzer-last-payload.json 2>/dev/null || true
   echo "Homematic Analyzer: Regelmäßige Übertragung entfernt."
+  echo "Homematic Analyzer: Eigene temporäre Log- und Debugdateien wurden entfernt."
+  echo "Homematic Analyzer: Andere Cronjobs und CCU-Dateien wurden nicht verändert."
 }
 
 if [ "$COLLECTOR_MODE" = "install" ]; then
@@ -211,8 +215,8 @@ elif command -v journalctl >/dev/null 2>&1; then
   journalctl -n 500 --no-pager > "$LOG_LIST_FILE" 2>/dev/null || true
 fi
 
-if [ -r /var/log/hmserver.log ]; then
-  tail -n 250 /var/log/hmserver.log > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
+if [ -r "$HMIP_LOG_SOURCE" ]; then
+  tail -n 250 "$HMIP_LOG_SOURCE" > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
 elif [ -r /var/log/hmserver.log.1 ]; then
   tail -n 250 /var/log/hmserver.log.1 > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
 fi
@@ -285,16 +289,18 @@ EOF_BACKUPS
     printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
   done < "$LOG_LIST_FILE"
   printf '\n  ],\n'
-  printf '  "hmipLogs": [\n'
+  printf '  "hmipLogsBase64": [\n'
   FIRST=1
   while IFS= read -r line; do
     [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0
     else
       printf ',\n'
     fi
-    printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
+    printf '    "%s"' "$encoded_line"
   done < "$HMIP_LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'

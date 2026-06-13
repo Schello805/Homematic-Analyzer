@@ -1,5 +1,8 @@
 # Homematic Analyzer
 
+> [!WARNING]
+> **BETA-Software:** Das Projekt befindet sich aktiv in Entwicklung und ist noch nicht vollständig für einen unbeaufsichtigten Produktiveinsatz geeignet. Ergebnisse bitte gegen die CCU prüfen, vor Updates ein Backup erstellen und optionale Log-/Collector-Funktionen nur bewusst aktivieren.
+
 Eine Web-App zur verständlichen Analyse von Homematic-, CCU3-, CCU2- und RaspberryMatic-Installationen.
 
 ## Idee
@@ -149,7 +152,25 @@ Beispiel:
 curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001&token=homematic-analyzer-demo-token" | sh
 ```
 
+Bei regelmäßiger Ausführung legt das Script ausschließlich einen mit `Homematic Analyzer system snapshot` markierten Cronjob an. Es ersetzt keine bestehenden Cronjobs.
+
+Vollständig entfernen:
+
+```bash
+curl -fsSL "http://ANALYZER-IP:3001/api/collector/script?url=http%3A%2F%2FANALYZER-IP%3A3001&token=homematic-analyzer-demo-token&mode=uninstall&interval=minute" | sh
+```
+
+Der Entfernen-Modus löscht nur den Analyzer-Cronjob sowie `/tmp/homematic-analyzer-collector.log` und `/tmp/homematic-analyzer-last-payload.json`. Andere CCU-Dateien, Backups und Cronjobs bleiben unberührt.
+
 Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
+
+## HmIP-Routing-Analyse
+
+Die HmIP-Routing-Analyse ist standardmäßig ausgeschaltet. Wird sie unter **Einstellungen → HmIP-Routing-Analyse** aktiviert, führt die App durch Log-Einstellung, Neustart und Collector-Test. Der letzte Haken wird nur automatisch gesetzt, wenn aktuelle Daten aus `/var/log/hmserver.log` beim Analyzer ankommen.
+
+Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → HmIP Routing**.
+
+Ausführliche bebilderte Anleitung: [`docs/HMIP_ROUTING.md`](docs/HMIP_ROUTING.md)
 
 ## DC-Analyzer und Gerätenamen
 
@@ -190,6 +211,7 @@ Noch offen bzw. bewusst nur vorbereitet:
 - XML-API Add-on: `docs/XML_API.md`
 - AskSin Analyzer XS: `docs/ASKSIN_ANALYZER_XS.md`
 - Proxmox USB-Durchreichung: `docs/PROXMOX_USB.md`
+- HmIP-Routing vorbereiten und entfernen: `docs/HMIP_ROUTING.md`
 
 ## GitHub
 

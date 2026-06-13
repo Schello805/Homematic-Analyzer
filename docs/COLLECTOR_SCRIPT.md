@@ -15,7 +15,10 @@ Für tägliche CCU-Stammdaten gibt es ein eigenes WebUI/ReGa-Script: `docs/CCU_M
 - CPU-Temperatur, wenn verfügbar
 - Anzahl gefundener Backups
 - Relevante Logzeilen zu Fehlern, Warnungen, Funk, Batterien und Homematic-Diensten
+- Bei aktivierter HmIP-Routing-Diagnose maximal 250 Zeilen aus `/var/log/hmserver.log`
 - Aktive Verbindungen zu typischen CCU-Diensten wie WebUI, XML-API, BidCos-RPC und HmIP-RPC
+
+Die HmIPServer-Zeilen werden für den Transport Base64-kodiert. Dadurch können Sonderzeichen aus dem Log das JSON nicht beschädigen.
 
 ## Was wird nicht gesammelt?
 
@@ -39,7 +42,15 @@ Die Web-App bietet drei Varianten:
 - **Regelmäßig einrichten**: legt auf der Zentrale einen Cronjob an und sendet zusätzlich sofort einen Snapshot.
 - **Regelmäßige Übertragung entfernen**: entfernt den vom Analyzer angelegten Cronjob wieder.
 
-Der empfohlene Zyklus ist **täglich nachts**. Stündlich ist nur sinnvoll, wenn gerade aktiv nach Last-, Log- oder Verbindungsproblemen gesucht wird.
+Für Verlaufsgrafiken wird aktuell eine minütliche Übertragung verwendet.
+
+Der Entfernen-Modus löscht ausschließlich:
+
+- den mit `Homematic Analyzer system snapshot` markierten Cronjob,
+- `/tmp/homematic-analyzer-collector.log`,
+- `/tmp/homematic-analyzer-last-payload.json`.
+
+Andere Cronjobs, Backups und CCU-Systemdateien werden nicht verändert.
 
 ## Hinweis
 
