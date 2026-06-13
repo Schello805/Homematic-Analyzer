@@ -919,6 +919,8 @@ function RoutingTopologyView({
   onSelectNode: (nodeId: string) => void;
   onRefresh: () => void;
 }) {
+  const [hoveredNodeId, setHoveredNodeId] = useState("");
+
   if (!topology) {
     return (
       <section className="routing-topology-card">
@@ -937,14 +939,26 @@ function RoutingTopologyView({
   const candidates = topology.nodes.filter((node) => node.role === "candidate");
   const devices = topology.nodes.filter((node) => node.role === "device");
   const selectedNode = topology.nodes.find((node) => node.id === selectedNodeId) ?? central;
+  const hoveredNode = topology.nodes.find((node) => node.id === hoveredNodeId);
+  const selectedRoute = selectedNode ? topology.edges.find((edge) => edge.source === selectedNode.id) : undefined;
+  const selectedReceiver = selectedRoute ? topology.nodes.find((node) => node.id === selectedRoute.target) : undefined;
   const confirmedSourceIds = new Set(topology.edges.map((edge) => edge.source));
   const center = { x: 450, y: 260 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
 
-  const placeRing = (nodes: RoutingTopologyNode[], radius: number, offset = -90) => {
+  const signalRadius = (node: RoutingTopologyNode, fallback: number) => {
+    if (node.role === "router") return 125;
+    if (node.avgRssi === undefined) return fallback;
+    if (node.avgRssi >= -65) return 158;
+    if (node.avgRssi >= -85) return 158 + ((-65 - node.avgRssi) / 20) * 55;
+    return Math.min(252, 213 + ((-85 - node.avgRssi) / 20) * 39);
+  };
+
+  const placeRing = (nodes: RoutingTopologyNode[], fallbackRadius: number, offset = -90) => {
     nodes.forEach((node, index) => {
       const angle = ((offset + (360 / Math.max(nodes.length, 1)) * index) * Math.PI) / 180;
+      const radius = signalRadius(node, fallbackRadius);
       positions.set(node.id, {
         x: center.x + Math.cos(angle) * radius,
         y: center.y + Math.sin(angle) * radius
@@ -963,6 +977,16 @@ function RoutingTopologyView({
     return "is-device";
   };
   const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
+  const measuredNodes = topology.nodes
+    .filter((node) => node.role !== "central" && node.avgRssi !== undefined)
+    .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
+  const weakNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "weak");
+  const observedNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "medium");
+  const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
+  const hoverLabelX = hoveredPosition ? Math.max(100, Math.min(800, hoveredPosition.x)) : 0;
+  const hoverLabelY = hoveredPosition
+    ? hoveredPosition.y < 70 ? hoveredPosition.y + 30 : hoveredPosition.y - 42
+    : 0;
 
   return (
     <section className="routing-topology-card">
@@ -984,6 +1008,25 @@ function RoutingTopologyView({
         <span><strong>{topology.metrics.multicastRouters}</strong> Multicast-Router</span>
       </div>
 
+      <div className={`routing-insight ${weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
+        <div>
+          <span className="routing-insight-icon" aria-hidden="true">{weakNodes.length > 0 ? "!" : "✓"}</span>
+          <div>
+            <strong>{weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}</strong>
+            <p>
+              {weakNodes.length > 0
+                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (${node.avgRssi} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
+                : measuredNodes.length > 0
+                  ? `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`
+                  : "Für eine Signalbewertung fehlen noch Sniffer-RSSI-Werte."}
+            </p>
+          </div>
+        </div>
+        <small>
+          Weiter außen bedeutet schwächer am Sniffer empfangen. Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
+        </small>
+      </div>
+
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
           <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
@@ -994,13 +1037,13 @@ function RoutingTopologyView({
             {topology.nodes.filter((node) => node.role !== "central" && node.role !== "router" && !confirmedSourceIds.has(node.id)).map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
-              return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={center.x} y1={center.y} x2={position.x} y2={position.y} />;
+              return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
             {routers.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
-              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={center.x} y1={center.y} x2={position.x} y2={position.y} />;
+              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
             {topology.edges.map((edge) => {
@@ -1026,6 +1069,10 @@ function RoutingTopologyView({
                   role="button"
                   tabIndex={0}
                   onClick={() => onSelectNode(node.id)}
+                  onMouseEnter={() => setHoveredNodeId(node.id)}
+                  onMouseLeave={() => setHoveredNodeId("")}
+                  onFocus={() => setHoveredNodeId(node.id)}
+                  onBlur={() => setHoveredNodeId("")}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
@@ -1038,13 +1085,25 @@ function RoutingTopologyView({
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "router" ? 18 : 12} />
                   <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${node.avgRssi !== undefined ? ` · ${rssiAssessment(node.avgRssi).label} (${node.avgRssi} dBm)` : ""}`}</title>
-                  {(node.role === "central" || node.role === "router" || isSelected) && (
-                    <text y={node.role === "central" ? 48 : 29} textAnchor="middle">{node.name}</text>
+                  {node.role === "central" && (
+                    <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
                   {node.role === "router" && <text className="routing-node-icon" y="5" textAnchor="middle">R</text>}
                 </g>
               );
             })}
+
+            {hoveredNode && hoveredPosition && (
+              <g className="routing-hover-label" transform={`translate(${hoverLabelX - 105} ${hoverLabelY})`} pointerEvents="none">
+                <rect width="210" height={hoveredNode.avgRssi !== undefined ? 38 : 28} rx="9" />
+                <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
+                {hoveredNode.avgRssi !== undefined && (
+                  <text className={`routing-hover-signal ${rssiClass(hoveredNode.avgRssi)}`} x="105" y="31" textAnchor="middle">
+                    {rssiAssessment(hoveredNode.avgRssi).label} · {hoveredNode.avgRssi} dBm
+                  </text>
+                )}
+              </g>
+            )}
           </svg>
 
           <div className="routing-legend">
@@ -1054,8 +1113,8 @@ function RoutingTopologyView({
             <span><i className="legend-signal good" /> Signal gut</span>
             <span><i className="legend-signal medium" /> beobachten</span>
             <span><i className="legend-signal weak" /> schwach</span>
-            <span><i className="legend-line is-confirmed" /> belegter Pfad</span>
-            <span><i className="legend-line is-unknown" /> Zuordnung unbekannt</span>
+            <span><i className="legend-line is-confirmed" /> Datenfluss zum Empfänger</span>
+            <span><i className="legend-line is-unknown" /> Empfänger noch unbekannt</span>
           </div>
         </div>
 
@@ -1069,6 +1128,7 @@ function RoutingTopologyView({
               <div><dt>Dient als Router</dt><dd>{selectedNode?.routerEnabled ? "Ja, belegt" : "Nicht belegt"}</dd></div>
               <div><dt>Routing aktiv</dt><dd>{selectedNode?.routingEnabled ? "Ja" : "Nicht belegt"}</dd></div>
               <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
+              <div><dt>Nächster Empfänger</dt><dd>{selectedReceiver?.name ?? "Noch nicht belegt"}</dd></div>
               <div>
                 <dt>Signal am Sniffer</dt>
                 <dd>
