@@ -1650,13 +1650,68 @@ h2 {
 }
 
 .routing-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
 }
 
 .routing-actions button {
-  width: auto;
+  width: 100%;
+  min-height: 44px;
+}
+
+.routing-finish {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #f2cf86;
+  border-radius: 16px;
+  background: #fff9eb;
+}
+
+.routing-finish.is-ready {
+  border-color: #9ce3c0;
+  background: #effcf5;
+}
+
+.routing-finish > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.routing-finish > div:first-child span {
+  color: #5c6b80;
+}
+
+.routing-result-button,
+.routing-entry-button {
+  border: 0;
+  border-radius: 13px;
+  padding: 11px 16px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 780;
+  background: linear-gradient(135deg, #20a783, #3478f6);
+  box-shadow: 0 10px 24px rgba(52, 120, 246, .17);
+}
+
+.routing-result-button:disabled,
+.routing-entry-button:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+  box-shadow: none;
+}
+
+.analysis-start__actions {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.analysis-start__actions > button {
+  min-height: 46px;
 }
 
 .routing-log-sample {
@@ -3108,13 +3163,16 @@ pre {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
   gap: 10px;
+  align-items: stretch;
 }
 
 .guided-action-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
-  align-content: start;
+  align-content: stretch;
+  height: 100%;
   border: 1px solid #e0e7f2;
   border-radius: 18px;
   padding: 12px;
@@ -3155,7 +3213,9 @@ pre {
 
 .guided-action-card button {
   grid-column: 1 / -1;
+  align-self: end;
   width: 100%;
+  min-height: 38px;
   border: 1px solid #bfdbfe;
   border-radius: 12px;
   padding: 9px 11px;
@@ -4013,6 +4073,18 @@ pre {
 
   .routing-command button,
   .routing-actions button {
+    width: 100%;
+  }
+
+  .routing-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-start__actions {
+    width: 100%;
+  }
+
+  .analysis-start__actions > button {
     width: 100%;
   }
 

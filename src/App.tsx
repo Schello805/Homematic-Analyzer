@@ -2327,7 +2327,7 @@ function App() {
   }, [currentPage]);
 
   useEffect(() => {
-    if (currentPage !== "settings" || !form.hmipRoutingEnabled) return;
+    if (!["settings", "analysis"].includes(currentPage) || !form.hmipRoutingEnabled) return;
     void loadRoutingStatus(false);
     const interval = window.setInterval(() => void loadRoutingStatus(false), 15000);
     return () => window.clearInterval(interval);
@@ -2383,7 +2383,7 @@ function App() {
     return (await response.json()) as AnalysisResponse;
   }
 
-  async function runAnalysis(event?: FormEvent<HTMLFormElement>) {
+  async function runAnalysis(event?: FormEvent<HTMLFormElement>, targetCheckId?: string) {
     event?.preventDefault();
     setCurrentPage("analysis");
     setLoading(true);
@@ -2403,7 +2403,11 @@ function App() {
       const unavailableCount = data.checks.filter((check) => check.status === "unavailable").length;
       setAnalysis(data);
       saveAnalysisSnapshot(data);
-      setActiveCheck(data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null);
+      setActiveCheck(
+        targetCheckId && data.checks.some((check) => check.id === targetCheckId)
+          ? targetCheckId
+          : data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null
+      );
       showToast({
         type: criticalCount > 0 ? "warning" : "success",
         title: "Analyse abgeschlossen",
@@ -2438,6 +2442,23 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function openRoutingGraphic(refreshAnalysis = false) {
+    setCurrentPage("analysis");
+    setSelectedStatusFilter(null);
+
+    if (refreshAnalysis || !analysis?.checks.some((check) => check.id === "routing-topology")) {
+      await runAnalysis(undefined, "routing-topology");
+      await loadRoutingTopology();
+    } else {
+      setActiveCheck("routing-topology");
+      await loadRoutingTopology();
+    }
+
+    window.setTimeout(() => {
+      document.querySelector(".routing-topology-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   }
 
   async function copyCollectorCommand() {
@@ -3567,9 +3588,21 @@ function App() {
             <p className="setup-note">Setup {setupProgress.percent}% eingerichtet · fehlende Punkte bei Bedarf ergänzen.</p>
           )}
         </div>
-        <button className="analyze-button analyze-button-compact" disabled={loading}>
-          {loading ? "Analyse läuft ..." : analysis ? "Neu analysieren" : "Analyse starten"}
-        </button>
+        <div className="analysis-start__actions">
+          {form.hmipRoutingEnabled && routingStatus?.hmipLogReceived && (
+            <button
+              type="button"
+              className="routing-entry-button"
+              onClick={() => void openRoutingGraphic(false)}
+              disabled={loading || routingTopologyLoading}
+            >
+              Routing-Grafik öffnen
+            </button>
+          )}
+          <button className="analyze-button analyze-button-compact" disabled={loading}>
+            {loading ? "Analyse läuft ..." : analysis ? "Neu analysieren" : "Analyse starten"}
+          </button>
+        </div>
         {error && <p className="error">{error}</p>}
       </form>
 
@@ -4032,8 +4065,8 @@ function App() {
                   <div className="routing-guide">
                     <div className="routing-guide__intro">
                       <div>
-                        <strong>Einmalige Vorbereitung</strong>
-                        <span>Die App wertet nur belegte HmIPServer-Daten aus. Die ersten drei Schritte bestätigst du, der letzte Haken wird automatisch gesetzt.</span>
+                        <strong>Einmal einrichten, danach direkt zur Grafik</strong>
+                        <span>Arbeite die Schritte von oben nach unten ab. Sobald der letzte Haken automatisch grün wird, öffnet der Abschlussbutton die fertige Routing-Karte.</span>
                       </div>
                       <span className={`routing-readiness ${routingStatus?.hmipLogReceived ? "is-ready" : ""}`}>
                         {routingStatus?.hmipLogReceived ? "Empfang bereit" : "Noch nicht vollständig"}
@@ -4111,18 +4144,28 @@ function App() {
                       </li>
                     </ol>
 
-                    <div className="routing-actions">
-                      <button type="button" onClick={() => void loadRoutingStatus(true)} disabled={routingStatusLoading}>
-                        {routingStatusLoading ? "Empfang wird geprüft …" : "Empfang jetzt testen"}
-                      </button>
-                      <button type="button" className="light-button" onClick={() => { setCurrentPage("analysis"); void runAnalysis(); }}>
-                        Analyse neu starten
-                      </button>
-                    </div>
-
-                    <div className="routing-result-location">
-                      <strong>Wo erscheint das Ergebnis?</strong>
-                      <span>Nach erfolgreichem Empfang: Analyse öffnen → „Neu analysieren“ → Prüfpunkt „HmIP Routing“ auswählen.</span>
+                    <div className={`routing-finish ${routingStatus?.hmipLogReceived ? "is-ready" : ""}`}>
+                      <div>
+                        <strong>{routingStatus?.hmipLogReceived ? "Einrichtung abgeschlossen" : "Letzter Schritt: Empfang bestätigen"}</strong>
+                        <span>
+                          {routingStatus?.hmipLogReceived
+                            ? "Die Routing-Daten kommen an. Öffne jetzt direkt die grafische Topologie."
+                            : "Prüfe den Empfang. Sobald HmIPServer-Daten erkannt werden, wird die Routing-Grafik freigeschaltet."}
+                        </span>
+                      </div>
+                      <div className="routing-actions">
+                        <button type="button" className="light-button" onClick={() => void loadRoutingStatus(true)} disabled={routingStatusLoading}>
+                          {routingStatusLoading ? "Empfang wird geprüft …" : "Empfang erneut prüfen"}
+                        </button>
+                        <button
+                          type="button"
+                          className="routing-result-button"
+                          onClick={() => void openRoutingGraphic(true)}
+                          disabled={!routingStatus?.hmipLogReceived || loading}
+                        >
+                          {loading ? "Analyse läuft …" : "Routing-Grafik öffnen"}
+                        </button>
+                      </div>
                     </div>
 
                     {routingStatus?.sample.length ? (
