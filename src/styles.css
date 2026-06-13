@@ -3158,8 +3158,8 @@ pre {
 @media (max-width: 620px) {
   main {
     width: 100%;
-    padding-inline: 10px;
-    padding-top: 10px;
+    padding-inline: 8px;
+    padding-top: 8px;
   }
 
   .app-topbar,
@@ -3169,59 +3169,86 @@ pre {
   }
 
   .app-topbar {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     align-items: stretch;
-    gap: 14px;
-    padding: 12px;
+    gap: 9px;
+    padding: 10px;
+    border-radius: 20px;
   }
 
   .app-brand {
     min-width: 0;
+    gap: 8px;
+    padding-inline: 2px;
   }
 
   .app-brand img {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
   }
 
   .app-brand strong {
-    font-size: 0.94rem;
-  }
-
-  .app-brand span {
-    font-size: 0.74rem;
+    font-size: 0.9rem;
   }
 
   .page-tabs {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
     min-width: 0;
+    border-top: 1px solid #edf1f7;
+    padding-top: 8px;
   }
 
   .page-tabs__left {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    overflow: visible;
-    padding: 0;
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 1px 3px 4px 0;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  }
+
+  .page-tabs__left::-webkit-scrollbar {
+    display: none;
   }
 
   .page-tabs__right {
-    justify-content: flex-end;
+    position: relative;
+    z-index: 1;
+    justify-content: stretch;
     min-width: 0;
+    padding-left: 1px;
+    background: rgba(255, 255, 255, 0.96);
   }
 
   .page-tabs button {
-    width: 100%;
+    flex: 0 0 auto;
+    width: auto;
     justify-content: center;
-    padding: 10px 14px;
+    min-height: 38px;
+    padding: 8px 13px;
+    font-size: 0.86rem;
     white-space: nowrap;
+    scroll-snap-align: start;
   }
 
   .page-tabs__right button {
-    max-width: 100%;
+    width: auto;
+    padding-inline: 11px;
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  .tab-badge {
+    padding: 2px 6px;
+    font-size: 0.7rem;
   }
 
   .form-grid,
