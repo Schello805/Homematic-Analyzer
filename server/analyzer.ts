@@ -298,7 +298,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const hmipDevices = inventoryDevices.filter((device) => isHmIpType(device.type));
   const hmipRouterCandidates = hmipDevices.filter((device) => isHmIpRouterCandidateType(device.type));
   const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
-  const weakSignalDevices = weakSnifferDevices(snifferDevicesWithRssi);
+  const reliableSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams >= 3);
+  const provisionalSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams < 3);
+  const weakSignalDevices = weakSnifferDevices(reliableSnifferDevicesWithRssi);
   const hmipSnifferDevicesWithRssi = snifferDevicesWithRssi.filter(isHmIpSnifferDevice);
   const weakHmipSnifferDevices = weakSnifferDevices(hmipSnifferDevicesWithRssi);
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
@@ -500,7 +502,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             ? "Kritisch: häufig sendende Programme, externe Systeme und Geräte mit Kommunikationsproblemen prüfen."
             : ccu.dutyCycle >= 70
               ? "Beobachten: Wenn der Wert länger hoch bleibt, Funklast und externe Abfragen prüfen."
-              : "Kein akuter Handlungsbedarf."
+              : ccu.dutyCycle >= 50
+                ? "Erhöht: Den Wert beobachten und im DC-Analyzer prüfen, welche Geräte den größten Anteil an der gemessenen Funkzeit haben."
+                : "Kein akuter Handlungsbedarf."
         : "CCU-Zugang einrichten, damit der echte Duty-Cycle-Wert gelesen werden kann.",
       access: ["ccu"],
       evidence: hasCcuData && ccu?.dutyCycle !== undefined
@@ -584,11 +588,17 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "signal-strength",
       title: "Signalqualität",
       category: "Funk",
-      status: snifferSignalStatus(snifferDevicesWithRssi),
+      status: reliableSnifferDevicesWithRssi.length > 0
+        ? snifferSignalStatus(reliableSnifferDevicesWithRssi)
+        : snifferDevicesWithRssi.length > 0
+          ? "improvement"
+          : "unavailable",
       summary: snifferDevicesWithRssi.length > 0
         ? weakSignalDevices.length > 0
-          ? `${snifferDevicesWithRssi.length} Geräte mit RSSI bewertet. Schwach empfangen: ${weakSignalDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
-          : `${snifferDevicesWithRssi.length} Geräte mit RSSI bewertet. Keine schwach empfangenen Telegramme im aktuellen Sniffer-Snapshot.`
+          ? `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, davon ${reliableSnifferDevicesWithRssi.length} ausreichend gemessen. Belastbar schwach empfangen: ${weakSignalDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
+          : reliableSnifferDevicesWithRssi.length > 0
+            ? `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, davon ${reliableSnifferDevicesWithRssi.length} mit mindestens 3 Telegrammen. Keine belastbar schwachen Werte.`
+            : `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, aber noch keines mit mindestens 3 Telegrammen. Die Messung braucht mehr Zeit.`
         : hasSniffer && sniffer?.connected
           ? "Der Sniffer antwortet, aber es wurden noch keine auswertbaren Homematic-Telegramme mit Gerätenamen/RSSI erkannt."
           : hasSniffer
@@ -599,7 +609,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       recommendation: snifferDevicesWithRssi.length > 0
         ? weakSignalDevices.length > 0
           ? "Schwach empfangene Geräte räumlich prüfen: Abstand, Wände, Metall, Batteriestand und möglichen Router/Access Point in der Nähe bewerten."
-          : "Gut: Im aktuellen Sniffer-Snapshot gibt es keine auffällig schwachen RSSI-Werte."
+          : reliableSnifferDevicesWithRssi.length > 0
+            ? "Gut: Bei ausreichend oft empfangenen Geräten gibt es aktuell keine auffällig schwachen RSSI-Werte."
+            : "Sniffer mindestens 30 bis 60 Minuten weiterlaufen lassen. Ein einzelnes Telegramm reicht nicht für eine belastbare Signalbewertung."
         : hasSniffer
           ? "Ein Homematic-Gerät auslösen und im DC-Analyzer erneut prüfen. Für Gerätenamen das AskSinAnalyzerDevList-/CCU-Stammdaten-Script verwenden."
         : "Optional AskSin Analyzer XS anschließen. Ohne echte RSSI-/Snifferdaten wird hier kein Funkproblem behauptet.",
@@ -608,7 +620,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? [
           {
             source: "Sniffer-RSSI",
-            detail: `${snifferDevicesWithRssi.length} Geräte mit RSSI. Schwelle: ab -85 dBm Optimierung, ab -95 dBm Hinweis.`,
+            detail: `${snifferDevicesWithRssi.length} Geräte mit RSSI, ${reliableSnifferDevicesWithRssi.length} mit mindestens 3 Telegrammen, ${provisionalSnifferDevicesWithRssi.length} noch vorläufig. Schwelle: ab -85 dBm Optimierung, ab -95 dBm Hinweis.`,
             timestamp: sniffer?.checkedAt
           },
           ...weakSignalDevices.slice(0, 8).map((device) => ({
@@ -628,7 +640,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           : [],
       details: [
         "RSSI-Werte stammen vom Sniffer-Standort. Sie zeigen, wie gut der Sniffer Telegramme empfängt, nicht zwingend die direkte Strecke zur CCU.",
-        "Bewertet wird nur, wenn echte Telegramme mit RSSI vorliegen.",
+        "Als belastbar bewertet werden Geräte erst ab mindestens 3 empfangenen Telegrammen im Messzeitraum.",
         "Ohne Messwert bleibt der Punkt bewusst nicht geprüft."
       ]
     },

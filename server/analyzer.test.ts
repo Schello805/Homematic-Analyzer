@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAnalysis } from "./analyzer.js";
-import type { CcuSnapshot } from "./types.js";
+import type { CcuSnapshot, SnifferSnapshot } from "./types.js";
 
 function failedSnapshot(overrides: Partial<CcuSnapshot>): CcuSnapshot {
   return {
@@ -81,4 +81,77 @@ test("erklärt bei erreichbarer WebUI einen XML-API-Timeout statt eines Netzwerk
 
   assert.match(xmlApi?.recommendation ?? "", /XML-API-Geräteliste antwortet zu langsam/);
   assert.doesNotMatch(xmlApi?.recommendation ?? "", /Firewall/);
+});
+
+test("empfiehlt bei erhöhtem Duty Cycle eine Verursacheranalyse", () => {
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },
+    undefined,
+    {
+      ...failedSnapshot({}),
+      reachable: true,
+      dutyCycle: 62,
+      counters: {
+        devices: 1,
+        lowBattery: 0,
+        unreachable: 0,
+        configPending: 0,
+        serviceMessages: 0,
+        alarmMessages: 0
+      }
+    }
+  );
+  const dutyCycle = checks.find((check) => check.id === "duty-cycle");
+
+  assert.equal(dutyCycle?.status, "improvement");
+  assert.match(dutyCycle?.recommendation ?? "", /DC-Analyzer/);
+});
+
+test("bewertet ein einzelnes schwaches Sniffer-Telegramm noch nicht als belastbaren Beleg", () => {
+  const sniffer: SnifferSnapshot = {
+    checkedAt: "2026-06-13T10:00:00.000Z",
+    port: "/dev/ttyUSB0",
+    configured: true,
+    connected: true,
+    readerActive: true,
+    source: "test",
+    summary: {
+      rawLines: 1,
+      validLines: 1,
+      invalidLines: 0,
+      protocolCompatible: true,
+      telegrams: 1,
+      rssiSamples: 0,
+      devices: 1,
+      dutyCycle: 0
+    },
+    devices: [
+      {
+        address: "ABC123",
+        name: "Testgerät",
+        telegrams: 1,
+        dutyCycle: 0,
+        dutyShare: 100,
+        sendTimeMs: 10,
+        avgRssi: -100,
+        lastSeen: "2026-06-13T10:00:00.000Z"
+      }
+    ],
+    events: [],
+    rssiNoise: [],
+    diagnostics: []
+  };
+
+  const signalQuality = createAnalysis(
+    { snifferPort: "/dev/ttyUSB0" },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    sniffer
+  ).find((check) => check.id === "signal-strength");
+
+  assert.equal(signalQuality?.status, "improvement");
+  assert.match(signalQuality?.summary ?? "", /mindestens 3/);
+  assert.match(signalQuality?.recommendation ?? "", /30 bis 60 Minuten/);
 });

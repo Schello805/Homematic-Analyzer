@@ -175,6 +175,8 @@ type Toast = {
   message?: string;
 };
 
+type ActionModal = "collector" | "duty" | "signal" | "check" | null;
+
 type MasterdataStatus = {
   available: boolean;
   collectedAt?: string;
@@ -799,6 +801,8 @@ function App() {
   const [dashboardRefreshProgress, setDashboardRefreshProgress] = useState(0);
   const [dashboardRefreshSecondsLeft, setDashboardRefreshSecondsLeft] = useState(60);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [actionModal, setActionModal] = useState<ActionModal>(null);
+  const [actionModalCheckId, setActionModalCheckId] = useState<string | null>(null);
   const [backupPage, setBackupPage] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
@@ -858,6 +862,16 @@ function App() {
   }, []);
 
   const collectorCommand = useMemo(() => `curl -fsSL "${scriptUrl}" | sh`, [scriptUrl]);
+  const recommendedCollectorCommand = useMemo(() => {
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({
+      url: baseUrl,
+      token: "homematic-analyzer-demo-token",
+      mode: "install",
+      interval: "minute"
+    });
+    return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
+  }, []);
 
   const usesLocalAnalyzerUrl = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -1427,6 +1441,118 @@ function App() {
     );
   }, [analysis]);
 
+  const guidedActions = useMemo(() => {
+    if (!analysis) return [];
+
+    const actions: Array<{
+      id: string;
+      priority: number;
+      eyebrow: string;
+      title: string;
+      detail: string;
+      button: string;
+      modal: Exclude<ActionModal, null>;
+      checkId?: string;
+    }> = [];
+    const findCheck = (id: string) => analysis.checks.find((check) => check.id === id);
+    const alarmCheck = findCheck("alarm-messages");
+    const serviceCheck = findCheck("service-messages");
+    const reachabilityCheck = findCheck("reachability");
+    const dutyCheck = findCheck("duty-cycle");
+    const signalCheck = findCheck("signal-strength");
+    const logCheck = findCheck("logs");
+
+    if (alarmCheck && alarmCheck.status !== "ok" && alarmCheck.status !== "unavailable") {
+      actions.push({
+        id: "alarms",
+        priority: 100,
+        eyebrow: "Zuerst",
+        title: alarmCheck.title,
+        detail: alarmCheck.summary,
+        button: "Alarmmeldungen ansehen",
+        modal: "check",
+        checkId: alarmCheck.id
+      });
+    }
+    if (serviceCheck && serviceCheck.status === "warning") {
+      actions.push({
+        id: "services",
+        priority: 90,
+        eyebrow: "Danach",
+        title: "Servicemeldungen prüfen",
+        detail: serviceCheck.summary,
+        button: "Meldungen öffnen",
+        modal: "check",
+        checkId: serviceCheck.id
+      });
+    }
+    if (reachabilityCheck && reachabilityCheck.status === "warning") {
+      actions.push({
+        id: "reachability",
+        priority: 85,
+        eyebrow: "Geräte",
+        title: "Erreichbarkeit einordnen",
+        detail: reachabilityCheck.summary,
+        button: "Betroffene Geräte",
+        modal: "check",
+        checkId: reachabilityCheck.id
+      });
+    }
+    if (dutyCheck && dutyCheck.status !== "ok" && dutyCheck.status !== "unavailable") {
+      actions.push({
+        id: "duty",
+        priority: 75,
+        eyebrow: "Funk",
+        title: "Duty Cycle beobachten",
+        detail: `${dutyCheck.summary} Der Sniffer zeigt mögliche Hauptverursacher.`,
+        button: "Funklast aufteilen",
+        modal: "duty",
+        checkId: dutyCheck.id
+      });
+    }
+    if (signalCheck && signalCheck.status !== "ok" && signalCheck.status !== "unavailable") {
+      actions.push({
+        id: "signal",
+        priority: 65,
+        eyebrow: "Messqualität",
+        title: "Signalwerte absichern",
+        detail: signalCheck.summary,
+        button: "Geräteliste ansehen",
+        modal: "signal",
+        checkId: signalCheck.id
+      });
+    }
+    if (logCheck?.status === "unavailable") {
+      actions.push({
+        id: "collector",
+        priority: 55,
+        eyebrow: "Daten ergänzen",
+        title: "Log-Collector einrichten",
+        detail: "Logs fehlen noch. Das verhindert die belegbare Erkennung von Scriptfehlern, Dienstneustarts und auffälligen externen Zugriffen.",
+        button: "Collector einrichten",
+        modal: "collector",
+        checkId: logCheck.id
+      });
+    }
+
+    return actions.sort((left, right) => right.priority - left.priority).slice(0, 5);
+  }, [analysis]);
+
+  const actionModalCheck = useMemo(
+    () => analysis?.checks.find((check) => check.id === actionModalCheckId),
+    [analysis, actionModalCheckId]
+  );
+
+  function openActionModal(modal: Exclude<ActionModal, null>, checkId?: string) {
+    setActionModalCheckId(checkId ?? null);
+    setActionModal(modal);
+  }
+
+  function closeActionModal() {
+    setActionModal(null);
+    setActionModalCheckId(null);
+  }
+
   useEffect(() => {
     if (!analysis) return;
 
@@ -1802,6 +1928,11 @@ function App() {
       window.removeEventListener("focus", refreshLogs);
     };
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!analysis || currentPage !== "analysis" || !form.snifferPort.trim()) return;
+    void loadSnifferSnapshot(false, false);
+  }, [analysis?.generatedAt, currentPage, form.snifferPort]);
 
   useEffect(() => {
     if (currentPage !== "diagnostics") return;
@@ -2900,8 +3031,8 @@ function App() {
                 <p>Führe den Shell-Collector auf der CCU/RaspberryMatic aus, damit Logs hier 1:1 angezeigt werden.</p>
               </div>
               <div className="script-copy-row">
-                <code>{collectorCommand}</code>
-                <button type="button" onClick={() => void copyCollectorCommand()}>
+                <code>{recommendedCollectorCommand}</code>
+                <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>
                   Kopieren
                 </button>
               </div>
@@ -3248,6 +3379,34 @@ function App() {
                 </div>
               )}
             </div>
+          )}
+
+          {guidedActions.length > 0 && (
+            <section className="guided-actions" aria-labelledby="guided-actions-title">
+              <div className="guided-actions__header">
+                <div>
+                  <p className="eyebrow">Nächste Schritte</p>
+                  <h3 id="guided-actions-title">Das solltest du jetzt tun</h3>
+                  <p>Nach Priorität sortiert. Öffne nur den Schritt, den du gerade bearbeiten möchtest.</p>
+                </div>
+                <span>{guidedActions.length} Schritte</span>
+              </div>
+              <div className="guided-actions__grid">
+                {guidedActions.map((action, index) => (
+                  <article className="guided-action-card" key={action.id}>
+                    <div className="guided-action-card__number">{index + 1}</div>
+                    <div>
+                      <small>{action.eyebrow}</small>
+                      <h4>{action.title}</h4>
+                      <p>{action.detail}</p>
+                    </div>
+                    <button type="button" onClick={() => openActionModal(action.modal, action.checkId)}>
+                      {action.button}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
           )}
 
           <div className="check-layout">
@@ -3695,6 +3854,148 @@ function App() {
               <button type="button" className="primary-button" onClick={() => void runAppUpdate()} disabled={isUpdateRunning}>
                 {isUpdateRunning ? "Update läuft …" : "OK, Update starten"}
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {actionModal && (
+        <div className="confirm-backdrop" role="presentation" onMouseDown={closeActionModal}>
+          <section className="confirm-dialog action-modal" role="dialog" aria-modal="true" aria-labelledby="action-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            {actionModal === "collector" && (
+              <>
+                <p className="eyebrow">Logdaten ergänzen</p>
+                <h2 id="action-modal-title">Collector auf der CCU einrichten</h2>
+                <p>
+                  Das Script läuft auf der CCU/RaspberryMatic und sendet die Logdaten an diesen Analyzer.
+                  Dein PC oder Smartphone spielt dabei keine Rolle.
+                </p>
+                <ol className="action-modal-steps">
+                  <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
+                  <li>Den Befehl kopieren und im SSH-Fenster einfügen.</li>
+                  <li>Nach der Erfolgsmeldung kurz warten; Logs werden automatisch neu geladen.</li>
+                </ol>
+                <div className="modal-command">
+                  <code>{recommendedCollectorCommand}</code>
+                  <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>Kopieren</button>
+                </div>
+                <p className="modal-note">Empfohlen: regelmäßige Übertragung minütlich. Das belastet die CCU nur mit einem kleinen lokalen Snapshot.</p>
+              </>
+            )}
+
+            {actionModal === "duty" && (
+              <>
+                <p className="eyebrow">Funklast</p>
+                <h2 id="action-modal-title">Welche Geräte senden am meisten?</h2>
+                <p>
+                  Der CCU-Wert und die Sniffer-Messung sind getrennte Quellen: Das Diagramm zeigt den Anteil an der vom Sniffer
+                  gemessenen Funkzeit der letzten 60 Minuten. Es erklärt mögliche Verursacher, teilt den CCU-Duty-Cycle aber nicht mathematisch exakt auf.
+                </p>
+                {snifferSnapshot?.devices.length ? (() => {
+                  const colors = ["#3478f6", "#20a783", "#f59e0b", "#8b5cf6", "#ec4899", "#64748b"];
+                  const devices = snifferSnapshot.devices.slice(0, 6);
+                  const measuredTotal = devices.reduce((sum, device) => sum + device.dutyShare, 0) || 1;
+                  let currentPosition = 0;
+                  const gradient = devices.map((device, index) => {
+                    const start = currentPosition;
+                    currentPosition += (device.dutyShare / measuredTotal) * 100;
+                    return `${colors[index]} ${start}% ${Math.min(100, currentPosition)}%`;
+                  }).join(", ");
+                  return (
+                    <div className="action-duty-layout">
+                      <div className="action-duty-donut" style={{ background: `conic-gradient(${gradient})` }}>
+                        <div><strong>{snifferSnapshot.summary.telegrams}</strong><span>Telegramme</span><small>60 Minuten</small></div>
+                      </div>
+                      <div className="action-duty-list">
+                        {devices.map((device, index) => (
+                          <div key={device.address}>
+                            <i style={{ background: colors[index] }} />
+                            <span><strong>{device.name}</strong><small>{device.telegrams} Telegramme · {device.dutyCycle}% eigener DC</small></span>
+                            <b>{device.dutyShare}%</b>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <div className="modal-empty">
+                    <strong>Noch keine Sniffer-Aufteilung vorhanden</strong>
+                    <span>Sniffer mindestens einige Minuten verbunden lassen und anschließend erneut analysieren.</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {actionModal === "signal" && (
+              <>
+                <p className="eyebrow">Signalqualität</p>
+                <h2 id="action-modal-title">Gemessene Geräte und Messqualität</h2>
+                <p>
+                  Belastbar ab mindestens 3 Telegrammen. Werte mit weniger Telegrammen bleiben vorläufig und lösen keine harte Fehleraussage aus.
+                </p>
+                <div className="action-device-list">
+                  {(snifferSnapshot?.devices ?? [])
+                    .filter((device) => device.avgRssi !== undefined)
+                    .slice()
+                    .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0))
+                    .map((device) => (
+                      <article key={device.address}>
+                        <div>
+                          <strong>{device.name}</strong>
+                          <span>{device.type ?? device.serial ?? device.address}</span>
+                        </div>
+                        <b className={`rssi-value ${rssiClass(device.avgRssi)}`}>{device.avgRssi} dBm</b>
+                        <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
+                          {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
+                        </small>
+                      </article>
+                    ))}
+                  {!snifferSnapshot?.devices.some((device) => device.avgRssi !== undefined) && (
+                    <div className="modal-empty">
+                      <strong>Noch keine RSSI-Gerätedaten</strong>
+                      <span>Sniffer weiterlaufen lassen und einige Homematic-Geräte auslösen.</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {actionModal === "check" && actionModalCheck && (
+              <>
+                <p className="eyebrow">{actionModalCheck.category}</p>
+                <h2 id="action-modal-title">{actionModalCheck.title}</h2>
+                <p>{actionModalCheck.summary}</p>
+                <div className={`recommendation-banner status-${actionModalCheck.status}`}>
+                  <div className="banner-icon">{getStatusIcon(actionModalCheck.status, "banner-svg")}</div>
+                  <div className="banner-content">
+                    <strong>Empfehlung</strong>
+                    <p>{actionModalCheck.recommendation}</p>
+                  </div>
+                </div>
+                <div className="action-evidence-list">
+                  {actionModalCheck.evidence.map((item, index) => (
+                    <article key={`${item.source}-${index}`}>
+                      <strong>{item.source}</strong>
+                      <span>{item.detail}</span>
+                    </article>
+                  ))}
+                  {actionModalCheck.evidence.length === 0 && <p className="muted">Noch keine einzelnen Belege vorhanden.</p>}
+                </div>
+              </>
+            )}
+
+            <div className="confirm-dialog__actions">
+              {actionModal === "duty" && (
+                <button type="button" className="ghost-button" onClick={() => { closeActionModal(); setCurrentPage("dc"); }}>
+                  DC-Analyzer öffnen
+                </button>
+              )}
+              {actionModal === "collector" && (
+                <button type="button" className="ghost-button" onClick={() => { closeActionModal(); setCurrentPage("logs"); }}>
+                  Logseite öffnen
+                </button>
+              )}
+              <button type="button" className="primary-button" onClick={closeActionModal}>Schließen</button>
             </div>
           </section>
         </div>
