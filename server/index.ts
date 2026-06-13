@@ -140,10 +140,12 @@ const collectorSchema = z.object({
   collectedAt: z.coerce.string().max(120).optional(),
   system: z.record(z.unknown()).optional(),
   logs: z.array(z.coerce.string().max(2000)).max(500).optional(),
+  logsBase64: z.array(z.string().max(8000)).max(500).optional(),
   hmipLogs: z.array(z.coerce.string().max(4000)).max(250).optional(),
   hmipLogsBase64: z.array(z.string().max(8000)).max(250).optional(),
   network: z.object({
-    connections: z.array(z.coerce.string().max(2000)).max(250).optional()
+    connections: z.array(z.coerce.string().max(2000)).max(250).optional(),
+    connectionsBase64: z.array(z.string().max(8000)).max(250).optional()
   }).optional(),
   backups: z.record(z.unknown()).optional()
 });
@@ -1158,12 +1160,27 @@ app.post("/api/collector", async (request, response) => {
     return;
   }
 
+  const decodedLogs = decodeBase64Lines(parsed.data.logsBase64);
   const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
-  const { hmipLogsBase64: _hmipLogsBase64, ...collectorData } = parsed.data;
+  const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
+  const {
+    logsBase64: _logsBase64,
+    hmipLogsBase64: _hmipLogsBase64,
+    network: encodedNetwork,
+    ...collectorData
+  } = parsed.data;
+  const { connectionsBase64: _connectionsBase64, ...network } = encodedNetwork ?? {};
 
   latestCollector = {
     ...collectorData,
+    logs: parsed.data.logs ?? decodedLogs,
     hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
+    network: encodedNetwork
+      ? {
+          ...network,
+          connections: encodedNetwork.connections ?? decodedConnections
+        }
+      : undefined,
     collectedAt: parsed.data.collectedAt ?? new Date().toISOString()
   };
   await persistCollector(latestCollector);

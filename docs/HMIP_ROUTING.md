@@ -39,7 +39,7 @@ Falls die aktuelle Datei noch nicht vorhanden ist, wird zusätzlich geprüft:
 /var/log/hmserver.log.1
 ```
 
-Die HmIP-Logzeilen werden für den Transport Base64-kodiert. Dadurch können Sonderzeichen aus dem Log das JSON nicht beschädigen.
+Log- und Verbindungszeilen werden für den Transport Base64-kodiert. Dadurch können Sonder- und Steuerzeichen aus den Logs das JSON nicht beschädigen.
 
 ## 5. Empfang testen
 

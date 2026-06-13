@@ -13,6 +13,7 @@ COLLECTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date)"
 TMP_DIR="${TMPDIR:-/tmp}"
 CRON_MARKER="Homematic Analyzer system snapshot"
 HMIP_LOG_SOURCE="${HMIP_LOG_SOURCE:-/var/log/hmserver.log}"
+SYSTEM_LOG_SOURCE="${SYSTEM_LOG_SOURCE:-}"
 
 make_tmp_file() {
   mktemp "$TMP_DIR/homematic-analyzer-$1.XXXXXX" 2>/dev/null || echo "$TMP_DIR/homematic-analyzer-$1.$$.tmp"
@@ -207,7 +208,9 @@ fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
 
-if [ -r /var/log/messages ]; then
+if [ -n "$SYSTEM_LOG_SOURCE" ] && [ -r "$SYSTEM_LOG_SOURCE" ]; then
+  tail -n 500 "$SYSTEM_LOG_SOURCE" > "$LOG_LIST_FILE" 2>/dev/null || true
+elif [ -r /var/log/messages ]; then
   tail -n 500 /var/log/messages > "$LOG_LIST_FILE" 2>/dev/null || true
 elif [ -r /var/log/syslog ]; then
   tail -n 500 /var/log/syslog > "$LOG_LIST_FILE" 2>/dev/null || true
@@ -277,16 +280,18 @@ fi
 $(while IFS= read -r line; do [ -f "$line" ] && printf '%s\n' "$line"; done < "$BACKUP_LIST_FILE" | xargs ls -1t 2>/dev/null | head -n 200 || true)
 EOF_BACKUPS
   printf '\n  ] },\n'
-  printf '  "logs": [\n'
+  printf '  "logsBase64": [\n'
   FIRST=1
   while IFS= read -r line; do
     [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0
     else
       printf ',\n'
     fi
-    printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
+    printf '    "%s"' "$encoded_line"
   done < "$LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "hmipLogsBase64": [\n'
@@ -304,16 +309,18 @@ EOF_BACKUPS
   done < "$HMIP_LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
-  printf '    "connections": [\n'
+  printf '    "connectionsBase64": [\n'
   FIRST=1
   while IFS= read -r line; do
     [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0
     else
       printf ',\n'
     fi
-    printf '      "%s"' "$(printf '%s' "$line" | json_escape)"
+    printf '      "%s"' "$encoded_line"
   done < "$CONNECTION_LIST_FILE"
   printf '\n    ]\n'
   printf '  }\n'

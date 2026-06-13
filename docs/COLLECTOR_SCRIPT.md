@@ -18,7 +18,7 @@ Für tägliche CCU-Stammdaten gibt es ein eigenes WebUI/ReGa-Script: `docs/CCU_M
 - Bei aktivierter HmIP-Routing-Diagnose maximal 250 Zeilen aus `/var/log/hmserver.log`
 - Aktive Verbindungen zu typischen CCU-Diensten wie WebUI, XML-API, BidCos-RPC und HmIP-RPC
 
-Die HmIPServer-Zeilen werden für den Transport Base64-kodiert. Dadurch können Sonderzeichen aus dem Log das JSON nicht beschädigen.
+Log- und Verbindungszeilen werden für den Transport Base64-kodiert. Dadurch können Anführungszeichen, Backslashes, Steuerzeichen oder Umlaute das JSON nicht beschädigen.
 
 ## Was wird nicht gesammelt?
 
