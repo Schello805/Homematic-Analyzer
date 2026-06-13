@@ -2966,13 +2966,15 @@ pre {
 }
 
 .metric-card-warning {
-  border-color: #f79009;
-  background: #fffbeb;
+  border: 2px solid #f79009;
+  background: linear-gradient(135deg, #fffdf5, #fffae8);
+  box-shadow: 0 10px 24px rgba(247, 144, 9, 0.12);
 }
 
 .metric-card-danger {
-  border-color: #d92d20;
-  background: #fff1f0;
+  border: 2px solid #d92d20;
+  background: linear-gradient(135deg, #fff7f6, #ffedeb);
+  box-shadow: 0 10px 24px rgba(217, 45, 32, 0.14);
 }
 
 .metric-card__top {
@@ -2988,6 +2990,33 @@ pre {
   font-weight: 720;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.metric-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.metric-status {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.66rem;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.metric-status-warning {
+  color: #8a4b00;
+  background: #ffecb5;
+}
+
+.metric-status-danger {
+  color: #9f201a;
+  background: #ffd5d1;
 }
 
 .metric-help {

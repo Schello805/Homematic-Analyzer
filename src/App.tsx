@@ -3874,6 +3874,10 @@ function App() {
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.disk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
+                    })(),
+                    statusLabel: (() => {
+                      const usage = parseDiskUsagePercent(analysis.systemDashboard.disk);
+                      return usage === undefined || usage < 80 ? "" : usage >= 95 ? "Speicher kritisch" : "Speicher wird knapp";
                     })()
                   },
                   {
@@ -3884,6 +3888,10 @@ function App() {
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.backupDisk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
+                    })(),
+                    statusLabel: (() => {
+                      const usage = parseDiskUsagePercent(analysis.systemDashboard.backupDisk);
+                      return usage === undefined || usage < 80 ? "" : usage >= 95 ? "Speicher kritisch" : "Speicher wird knapp";
                     })()
                   },
                   {
@@ -3926,9 +3934,16 @@ function App() {
                   >
                     <div className="metric-card__top">
                       <span>{metric.label}</span>
-                      <button type="button" className={metricNeedsHelp(metric.value) ? "metric-help needs-attention" : "metric-help"} aria-label={`Hilfe zu ${metric.label}`}>
-                        ?
-                      </button>
+                      <div className="metric-card__actions">
+                        {metric.statusLabel && (
+                          <span className={`metric-status metric-status-${metric.usageStatus}`}>
+                            {metric.statusLabel}
+                          </span>
+                        )}
+                        <button type="button" className={metricNeedsHelp(metric.value) ? "metric-help needs-attention" : "metric-help"} aria-label={`Hilfe zu ${metric.label}`}>
+                          ?
+                        </button>
+                      </div>
                       <div className="metric-tooltip" role="tooltip">
                         {metric.help}
                       </div>
