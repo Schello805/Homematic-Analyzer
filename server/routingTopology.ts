@@ -2,7 +2,8 @@ import type {
   CcuMasterdataPayload,
   RoutingTopology,
   RoutingTopologyEdge,
-  RoutingTopologyNode
+  RoutingTopologyNode,
+  SnifferDeviceSummary
 } from "./types.js";
 
 type InventoryDevice = NonNullable<CcuMasterdataPayload["devices"]>[number];
@@ -10,6 +11,7 @@ type InventoryDevice = NonNullable<CcuMasterdataPayload["devices"]>[number];
 const routerCandidatePattern = /^HmIP-(HAP|WLAN-HAP|DRAP|PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|MIOB)/i;
 const hmipPattern = /^HmIP-/i;
 const settingKeys = ["ROUTER_MODULE_ENABLED", "MULTICAST_ROUTER_MODULE_ENABLED", "ENABLE_ROUTING"] as const;
+const routingConfigPattern = /^ROUTING_CONFIG\|([^|]+)\|([^|]*)\|router=([^|]+)\|routing=([^|]+)\|multicast=([^|]+)$/i;
 
 function normalizeIdentifier(value?: string | number): string {
   return String(value ?? "").trim().toUpperCase();
@@ -34,6 +36,13 @@ function nodeId(device: InventoryDevice, index: number): string {
 
 function booleanValue(value: string): boolean {
   return /^(1|true|on|yes)$/i.test(value.trim());
+}
+
+function configValue(value: string): boolean | undefined {
+  const normalized = value.trim();
+  if (/^(1|true|on|yes)$/i.test(normalized)) return true;
+  if (/^(0|false|off|no)$/i.test(normalized)) return false;
+  return undefined;
 }
 
 function findKnownIdentifier(line: string, identifiers: Map<string, string>, excluded?: string): string | undefined {
@@ -69,7 +78,8 @@ export function buildRoutingTopology(
   masterdata?: CcuMasterdataPayload,
   hmipLogs: string[] = [],
   sourceHost?: string,
-  collectedAt?: string
+  collectedAt?: string,
+  snifferDevices: SnifferDeviceSummary[] = []
 ): RoutingTopology {
   const devices = (masterdata?.devices ?? []).filter(isHmIpDevice);
   const nodes: RoutingTopologyNode[] = devices.map((device, index) => ({
@@ -102,10 +112,49 @@ export function buildRoutingTopology(
     deviceIdentifiers(device).forEach((identifier) => identifiers.set(identifier, id));
   });
 
+  const snifferByIdentifier = new Map<string, SnifferDeviceSummary>();
+  snifferDevices.forEach((device) => {
+    [device.address, device.serial].map(normalizeIdentifier).filter(Boolean)
+      .forEach((identifier) => snifferByIdentifier.set(identifier, device));
+  });
+  devices.forEach((device, index) => {
+    const snifferDevice = deviceIdentifiers(device)
+      .map((identifier) => snifferByIdentifier.get(identifier))
+      .find(Boolean);
+    if (!snifferDevice) return;
+    nodes[index].avgRssi = snifferDevice.avgRssi;
+    nodes[index].rssiTelegrams = snifferDevice.telegrams;
+  });
+
   const edges: RoutingTopologyEdge[] = [];
   const seenEdges = new Set<string>();
 
   hmipLogs.forEach((line) => {
+    const configMatch = line.trim().match(routingConfigPattern);
+    if (configMatch) {
+      const [, rawIdentifier, , routerValue, routingValue, multicastValue] = configMatch;
+      const identifier = findKnownIdentifier(rawIdentifier, identifiers);
+      const node = identifier ? nodeById.get(identifiers.get(identifier) ?? "") : undefined;
+      if (node) {
+        const routerEnabled = configValue(routerValue);
+        const routingEnabled = configValue(routingValue);
+        const multicastRouting = configValue(multicastValue);
+        if (routerEnabled !== undefined) {
+          node.routerEnabled = routerEnabled;
+          node.evidence.push(`Gerät dient als Router: ${routerEnabled ? "aktiv" : "inaktiv"} (CCU-Geräteparameter)`);
+        }
+        if (routingEnabled !== undefined) {
+          node.routingEnabled = routingEnabled;
+          node.evidence.push(`Routing aktiv: ${routingEnabled ? "aktiv" : "inaktiv"} (CCU-Geräteparameter)`);
+        }
+        if (multicastRouting !== undefined) {
+          node.multicastRouting = multicastRouting;
+          node.evidence.push(`Multicast-Routing: ${multicastRouting ? "aktiv" : "inaktiv"} (CCU-Geräteparameter)`);
+        }
+      }
+      return;
+    }
+
     const knownIdentifier = findKnownIdentifier(line, identifiers);
     if (knownIdentifier) {
       const node = nodeById.get(identifiers.get(knownIdentifier) ?? "");
@@ -173,8 +222,11 @@ export function buildRoutingTopology(
         ? `${devices.length} HmIP-Geräte aus den CCU-Stammdaten übernommen.`
         : "Keine HmIP-Geräte in den CCU-Stammdaten gefunden.",
       hmipLogs.length > 0
-        ? `${hmipLogs.length} HmIPServer-Logzeilen nach Router-Schaltern und ausdrücklichen Routingpfaden durchsucht.`
+        ? `${hmipLogs.length} HmIP-Routingbelege und Geräteparameter ausgewertet.`
         : "Keine aktuellen HmIPServer-Logzeilen vorhanden.",
+      hmipLogs.some((line) => routingConfigPattern.test(line.trim()))
+        ? "Router-, Routing- und Multicast-Schalter wurden direkt aus den HmIP-RF-Geräteparametern gelesen."
+        : "Der aktuelle Collector enthält noch keine HmIP-RF-Geräteparameter. Collector erneut auf der CCU ausführen.",
       edges.length > 0
         ? `${edges.length} Routingpfade sind durch ausdrückliche Logzeilen belegt.`
         : "Noch kein aktiver Routingpfad ist ausdrücklich im Log belegt. Gestrichelte Verbindungen sind daher nur unbekannte Zuordnungen."

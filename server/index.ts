@@ -146,6 +146,8 @@ const collectorSchema = z.object({
   hmipLogsBase64: z.array(z.string().max(8000)).max(250).optional(),
   hmipRoutingLogs: z.array(z.coerce.string().max(4000)).max(500).optional(),
   hmipRoutingLogsBase64: z.array(z.string().max(8000)).max(500).optional(),
+  hmipRoutingConfig: z.array(z.coerce.string().max(1000)).max(500).optional(),
+  hmipRoutingConfigBase64: z.array(z.string().max(4000)).max(500).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional(),
     connectionsBase64: z.array(z.string().max(8000)).max(250).optional()
@@ -1166,11 +1168,13 @@ app.post("/api/collector", async (request, response) => {
   const decodedLogs = decodeBase64Lines(parsed.data.logsBase64);
   const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
   const decodedHmipRoutingLogs = decodeBase64Lines(parsed.data.hmipRoutingLogsBase64);
+  const decodedHmipRoutingConfig = decodeBase64Lines(parsed.data.hmipRoutingConfigBase64);
   const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
   const {
     logsBase64: _logsBase64,
     hmipLogsBase64: _hmipLogsBase64,
     hmipRoutingLogsBase64: _hmipRoutingLogsBase64,
+    hmipRoutingConfigBase64: _hmipRoutingConfigBase64,
     network: encodedNetwork,
     ...collectorData
   } = parsed.data;
@@ -1181,6 +1185,7 @@ app.post("/api/collector", async (request, response) => {
     logs: parsed.data.logs ?? decodedLogs,
     hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
     hmipRoutingLogs: parsed.data.hmipRoutingLogs ?? decodedHmipRoutingLogs,
+    hmipRoutingConfig: parsed.data.hmipRoutingConfig ?? decodedHmipRoutingConfig,
     network: encodedNetwork
       ? {
           ...network,
@@ -1231,13 +1236,18 @@ app.get("/api/routing/status", async (_request, response) => {
 app.get("/api/routing/topology", (_request, response) => {
   const age = dataAgeStatus(latestCollector?.collectedAt, 3);
   const currentLogs = age.state === "fresh"
-    ? [...(latestCollector?.hmipRoutingLogs ?? []), ...(latestCollector?.hmipLogs ?? [])]
+    ? [
+        ...(latestCollector?.hmipRoutingConfig ?? []),
+        ...(latestCollector?.hmipRoutingLogs ?? []),
+        ...(latestCollector?.hmipLogs ?? [])
+      ]
     : [];
   response.json(buildRoutingTopology(
     latestCcuMasterdata,
     currentLogs,
     latestCollector?.host,
-    latestCollector?.collectedAt
+    latestCollector?.collectedAt,
+    latestSnifferSnapshot?.devices ?? []
   ));
 });
 

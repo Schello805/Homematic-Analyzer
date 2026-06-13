@@ -27,6 +27,40 @@ test("erkennt belegte Router-Schalter aus HmIPServer-Zeilen", () => {
   assert.equal(topology.metrics.confirmedRouters, 1);
 });
 
+test("erkennt Router-Schalter aus der lokalen HmIP-RF-Parameterabfrage", () => {
+  const topology = buildRoutingTopology(masterdata, [
+    "ROUTING_CONFIG|0001D3C99C4EAA|HmIP-PSM|router=true|routing=true|multicast=false",
+    "ROUTING_CONFIG|000A1B2C3D4E55|HmIP-SMI|router=-|routing=true|multicast=-"
+  ]);
+
+  const router = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
+  const motion = topology.nodes.find((node) => node.serial === "000A1B2C3D4E55");
+  assert.equal(router?.role, "router");
+  assert.equal(router?.routerEnabled, true);
+  assert.equal(router?.multicastRouting, false);
+  assert.equal(motion?.routerEnabled, false);
+  assert.equal(motion?.routingEnabled, true);
+  assert.match(router?.evidence[0] ?? "", /CCU-Geräteparameter/);
+});
+
+test("ordnet Sniffer-RSSI den HmIP-Geräten zu", () => {
+  const topology = buildRoutingTopology(masterdata, [], undefined, undefined, [{
+    address: "ABC123",
+    serial: "0001D3C99C4EAA",
+    name: "Steckdose Trockner",
+    telegrams: 8,
+    dutyCycle: 0.1,
+    dutyShare: 20,
+    sendTimeMs: 40,
+    avgRssi: -72,
+    lastSeen: "2026-06-13T12:00:00.000Z"
+  }]);
+
+  const device = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
+  assert.equal(device?.avgRssi, -72);
+  assert.equal(device?.rssiTelegrams, 8);
+});
+
 test("übernimmt nur ausdrücklich geloggte Routingpfade", () => {
   const topology = buildRoutingTopology(masterdata, [
     "routing device 000A1B2C3D4E55 via router 0001D3C99C4EAA successful"

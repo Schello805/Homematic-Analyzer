@@ -305,9 +305,14 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const hmipRouterCandidates = hmipDevices.filter((device) => isHmIpRouterCandidateType(device.type));
   const routingTopology = buildRoutingTopology(
     masterdata,
-    [...(currentCollector?.hmipRoutingLogs ?? []), ...(currentCollector?.hmipLogs ?? [])],
+    [
+      ...(currentCollector?.hmipRoutingConfig ?? []),
+      ...(currentCollector?.hmipRoutingLogs ?? []),
+      ...(currentCollector?.hmipLogs ?? [])
+    ],
     currentCollector?.host,
-    currentCollector?.collectedAt
+    currentCollector?.collectedAt,
+    sniffer?.devices ?? []
   );
   const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
   const reliableSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams >= 3);

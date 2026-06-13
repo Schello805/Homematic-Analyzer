@@ -166,9 +166,9 @@ Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nac
 
 ## HmIP-Routing-Analyse
 
-Die HmIP-Routing-Analyse ist standardmäßig ausgeschaltet. Wird sie unter **Einstellungen → HmIP-Routing-Analyse** aktiviert, führt die App durch Log-Einstellung, Neustart und Collector-Test. Der letzte Haken wird nur automatisch gesetzt, wenn aktuelle Daten aus `/var/log/hmserver.log` beim Analyzer ankommen.
+Die HmIP-Routing-Analyse ist standardmäßig ausgeschaltet. Wird sie unter **Einstellungen → HmIP-Routing-Analyse** aktiviert, führt die App durch Log-Einstellung, Neustart und Collector-Test. Der Collector liest zusätzlich die HmIP-RF-Geräteparameter `ROUTER_MODULE_ENABLED`, `ENABLE_ROUTING` und `MULTICAST_ROUTER_MODULE_ENABLED` lokal und ausschließlich lesend aus.
 
-Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → HmIP Routing**.
+Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → HmIP Routing**. Orange Punkte sind nur technisch geeignete, meist netzversorgte Kandidaten. Erst grüne Punkte sind durch CCU-Geräteparameter oder einen Routingbeleg als Router bestätigt.
 
 Ausführliche bebilderte Anleitung: [`docs/HMIP_ROUTING.md`](docs/HMIP_ROUTING.md)
 
@@ -189,7 +189,7 @@ Bereits umgesetzt:
 - Telegram- und E-Mail-Benachrichtigungen inklusive auswählbarer Events.
 - KI-Logauswertung mit OpenAI oder Google Gemini.
 - Firmware-Hinweise innerhalb der eigenen Installation, wenn gleiche Gerätetypen unterschiedliche Firmwarestände melden.
-- HmIP-Routing-Hinweis auf Basis vorhandener Gerätedaten und möglicher Router-/Repeater-Kandidaten.
+- Grafische HmIP-Routing-Karte mit Kandidaten, direkt gelesenen Router-/Routing-/Multicast-Schaltern, belegten Pfaden und verständlicher RSSI-Ampel.
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
 - DC-Analyzer mit AskSin-kompatibler Telegramm-Auswertung, Duty-Cycle-Anteil pro Gerät und optionaler Namensauflösung über `AskSinAnalyzerDevList`.
@@ -199,7 +199,7 @@ Bereits umgesetzt:
 
 Noch offen bzw. bewusst nur vorbereitet:
 
-- Echte HmIP-Routing-Topologie aus HmIPServer-Daten oder belastbaren Logquellen ableiten.
+- Weitere reale HmIP-Routingpfade aus unterschiedlichen HmIPServer-Versionen und Logformaten ableiten.
 - Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
 - Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
 - Ausführlichere Langzeitdiagramme und Filter für die bereits gespeicherten Sniffer-Messpunkte.

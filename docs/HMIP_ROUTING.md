@@ -41,6 +41,14 @@ Falls die aktuelle Datei noch nicht vorhanden ist, wird zusätzlich geprüft:
 
 Log- und Verbindungszeilen werden für den Transport Base64-kodiert. Dadurch können Sonder- und Steuerzeichen aus den Logs das JSON nicht beschädigen.
 
+Zusätzlich fragt der Collector lokal über die HmIP-RF-Schnittstelle die `MASTER`-Parameter des Wartungskanals ab:
+
+- `ROUTER_MODULE_ENABLED`: Gerät dient tatsächlich als Router
+- `ENABLE_ROUTING`: Gerät darf Routing verwenden
+- `MULTICAST_ROUTER_MODULE_ENABLED`: Gerät dient als Multicast-Router
+
+Diese Abfrage ist ausschließlich lesend. Es werden keine Geräteparameter verändert. Nach einem Analyzer-Update muss der Collector einmal erneut ausgeführt werden, damit die erweiterte Abfrage auf der CCU aktiv ist.
+
 ## 5. Empfang testen
 
 Im Analyzer **Empfang jetzt testen** anklicken. Der letzte Haken wird automatisch gesetzt, wenn:
@@ -54,6 +62,13 @@ Danach:
 1. **Analyse** öffnen.
 2. **Neu analysieren** anklicken.
 3. Den Prüfpunkt **HmIP Routing** auswählen.
+
+In der Karte gilt:
+
+- **Grün**: als Router belegt
+- **Orange**: technisch möglicher, meist netzversorgter Router; noch nicht als aktiv belegt
+- **Grau**: normales HmIP-Gerät
+- **Grüner/gelber/roter Ring**: Signalbewertung am Standort des Sniffers
 
 ## Logging anschließend reduzieren
 

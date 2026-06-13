@@ -4314,6 +4314,24 @@ pre {
   transition: transform .16s ease, stroke-width .16s ease;
 }
 
+.routing-node .routing-signal-ring {
+  fill: none;
+  stroke-width: 4;
+  pointer-events: none;
+}
+
+.routing-node .routing-signal-ring.good {
+  stroke: #20a878;
+}
+
+.routing-node .routing-signal-ring.medium {
+  stroke: #f59e0b;
+}
+
+.routing-node .routing-signal-ring.weak {
+  stroke: #e33a32;
+}
+
 .routing-node:hover circle,
 .routing-node:focus circle,
 .routing-node.is-selected circle {
@@ -4389,6 +4407,24 @@ pre {
   background: #f59e0b;
 }
 
+.legend-signal {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.legend-signal.good {
+  background: #20a878;
+}
+
+.legend-signal.medium {
+  background: #f59e0b;
+}
+
+.legend-signal.weak {
+  background: #e33a32;
+}
+
 .legend-line {
   width: 20px;
   border-top: 2px solid #3478f6;
@@ -4447,6 +4483,49 @@ pre {
   font-weight: 700;
 }
 
+.routing-node-detail dd small {
+  display: block;
+  margin-top: 4px;
+  color: #6a7890;
+  font-weight: 500;
+}
+
+.rssi-assessment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #526077;
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
+.rssi-assessment i {
+  font-style: normal;
+  line-height: 1;
+}
+
+.rssi-assessment span {
+  font-weight: 600;
+}
+
+.rssi-assessment.good {
+  background: #e8f8f1;
+  color: #08764f;
+}
+
+.rssi-assessment.medium {
+  background: #fff4d8;
+  color: #8a5a00;
+}
+
+.rssi-assessment.weak {
+  background: #ffe8e6;
+  color: #a9231d;
+}
 .routing-node-detail ul {
   padding-left: 18px;
   grid-column: 2;

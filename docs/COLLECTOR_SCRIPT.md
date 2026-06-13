@@ -16,6 +16,7 @@ Für tägliche CCU-Stammdaten gibt es ein eigenes WebUI/ReGa-Script: `docs/CCU_M
 - Anzahl gefundener Backups
 - Relevante Logzeilen zu Fehlern, Warnungen, Funk, Batterien und Homematic-Diensten
 - Bei aktivierter HmIP-Routing-Diagnose maximal 250 Zeilen aus `/var/log/hmserver.log`
+- HmIP-RF-Router-, Routing- und Multicast-Schalter aus den lokalen `MASTER`-Geräteparametern (nur lesend)
 - Aktive Verbindungen zu typischen CCU-Diensten wie WebUI, XML-API, BidCos-RPC und HmIP-RPC
 
 Log- und Verbindungszeilen werden für den Transport Base64-kodiert. Dadurch können Anführungszeichen, Backslashes, Steuerzeichen oder Umlaute das JSON nicht beschädigen.

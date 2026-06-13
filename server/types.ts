@@ -129,6 +129,7 @@ export type CollectorPayload = {
   logs?: string[];
   hmipLogs?: string[];
   hmipRoutingLogs?: string[];
+  hmipRoutingConfig?: string[];
   network?: {
     connections?: string[];
   };
@@ -145,6 +146,8 @@ export type RoutingTopologyNode = {
   routerEnabled: boolean;
   routingEnabled: boolean;
   multicastRouting: boolean;
+  avgRssi?: number;
+  rssiTelegrams?: number;
   evidence: string[];
 };
 

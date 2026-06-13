@@ -316,6 +316,8 @@ type RoutingTopologyNode = {
   routerEnabled: boolean;
   routingEnabled: boolean;
   multicastRouting: boolean;
+  avgRssi?: number;
+  rssiTelegrams?: number;
   evidence: string[];
 };
 
@@ -728,6 +730,24 @@ function rssiClass(value?: number) {
   return "weak";
 }
 
+function rssiAssessment(value?: number) {
+  if (value === undefined) return { label: "Nicht gemessen", symbol: "○", className: "unknown" };
+  if (value >= -65) return { label: "Gut", symbol: "●", className: "good" };
+  if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium" };
+  return { label: "Schwach", symbol: "●", className: "weak" };
+}
+
+function RssiAssessment({ value }: { value?: number }) {
+  const assessment = rssiAssessment(value);
+  return (
+    <span className={`rssi-assessment ${assessment.className}`}>
+      <i aria-hidden="true">{assessment.symbol}</i>
+      <strong>{assessment.label}</strong>
+      {value !== undefined && <span>{value} dBm</span>}
+    </span>
+  );
+}
+
 function flagClass(flag: string) {
   if (flag === "BURST") return "danger";
   if (flag === "BIDI") return "warn";
@@ -909,6 +929,7 @@ function RoutingTopologyView({
     if (node.role === "candidate") return "is-candidate";
     return "is-device";
   };
+  const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
 
   return (
     <section className="routing-topology-card">
@@ -976,8 +997,14 @@ function RoutingTopologyView({
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
                 >
+                  {node.avgRssi !== undefined && (
+                    <circle
+                      className={`routing-signal-ring ${rssiClass(node.avgRssi)}`}
+                      r={node.role === "router" ? 23 : 17}
+                    />
+                  )}
                   <circle r={node.role === "central" ? 31 : node.role === "router" ? 18 : 12} />
-                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}`}</title>
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${node.avgRssi !== undefined ? ` · ${rssiAssessment(node.avgRssi).label} (${node.avgRssi} dBm)` : ""}`}</title>
                   {(node.role === "central" || node.role === "router" || isSelected) && (
                     <text y={node.role === "central" ? 48 : 29} textAnchor="middle">{node.name}</text>
                   )}
@@ -991,6 +1018,9 @@ function RoutingTopologyView({
             <span><i className="legend-dot is-central" /> Zentrale</span>
             <span><i className="legend-dot is-router" /> bestätigter Router</span>
             <span><i className="legend-dot is-candidate" /> möglicher netzversorgter Router</span>
+            <span><i className="legend-signal good" /> Signal gut</span>
+            <span><i className="legend-signal medium" /> beobachten</span>
+            <span><i className="legend-signal weak" /> schwach</span>
             <span><i className="legend-line is-confirmed" /> belegter Pfad</span>
             <span><i className="legend-line is-unknown" /> Zuordnung unbekannt</span>
           </div>
@@ -1006,6 +1036,13 @@ function RoutingTopologyView({
               <div><dt>Dient als Router</dt><dd>{selectedNode?.routerEnabled ? "Ja, belegt" : "Nicht belegt"}</dd></div>
               <div><dt>Routing aktiv</dt><dd>{selectedNode?.routingEnabled ? "Ja" : "Nicht belegt"}</dd></div>
               <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
+              <div>
+                <dt>Signal am Sniffer</dt>
+                <dd>
+                  <RssiAssessment value={selectedNode?.avgRssi} />
+                  {selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Telegramme</small>}
+                </dd>
+              </div>
             </dl>
           )}
           {selectedNode?.evidence.length ? (
@@ -1018,8 +1055,12 @@ function RoutingTopologyView({
 
       {topology.metrics.confirmedRoutes === 0 && (
         <div className="routing-truth-note">
-          <strong>Geräte und Router-Schalter sind sichtbar – aktive Wege noch nicht.</strong>
-          <span>Die Karte erfindet keine Pfade. Betätige HmIP-Geräte und aktualisiere anschließend die Karte, damit passende HmIPServer-Zeilen erfasst werden können.</span>
+          <strong>{hasRoutingConfig ? "Router-Schalter gelesen – aktive Wege noch nicht belegt." : "Router noch nicht zuverlässig geprüft."}</strong>
+          <span>
+            {hasRoutingConfig
+              ? "Die Karte erfindet keine Pfade. Betätige HmIP-Geräte und aktualisiere anschließend die Karte, damit passende HmIPServer-Zeilen erfasst werden können."
+              : "Orange Punkte sind nur netzversorgte Kandidaten. Führe den aktualisierten Shell-Collector erneut auf der CCU aus; er liest die drei Routing-Schalter jetzt lokal und ausschließlich lesend aus."}
+          </span>
         </div>
       )}
     </section>
@@ -4671,7 +4712,7 @@ function App() {
                           <strong>{device.name}</strong>
                           <span>{device.type ?? device.serial ?? device.address}</span>
                         </div>
-                        <b className={`rssi-value ${rssiClass(device.avgRssi)}`}>{device.avgRssi} dBm</b>
+                        <RssiAssessment value={device.avgRssi} />
                         <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
                           {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
                         </small>

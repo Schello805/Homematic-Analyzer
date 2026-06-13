@@ -25,6 +25,7 @@ BACKUP_LIST_FILE="$(make_tmp_file backups)"
 LOG_LIST_FILE="$(make_tmp_file logs)"
 HMIP_LOG_LIST_FILE="$(make_tmp_file hmip-logs)"
 HMIP_ROUTING_LOG_LIST_FILE="$(make_tmp_file hmip-routing-logs)"
+HMIP_ROUTING_CONFIG_FILE="$(make_tmp_file hmip-routing-config)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
@@ -32,10 +33,11 @@ CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$LOG_LIST_FILE"
 : > "$HMIP_LOG_LIST_FILE"
 : > "$HMIP_ROUTING_LOG_LIST_FILE"
+: > "$HMIP_ROUTING_CONFIG_FILE"
 : > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -228,6 +230,51 @@ elif [ -r /var/log/hmserver.log.1 ]; then
   tail -n 5000 /var/log/hmserver.log.1 2>/dev/null | grep -Ei 'ROUTER_MODULE_ENABLED|MULTICAST_ROUTER_MODULE_ENABLED|ENABLE_ROUTING|[[:space:]]via[[:space:]]|[[:space:]]router[[:space:]]|[[:space:]]hop[[:space:]]|routing' | tail -n 500 > "$HMIP_ROUTING_LOG_LIST_FILE" 2>/dev/null || true
 fi
 
+if command -v tclsh >/dev/null 2>&1 && [ -d /www/config ]; then
+  (
+    cd /www/config
+    tclsh <<'EOF_ROUTING_CONFIG'
+if {[catch {load tclrpc.so} loadError]} {
+  exit 0
+}
+set url "http://127.0.0.1:2010/"
+if {[catch {set deviceList [xmlrpc $url listDevices [list bool 0]]}]} {
+  exit 0
+}
+foreach descriptor $deviceList {
+  catch {unset device}
+  array set device $descriptor
+  if {![info exists device(ADDRESS)] || ![info exists device(TYPE)]} {
+    continue
+  }
+  if {[info exists device(PARENT)] && $device(PARENT) ne ""} {
+    continue
+  }
+  if {![string match -nocase "HmIP-*" $device(TYPE)]} {
+    continue
+  }
+  catch {unset params}
+  if {[catch {array set params [xmlrpc $url getParamset [list string "$device(ADDRESS):0"] [list string "MASTER"]]}]} {
+    continue
+  }
+  set router "-"
+  set routing "-"
+  set multicast "-"
+  if {[info exists params(ROUTER_MODULE_ENABLED)]} {
+    set router $params(ROUTER_MODULE_ENABLED)
+  }
+  if {[info exists params(ENABLE_ROUTING)]} {
+    set routing $params(ENABLE_ROUTING)
+  }
+  if {[info exists params(MULTICAST_ROUTER_MODULE_ENABLED)]} {
+    set multicast $params(MULTICAST_ROUTER_MODULE_ENABLED)
+  }
+  puts "ROUTING_CONFIG|$device(ADDRESS)|$device(TYPE)|router=$router|routing=$routing|multicast=$multicast"
+}
+EOF_ROUTING_CONFIG
+  ) > "$HMIP_ROUTING_CONFIG_FILE" 2>/dev/null || true
+fi
+
 {
   ss -Htanp 2>/dev/null
   netstat -tnp 2>/dev/null
@@ -325,6 +372,20 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$encoded_line"
   done < "$HMIP_ROUTING_LOG_LIST_FILE"
+  printf '\n  ],\n'
+  printf '  "hmipRoutingConfigBase64": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$encoded_line"
+  done < "$HMIP_ROUTING_CONFIG_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connectionsBase64": [\n'
