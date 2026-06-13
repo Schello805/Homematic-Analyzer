@@ -1048,39 +1048,77 @@ h2 {
   justify-self: center;
   border-radius: 50%;
   box-shadow: 0 18px 40px rgba(23, 32, 51, 0.1);
-}
-
-.dc-duty-donut::after {
-  content: "";
-  position: absolute;
-  inset: 24%;
-  border-radius: 50%;
   background: #fff;
-  box-shadow: inset 0 0 0 1px #e0e7f2;
 }
 
-.dc-duty-donut > div {
+.dc-duty-donut svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.dc-duty-segment {
+  cursor: pointer;
+  outline: none;
+}
+
+.dc-duty-segment path {
+  stroke: #fff;
+  stroke-width: 0.45;
+  transition: filter 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.dc-duty-segment:hover path,
+.dc-duty-segment:focus path,
+.dc-duty-segment.is-active path {
+  filter: brightness(1.05) drop-shadow(0 2px 2px rgba(23, 32, 51, 0.18));
+  transform: scale(1.035);
+}
+
+.dc-duty-segment text {
+  pointer-events: none;
+  fill: #fff;
+  font-size: 5px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(18, 32, 54, 0.3);
+  stroke-width: 0.8px;
+}
+
+.dc-duty-donut__center {
   position: absolute;
   z-index: 1;
-  inset: 29%;
+  inset: 27%;
   display: grid;
   place-content: center;
+  gap: 2px;
+  border: 1px solid #e0e7f2;
+  border-radius: 50%;
   text-align: center;
+  background: #fff;
 }
 
-.dc-duty-donut strong {
+.dc-duty-donut__center strong {
   color: #172033;
   font-size: clamp(1.7rem, 4vw, 2.5rem);
   line-height: 1;
 }
 
-.dc-duty-donut span,
-.dc-duty-donut small {
+.dc-duty-donut__center span,
+.dc-duty-donut__center small {
+  display: -webkit-box;
+  overflow: hidden;
   color: #667085;
   font-size: 0.78rem;
+  line-height: 1.12;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.dc-duty-donut span {
+.dc-duty-donut__center span {
   margin-top: 5px;
   font-weight: 700;
 }

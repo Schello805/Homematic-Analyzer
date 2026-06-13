@@ -790,6 +790,31 @@ function getCcuUiUrl(host: string) {
   }
 }
 
+function polarPoint(center: number, radius: number, percent: number) {
+  const angle = (percent * 3.6 - 90) * Math.PI / 180;
+  return {
+    x: center + radius * Math.cos(angle),
+    y: center + radius * Math.sin(angle)
+  };
+}
+
+function donutSegmentPath(startPercent: number, endPercent: number, outerRadius = 48, innerRadius = 25) {
+  const safeEnd = Math.min(endPercent, startPercent + 99.999);
+  const outerStart = polarPoint(50, outerRadius, startPercent);
+  const outerEnd = polarPoint(50, outerRadius, safeEnd);
+  const innerEnd = polarPoint(50, innerRadius, safeEnd);
+  const innerStart = polarPoint(50, innerRadius, startPercent);
+  const largeArc = safeEnd - startPercent > 50 ? 1 : 0;
+
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerEnd.x} ${innerEnd.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+    "Z"
+  ].join(" ");
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -825,6 +850,7 @@ function App() {
   const [snifferLoading, setSnifferLoading] = useState(false);
   const [showAllSnifferDevices, setShowAllSnifferDevices] = useState(false);
   const [showAllSnifferEvents, setShowAllSnifferEvents] = useState(false);
+  const [hoveredDutySegmentKey, setHoveredDutySegmentKey] = useState<string | null>(null);
   const [logPayload, setLogPayload] = useState<LogPayload | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
   const [aiLogResult, setAiLogResult] = useState<AnalysisCheck | null>(null);
@@ -2813,24 +2839,63 @@ function App() {
                 ];
                 const chartTotal = segments.reduce((sum, segment) => sum + segment.share, 0) || 1;
                 let position = 0;
-                const gradient = segments.map((segment) => {
+                const chartSegments = segments.map((segment) => {
                   const start = position;
                   position += (segment.share / chartTotal) * 100;
-                  return `${segment.color} ${start}% ${Math.min(100, position)}%`;
-                }).join(", ");
+                  return {
+                    ...segment,
+                    start,
+                    end: Math.min(100, position),
+                    middle: start + (position - start) / 2
+                  };
+                });
+                const hoveredSegment = chartSegments.find((segment) => segment.key === hoveredDutySegmentKey);
 
                 return (
                   <div className="dc-duty-chart-layout">
                     <div
                       className="dc-duty-donut"
-                      style={{ background: `conic-gradient(${gradient})` }}
                       role="img"
                       aria-label={segments.map((segment) => `${segment.label}: ${segment.share}%`).join(", ")}
                     >
-                      <div>
-                        <strong>{snifferSnapshot.devices.length}</strong>
-                        <span>aktive Geräte</span>
-                        <small>60 Minuten</small>
+                      <svg viewBox="0 0 100 100" aria-hidden="true">
+                        {chartSegments.map((segment) => {
+                          const labelPosition = polarPoint(50, 36.5, segment.middle);
+                          return (
+                            <g
+                              className={`dc-duty-segment ${hoveredDutySegmentKey === segment.key ? "is-active" : ""}`}
+                              key={segment.key}
+                              tabIndex={0}
+                              onMouseEnter={() => setHoveredDutySegmentKey(segment.key)}
+                              onMouseLeave={() => setHoveredDutySegmentKey(null)}
+                              onFocus={() => setHoveredDutySegmentKey(segment.key)}
+                              onBlur={() => setHoveredDutySegmentKey(null)}
+                            >
+                              <title>{segment.label}: {segment.share}% der gemessenen Funkzeit</title>
+                              <path d={donutSegmentPath(segment.start, segment.end)} fill={segment.color} />
+                              {segment.share >= 4 && (
+                                <text x={labelPosition.x} y={labelPosition.y} textAnchor="middle" dominantBaseline="central">
+                                  {segment.share}%
+                                </text>
+                              )}
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      <div className="dc-duty-donut__center">
+                        {hoveredSegment ? (
+                          <>
+                            <strong>{hoveredSegment.share}%</strong>
+                            <span>{hoveredSegment.label}</span>
+                            <small>gemessene Funkzeit</small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>{snifferSnapshot.devices.length}</strong>
+                            <span>aktive Geräte</span>
+                            <small>Segment berühren</small>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="dc-duty-legend">
