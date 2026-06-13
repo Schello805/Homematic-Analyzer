@@ -1210,6 +1210,24 @@ function App() {
   }
 
   async function analyzeLogsWithAi() {
+    if (!logPayload?.available || logPayload.logs.length === 0) {
+      showToast({
+        type: "warning",
+        title: "Keine Logdaten vorhanden",
+        message: "Lade zuerst aktuelle Logs über den Collector. Ohne Logzeilen wird nichts an eine KI gesendet."
+      });
+      return;
+    }
+
+    if (!notificationSettings.ai.enabled) {
+      showToast({
+        type: "info",
+        title: "KI-Logauswertung ist ausgeschaltet",
+        message: "Aktiviere sie unter Einstellungen → KI-Logauswertung und hinterlege dort einen API-Key."
+      });
+      return;
+    }
+
     setAiLogLoading(true);
     setAiLogResult(null);
     showToast({
@@ -3114,7 +3132,7 @@ function App() {
               type="button"
               className="analyze-button analyze-button-compact"
               onClick={() => void analyzeLogsWithAi()}
-              disabled={aiLogLoading || !logPayload?.available || !notificationSettings.ai.enabled}
+              disabled={aiLogLoading}
             >
               {aiLogLoading ? "KI analysiert ..." : aiLogMode === "issues" ? "Fehler prüfen" : "Gesamten Log analysieren"}
             </button>
