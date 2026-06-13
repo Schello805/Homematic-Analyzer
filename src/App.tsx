@@ -161,6 +161,8 @@ type UpdateRunStatus = {
 
 type LogPayload = {
   available: boolean;
+  analyzerVersion?: string;
+  servedAt?: string;
   collectedAt?: string;
   host?: string;
   logs: string[];
@@ -1020,7 +1022,7 @@ function App() {
   async function loadLogs(showSuccessToast = false) {
     setLogsLoading(true);
     try {
-      const response = await fetch("/api/logs/latest");
+      const response = await fetch(`/api/logs/latest?fresh=${Date.now()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Logs konnten nicht geladen werden.");
       const payload = (await response.json()) as LogPayload;
       setLogPayload(payload);
@@ -1554,6 +1556,27 @@ function App() {
       }
     }
 
+    async function synchronizeFrontendVersion() {
+      try {
+        const response = await fetch(`/api/health?versionCheck=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const health = (await response.json()) as { version?: string };
+        if (!health.version || health.version === appVersion) {
+          sessionStorage.removeItem("homematic-analyzer-version-reload");
+          return;
+        }
+
+        const reloadKey = `${appVersion}->${health.version}`;
+        if (sessionStorage.getItem("homematic-analyzer-version-reload") === reloadKey) return;
+        sessionStorage.setItem("homematic-analyzer-version-reload", reloadKey);
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("appVersion", health.version);
+        nextUrl.searchParams.set("refresh", String(Date.now()));
+        window.location.replace(nextUrl.toString());
+      } catch {
+      }
+    }
+
     function checkForUpdatesWhenVisible() {
       if (document.visibilityState === "visible") {
         void checkForUpdates();
@@ -1562,6 +1585,7 @@ function App() {
 
     void loadSetupDefaults();
     void loadNotificationSettings();
+    void synchronizeFrontendVersion();
     void checkForUpdates();
     void loadPreviousUpdateRun();
     void loadUsbPorts(false);
@@ -1762,6 +1786,21 @@ function App() {
   useEffect(() => {
     if (currentPage !== "logs") return;
     void loadLogs(false);
+
+    const refreshLogs = () => {
+      if (document.visibilityState === "visible") {
+        void loadLogs(false);
+      }
+    };
+    const interval = window.setInterval(refreshLogs, 15000);
+    document.addEventListener("visibilitychange", refreshLogs);
+    window.addEventListener("focus", refreshLogs);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshLogs);
+      window.removeEventListener("focus", refreshLogs);
+    };
   }, [currentPage]);
 
   useEffect(() => {
@@ -2845,6 +2884,10 @@ function App() {
             <span>{logPayload?.host ? `Quelle: ${logPayload.host}` : "Quelle: noch nicht bekannt"}</span>
             <span>{logPayload?.collectedAt ? `Empfangen: ${new Date(logPayload.collectedAt).toLocaleString("de-DE")}` : "Noch kein Collector-Snapshot"}</span>
             <span>{logPayload?.logs.length ?? 0} Zeilen</span>
+            <span>
+              Analyzer: {typeof window !== "undefined" ? window.location.host : "lokaler Server"}
+              {logPayload?.analyzerVersion ? ` · Version ${logPayload.analyzerVersion}` : ""}
+            </span>
           </div>
 
           {logPayload?.logs.length ? (

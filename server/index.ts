@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
@@ -863,6 +863,15 @@ app.post("/api/ccu-masterdata", express.raw({ type: "*/*", limit: "2mb" }), asyn
 
 app.use(express.json({ limit: "2mb" }));
 
+app.use("/api", (_request, response, next) => {
+  response.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
+  next();
+});
+
 app.use((error: unknown, request: express.Request, response: express.Response, next: express.NextFunction) => {
   if (!request.path.startsWith("/api")) {
     next(error);
@@ -1164,6 +1173,8 @@ app.get("/api/collector/latest", (_request, response) => {
 app.get("/api/logs/latest", (_request, response) => {
   response.json({
     available: Boolean(latestCollector?.logs?.length),
+    analyzerVersion: appVersion,
+    servedAt: new Date().toISOString(),
     collectedAt: latestCollector?.collectedAt,
     host: latestCollector?.host,
     logs: latestCollector?.logs ?? []
@@ -1404,7 +1415,17 @@ app.get("/api/asksin-devlist/script", async (request, response) => {
   );
 });
 
-app.use(express.static(frontendDist));
+app.use(express.static(frontendDist, {
+  setHeaders(response, filePath) {
+    if (filePath.endsWith("index.html")) {
+      response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return;
+    }
+    if (filePath.includes(`${sep}assets${sep}`)) {
+      response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+  }
+}));
 
 app.use((request, response, next) => {
   if (request.path.startsWith("/api")) {
@@ -1412,6 +1433,11 @@ app.use((request, response, next) => {
     return;
   }
 
+  response.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
   response.sendFile(join(frontendDist, "index.html"));
 });
 
