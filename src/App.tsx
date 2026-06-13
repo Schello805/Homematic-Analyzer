@@ -361,6 +361,39 @@ const statusLabel: Record<CheckStatus, string> = {
 
 const statusOrder: CheckStatus[] = ["critical", "warning", "improvement", "ok", "unavailable"];
 
+const checkThemes = [
+  {
+    id: "central",
+    title: "Zentrale & System",
+    description: "Verbindung, Datenbasis, Systemzustand und Wartung",
+    checkIds: ["ccu-connection", "xml-api", "ccu-masterdata", "system-health", "app-release"]
+  },
+  {
+    id: "devices",
+    title: "Geräte",
+    description: "Meldungen, Batterien, Erreichbarkeit und Firmware",
+    checkIds: ["alarm-messages", "service-messages", "batteries", "reachability", "config-pending", "firmware-overview"]
+  },
+  {
+    id: "radio",
+    title: "Funk & Routing",
+    description: "Duty Cycle, Signalqualität und HmIP-Routing",
+    checkIds: ["duty-cycle", "signal-strength", "routing-topology"]
+  },
+  {
+    id: "security",
+    title: "Sicherheit & Zugriffe",
+    description: "Erreichbarkeit von außen und externe Verbindungen",
+    checkIds: ["remote-exposure", "external-access"]
+  },
+  {
+    id: "operations",
+    title: "Protokolle & Benachrichtigungen",
+    description: "Logs, Fehleranalyse und Meldungswege",
+    checkIds: ["logs", "notifications"]
+  }
+] as const;
+
 const analysisSteps = [
   { label: "Setup lesen", detail: "Host, Token, optionale Quellen" },
   { label: "CCU verbinden", detail: "XML-API und Token prüfen" },
@@ -1080,6 +1113,7 @@ function App() {
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
   const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
+  const [expandedCheckThemes, setExpandedCheckThemes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [ccuScriptPreview, setCcuScriptPreview] = useState("");
@@ -1843,17 +1877,33 @@ function App() {
   const groupedChecks = useMemo(() => {
     if (!analysis) return [];
 
-    const base = statusOrder
-      .map((status) => ({
-        status,
-        checks: analysis.checks.filter((check) => check.status === status)
-      }))
-      .filter((group) => group.checks.length > 0);
+    return checkThemes
+      .map((theme) => {
+        const allChecks = theme.checkIds
+          .map((checkId) => analysis.checks.find((check) => check.id === checkId))
+          .filter((check): check is AnalysisCheck => Boolean(check));
+        const checks = selectedStatusFilter
+          ? allChecks.filter((check) => check.status === selectedStatusFilter)
+          : allChecks;
+        const counts = allChecks.reduce<Record<CheckStatus, number>>(
+          (accumulator, check) => {
+            accumulator[check.status] += 1;
+            return accumulator;
+          },
+          { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
+        );
+        const highestStatus = statusOrder.find((status) => counts[status] > 0) ?? "unavailable";
 
-    if (selectedStatusFilter) {
-      return base.filter((group) => group.status === selectedStatusFilter);
-    }
-    return base;
+        return {
+          ...theme,
+          checks,
+          total: allChecks.length,
+          counts,
+          highestStatus,
+          hasAttention: counts.critical + counts.warning + counts.improvement > 0
+        };
+      })
+      .filter((theme) => theme.checks.length > 0);
   }, [analysis, selectedStatusFilter]);
 
   const summary = useMemo(() => {
@@ -1867,6 +1917,33 @@ function App() {
       { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
     );
   }, [analysis]);
+
+  useEffect(() => {
+    if (!analysis) {
+      setExpandedCheckThemes(new Set());
+      return;
+    }
+
+    const attentionThemes = checkThemes
+      .filter((theme) => theme.checkIds.some((checkId) => {
+        const check = analysis.checks.find((item) => item.id === checkId);
+        return check && ["critical", "warning", "improvement"].includes(check.status);
+      }))
+      .map((theme) => theme.id);
+    setExpandedCheckThemes(new Set(attentionThemes));
+  }, [analysis?.generatedAt]);
+
+  useEffect(() => {
+    if (!activeCheck) return;
+    const activeTheme = checkThemes.find((theme) => (theme.checkIds as readonly string[]).includes(activeCheck));
+    if (!activeTheme) return;
+    setExpandedCheckThemes((current) => {
+      if (current.has(activeTheme.id)) return current;
+      const next = new Set(current);
+      next.add(activeTheme.id);
+      return next;
+    });
+  }, [activeCheck]);
 
   const guidedActions = useMemo(() => {
     if (!analysis) return [];
@@ -4024,24 +4101,48 @@ function App() {
                     <small>{check.category}</small>
                   </button>
                 ));
-
-                if (group.status === "ok" && !selectedStatusFilter) {
-                  return (
-                    <details key={group.status} className="check-group check-group-collapsible">
-                      <summary>
-                        <span>{statusLabel[group.status]}</span>
-                        <small>{group.checks.length} Punkte eingeklappt</small>
-                      </summary>
-                      {items}
-                    </details>
-                  );
-                }
-
+                const containsActiveCheck = group.checks.some((check) => check.id === activeCheck);
                 return (
-                  <div key={group.status} className="check-group">
-                    <h3>{statusLabel[group.status]}</h3>
-                    {items}
-                  </div>
+                  <details
+                    key={`${analysis.generatedAt}-${selectedStatusFilter ?? "all"}-${group.id}`}
+                    className={`check-theme status-${group.highestStatus}`}
+                    open={Boolean(selectedStatusFilter) || expandedCheckThemes.has(group.id) || containsActiveCheck}
+                    onToggle={(event) => {
+                      if (selectedStatusFilter) return;
+                      const isOpen = event.currentTarget.open;
+                      setExpandedCheckThemes((current) => {
+                        const next = new Set(current);
+                        if (isOpen) next.add(group.id);
+                        else next.delete(group.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <summary>
+                      <div className="check-theme__title">
+                        <span className={`check-theme__status status-${group.highestStatus}`}>
+                          {getStatusIcon(group.highestStatus, "check-theme__icon")}
+                        </span>
+                        <div>
+                          <strong>{group.title}</strong>
+                          <small>{group.description}</small>
+                        </div>
+                      </div>
+                      <div className="check-theme__summary">
+                        {statusOrder.map((status) => group.counts[status] > 0 && (
+                          <span className={`check-theme__count status-${status}`} key={status}>
+                            {group.counts[status]} {statusLabel[status]}
+                          </span>
+                        ))}
+                        <span className="check-theme__total">
+                          {selectedStatusFilter ? `${group.checks.length} gefiltert` : `${group.total} Punkte`}
+                        </span>
+                      </div>
+                    </summary>
+                    <div className="check-theme__items">
+                      {items}
+                    </div>
+                  </details>
                 );
               })}
             </div>
