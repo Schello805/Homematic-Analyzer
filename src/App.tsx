@@ -1030,6 +1030,7 @@ function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
   const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "logs" | "diagnostics" | "setup" | "settings">("analysis");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
@@ -1088,6 +1089,20 @@ function App() {
     detail: "GitHub wird nach der neuesten Version gefragt.",
     url: repositoryUrl
   });
+
+  const pageLabels = {
+    analysis: "Analyse",
+    dc: "DC-Analyzer",
+    logs: "Logs",
+    diagnostics: "Status",
+    settings: "Einstellungen",
+    setup: "Setup"
+  } satisfies Record<typeof currentPage, string>;
+
+  function navigateTo(page: typeof currentPage) {
+    setCurrentPage(page);
+    setMobileMenuOpen(false);
+  }
   const hasAnalysis = Boolean(analysis);
   const isUpdateRunning = updatingApp || updateRunStatus?.status === "running";
   const backupItems = analysis?.systemDashboard?.backupItems ?? [];
@@ -2334,6 +2349,15 @@ function App() {
   }, [currentPage, form.hmipRoutingEnabled]);
 
   useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeMenu = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeMenu);
+    return () => window.removeEventListener("keydown", closeMenu);
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     if (form.hmipRoutingEnabled || !analysis?.checks.some((check) => check.id === "routing-topology")) return;
     const nextAnalysis = {
       ...analysis,
@@ -2548,26 +2572,41 @@ function App() {
             <span>Belegbare Smarthome-Analyse</span>
           </div>
         </div>
-        <nav className="page-tabs" aria-label="Bereiche">
+        <button
+          type="button"
+          className={`mobile-menu-toggle ${mobileMenuOpen ? "is-open" : ""}`}
+          onClick={() => setMobileMenuOpen((current) => !current)}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="primary-navigation"
+          aria-label={mobileMenuOpen ? "Menü schließen" : "Menü öffnen"}
+        >
+          <span className="mobile-menu-current">{pageLabels[currentPage]}</span>
+          <span className="mobile-menu-icon" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        </button>
+        <nav id="primary-navigation" className={`page-tabs ${mobileMenuOpen ? "is-open" : ""}`} aria-label="Bereiche">
           <div className="page-tabs__left">
-            <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => setCurrentPage("analysis")}>
+            <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => navigateTo("analysis")}>
               Analyse
             </button>
-            <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => setCurrentPage("dc")}>
+            <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => navigateTo("dc")}>
               DC-Analyzer
             </button>
-            <button type="button" className={currentPage === "logs" ? "is-active" : ""} onClick={() => setCurrentPage("logs")}>
+            <button type="button" className={currentPage === "logs" ? "is-active" : ""} onClick={() => navigateTo("logs")}>
               Logs
             </button>
-            <button type="button" className={currentPage === "diagnostics" ? "is-active" : ""} onClick={() => setCurrentPage("diagnostics")}>
+            <button type="button" className={currentPage === "diagnostics" ? "is-active" : ""} onClick={() => navigateTo("diagnostics")}>
               Status
             </button>
-            <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => setCurrentPage("settings")}>
+            <button type="button" className={currentPage === "settings" ? "is-active" : ""} onClick={() => navigateTo("settings")}>
               Einstellungen
             </button>
           </div>
           <div className="page-tabs__right">
-            <button type="button" className={currentPage === "setup" ? "is-active" : ""} onClick={() => setCurrentPage("setup")}>
+            <button type="button" className={currentPage === "setup" ? "is-active" : ""} onClick={() => navigateTo("setup")}>
               Setup <span className="tab-badge">{setupProgress.complete ? "✓" : `${setupProgress.percent}%`}</span>
             </button>
           </div>
