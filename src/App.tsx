@@ -2478,20 +2478,65 @@ function App() {
                 <h3>Anteil an der gemessenen Funkzeit pro Gerät</h3>
                 <p>Gleitender Zeitraum: letzte 60 Minuten. Die Prozentzahl verteilt nur die gemessene Sendezeit auf die Geräte und ist nicht deren absoluter Duty Cycle.</p>
               </div>
-              <div className="dc-duty-bars">
-                {snifferSnapshot.devices.slice(0, 5).map((device) => (
-                  <div className="dc-duty-row" key={device.address}>
-                    <div>
-                      <strong>{device.name}</strong>
-                      <span>{device.serial ? `${device.serial} · ` : ""}{device.address}</span>
+              {(() => {
+                const colors = ["#3478f6", "#20a783", "#f59e0b", "#8b5cf6", "#ec4899"];
+                const topDevices = snifferSnapshot.devices.slice(0, 5);
+                const topShare = topDevices.reduce((sum, device) => sum + device.dutyShare, 0);
+                const remainingDevices = Math.max(0, snifferSnapshot.devices.length - topDevices.length);
+                const remainingShare = Math.max(0, Math.round((100 - topShare) * 10) / 10);
+                const segments = [
+                  ...topDevices.map((device, index) => ({
+                    key: device.address,
+                    label: device.name,
+                    detail: `${device.serial ? `${device.serial} · ` : ""}${device.address}`,
+                    share: device.dutyShare,
+                    color: colors[index]
+                  })),
+                  ...(remainingDevices > 0 && remainingShare > 0.1 ? [{
+                    key: "remaining",
+                    label: `Weitere ${remainingDevices} Geräte`,
+                    detail: "Zusammengefasster Restanteil",
+                    share: remainingShare,
+                    color: "#cbd5e1"
+                  }] : [])
+                ];
+                const chartTotal = segments.reduce((sum, segment) => sum + segment.share, 0) || 1;
+                let position = 0;
+                const gradient = segments.map((segment) => {
+                  const start = position;
+                  position += (segment.share / chartTotal) * 100;
+                  return `${segment.color} ${start}% ${Math.min(100, position)}%`;
+                }).join(", ");
+
+                return (
+                  <div className="dc-duty-chart-layout">
+                    <div
+                      className="dc-duty-donut"
+                      style={{ background: `conic-gradient(${gradient})` }}
+                      role="img"
+                      aria-label={segments.map((segment) => `${segment.label}: ${segment.share}%`).join(", ")}
+                    >
+                      <div>
+                        <strong>{snifferSnapshot.devices.length}</strong>
+                        <span>aktive Geräte</span>
+                        <small>60 Minuten</small>
+                      </div>
                     </div>
-                    <div className="dc-duty-bar" aria-label={`${device.name}: ${device.dutyShare}% Anteil`}>
-                      <span style={{ width: `${Math.max(2, device.dutyShare)}%` }} />
+                    <div className="dc-duty-legend">
+                      {segments.map((segment) => (
+                        <div className="dc-duty-legend-row" key={segment.key}>
+                          <i style={{ background: segment.color }} />
+                          <div>
+                            <strong>{segment.label}</strong>
+                            <span>{segment.detail}</span>
+                          </div>
+                          <b>{segment.share}%</b>
+                        </div>
+                      ))}
                     </div>
-                    <b>{device.dutyShare}%</b>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
 
             <details className="dc-table-card dc-data-details">
