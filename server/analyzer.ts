@@ -290,7 +290,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const hasSniffer = Boolean(config.snifferPort);
   const hasNotifications = Boolean(config.notificationSettings?.telegram?.enabled || config.notificationSettings?.email?.enabled || config.telegramEnabled);
   const ccuHostLooksPublic = Boolean(config.ccuHost && !isLocalOrPrivateHost(config.ccuHost));
-  const externalAccesses = parseExternalAccesses(collector, config.ccuHost);
+  const collectorAgeMinutes = collector?.collectedAt
+    ? Math.max(0, Math.round((Date.now() - Date.parse(collector.collectedAt)) / 60000))
+    : undefined;
+  const collectorIsFresh = collectorAgeMinutes !== undefined && Number.isFinite(collectorAgeMinutes) && collectorAgeMinutes <= 3;
+  const currentCollector = collectorIsFresh ? collector : undefined;
+  const externalAccesses = parseExternalAccesses(currentCollector, config.ccuHost);
   const publicExternalAccesses = externalAccesses.filter((access) => access.isPublic);
   const busyExternalAccesses = externalAccesses.filter((access) => access.count >= 8);
   const masterdataDeviceCount = masterdata?.deviceCount ?? masterdata?.devices?.length ?? 0;
@@ -313,7 +318,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const unreachableCount = unreachableDevices.length || unreachableServiceMessages.length;
   const configPendingDevices = ccu?.devices.filter((device) => device.configPending) ?? [];
   const dutyStatus = dutyCycleStatus(ccu?.dutyCycle);
-  const logAnalysis = analyzeLogLines(collector?.logs);
+  const logAnalysis = analyzeLogLines(currentCollector?.logs);
   const hasCcuSystemData = Boolean(masterdata?.system || masterdata?.backups);
   const systemSourceHost = collectorRecordValue(masterdata?.system, "host") ?? collector?.host ?? "unbekanntem Host";
   const systemTemperature = collectorRecordValue(masterdata?.system, "temperatureRaw") ?? collectorRecordValue(collector?.system, "temperatureRaw");
@@ -769,26 +774,36 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "logs",
       title: "Log-Auswertung",
       category: "Belege",
-      status: collector?.logs?.length ? logAnalysis.status : "unavailable",
-      summary: collector?.logs?.length
+      status: currentCollector?.logs?.length ? logAnalysis.status : "unavailable",
+      summary: currentCollector?.logs?.length
         ? logAnalysis.relevantLines.length > 0
           ? `${logAnalysis.relevantLines.length} auffällige Logzeilen wurden gefunden.`
           : "Es liegen Logdaten vor, aber keine belegbaren Fehler-/Warnmuster."
+        : collector && !collectorIsFresh
+          ? `Der Collector wurde früher erkannt, aber der letzte Snapshot ist ${collectorAgeMinutes ?? "viele"} Minuten alt.`
         : hasSsh
           ? "Loganalyse ist vorbereitet, aber es liegen noch keine Logdaten vor."
           : "Loganalyse ist ohne SSH oder Collector-Script nicht möglich.",
-      recommendation: collector?.logs?.length
+      recommendation: currentCollector?.logs?.length
         ? logAnalysis.relevantLines.length > 0
           ? "Prüfe die genannten Logzeilen. Nur diese werden als Auffälligkeit gewertet."
           : "Kein Handlungsbedarf aus diesen Logzeilen. Debug/Verbose-Ausgaben sind normale technische Protokolleinträge."
+        : collector && !collectorIsFresh
+          ? "Der Collector war bereits eingerichtet. Prüfe den Cronjob und führe den aktuellen Installationsbefehl erneut aus; auf OpenCCU wird er danach dauerhaft gespeichert."
         : "Collector-Script ausführen, damit echte Logbelege in die Analyse einfließen.",
       access: ["ssh"],
-      evidence: collector?.logs?.length
+      evidence: currentCollector?.logs?.length
         ? (logAnalysis.relevantLines.length > 0 ? logAnalysis.relevantLines : logAnalysis.noisyLines).slice(0, 5).map((line) => ({
           source: logAnalysis.relevantLines.length > 0 ? "Auffällige Logzeile" : "Unauffällige Debug-/Verbose-Logzeile",
           detail: line,
-          timestamp: collector.collectedAt ?? now()
+          timestamp: currentCollector.collectedAt ?? now()
         }))
+        : collector && !collectorIsFresh
+          ? [{
+            source: "Collector-Verlauf",
+            detail: `Letzter Empfang von ${collector.host ?? "der Zentrale"} vor ${collectorAgeMinutes ?? "vielen"} Minuten.`,
+            timestamp: collector.collectedAt
+          }]
         : [],
       details: [
         "Die App soll niemals aus Bauchgefühl urteilen: Jeder Fehler bekommt eine Quelle.",
@@ -800,14 +815,14 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "external-access",
       title: "Externe Zugriffe auf die CCU",
       category: "Anbindungen",
-      status: collector
+      status: currentCollector
         ? publicExternalAccesses.length > 0
           ? "critical"
           : busyExternalAccesses.length > 0
             ? "warning"
             : "ok"
         : "unavailable",
-      summary: collector
+      summary: currentCollector
         ? publicExternalAccesses.length > 0
           ? publicExternalAccesses.length === 1
             ? "1 öffentliche Gegenstelle ist aktiv mit CCU-Diensten verbunden."
@@ -824,7 +839,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : hasSsh
           ? "Der Check ist vorbereitet; es liegen aber noch keine Verbindungsdaten vom Collector vor."
           : "Ohne SSH oder Collector können externe Zugriffe nicht belegbar erkannt werden.",
-      recommendation: collector
+      recommendation: currentCollector
         ? publicExternalAccesses.length > 0
           ? "CCU nicht per Portweiterleitung veröffentlichen. Verbindung sofort prüfen und künftig VPN verwenden."
           : busyExternalAccesses.length > 0
@@ -832,7 +847,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             : externalAccesses.length > 0
               ? "Ordne die IPs den Systemen zu. Erst wenn viele Verbindungen, Logs oder Lastspitzen zusammenpassen, wird daraus ein echtes Problem."
               : "Kein Handlungsbedarf."
-        : "Collector-Script ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
+        : collector && !collectorIsFresh
+          ? "Collector-Verbindung erneuern. Veraltete Verbindungsdaten werden bewusst nicht bewertet."
+          : "Collector-Script ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
       access: ["ssh", "external"],
       evidence: externalAccesses.flatMap((access) => [
         {

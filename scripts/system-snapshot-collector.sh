@@ -57,7 +57,16 @@ install_cron_line() {
   : > "$temp_cron"
   : > "$current_cron"
 
-  if command -v crontab >/dev/null 2>&1; then
+  if [ -x "/etc/init.d/S98crond" ] || [ -d "/usr/local/crontabs" ]; then
+    cron_file="/usr/local/crontabs/root"
+    mkdir -p "/usr/local/crontabs"
+    [ -f "$cron_file" ] || : > "$cron_file"
+    grep -v "$CRON_MARKER" "$cron_file" > "$current_cron" 2>/dev/null || true
+    cat "$current_cron" > "$temp_cron"
+    printf '%s\n' "$cron_command" >> "$temp_cron"
+    cat "$temp_cron" > "$cron_file"
+    chmod 600 "$cron_file" 2>/dev/null || true
+  elif command -v crontab >/dev/null 2>&1; then
     crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$current_cron" || true
     cat "$current_cron" > "$temp_cron"
     printf '%s\n' "$cron_command" >> "$temp_cron"
@@ -72,8 +81,12 @@ install_cron_line() {
   fi
 
   killall -HUP crond 2>/dev/null || true
+  /etc/init.d/S98crond restart 2>/dev/null || true
   /etc/init.d/S90crond restart 2>/dev/null || true
   echo "Homematic Analyzer: Regelmäßige Übertragung eingerichtet ($interval_text)."
+  if [ -f "/usr/local/crontabs/root" ]; then
+    echo "Homematic Analyzer: Dauerhaft gespeichert in /usr/local/crontabs/root."
+  fi
   echo "Homematic Analyzer: Logdatei des Cronjobs: /tmp/homematic-analyzer-collector.log"
 }
 
@@ -81,7 +94,10 @@ remove_cron_line() {
   temp_cron="$(make_tmp_file cron-remove)"
   : > "$temp_cron"
 
-  if command -v crontab >/dev/null 2>&1; then
+  if [ -f "/usr/local/crontabs/root" ]; then
+    grep -v "$CRON_MARKER" "/usr/local/crontabs/root" > "$temp_cron" 2>/dev/null || true
+    cat "$temp_cron" > "/usr/local/crontabs/root"
+  elif command -v crontab >/dev/null 2>&1; then
     crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$temp_cron" || true
     crontab "$temp_cron"
   elif [ -f "/etc/crontabs/root" ]; then
@@ -90,6 +106,7 @@ remove_cron_line() {
   fi
 
   killall -HUP crond 2>/dev/null || true
+  /etc/init.d/S98crond restart 2>/dev/null || true
   /etc/init.d/S90crond restart 2>/dev/null || true
   echo "Homematic Analyzer: Regelmäßige Übertragung entfernt."
 }

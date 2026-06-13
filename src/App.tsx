@@ -161,6 +161,9 @@ type UpdateRunStatus = {
 
 type LogPayload = {
   available: boolean;
+  collectorAvailable?: boolean;
+  collectorState?: "missing" | "fresh" | "stale";
+  collectorAgeMinutes?: number;
   analyzerVersion?: string;
   servedAt?: string;
   collectedAt?: string;
@@ -281,6 +284,8 @@ type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToke
 
 type CollectorStatus = {
   available: boolean;
+  state?: "missing" | "fresh" | "stale";
+  ageMinutes?: number;
   collectedAt?: string;
   host?: string;
   logs: number;
@@ -1523,20 +1528,33 @@ function App() {
       });
     }
     if (logCheck?.status === "unavailable") {
+      const collectorWasSeen = Boolean(collectorStatus?.available);
+      const collectorIsStale = collectorStatus?.state === "stale";
+      const lastCollectorAt = collectorStatus?.collectedAt
+        ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE")
+        : undefined;
       actions.push({
         id: "collector",
         priority: 55,
-        eyebrow: "Daten ergänzen",
-        title: "Log-Collector einrichten",
-        detail: "Logs fehlen noch. Das verhindert die belegbare Erkennung von Scriptfehlern, Dienstneustarts und auffälligen externen Zugriffen.",
-        button: "Collector einrichten",
+        eyebrow: collectorWasSeen ? "Verbindung prüfen" : "Daten ergänzen",
+        title: collectorIsStale
+          ? "Collector sendet nicht mehr"
+          : collectorWasSeen
+            ? "Collector liefert keine Logs"
+            : "Log-Collector einrichten",
+        detail: collectorIsStale
+          ? `Der Collector war bereits eingerichtet, hat aber seit ${lastCollectorAt ?? "längerer Zeit"} keine Daten mehr gesendet.`
+          : collectorWasSeen
+            ? "Der Collector sendet Systemwerte, aber aktuell keine lesbaren Logzeilen."
+            : "Logs fehlen noch. Das verhindert die belegbare Erkennung von Scriptfehlern, Dienstneustarts und auffälligen externen Zugriffen.",
+        button: collectorWasSeen ? "Collector prüfen" : "Collector einrichten",
         modal: "collector",
         checkId: logCheck.id
       });
     }
 
     return actions.sort((left, right) => right.priority - left.priority).slice(0, 5);
-  }, [analysis]);
+  }, [analysis, collectorStatus]);
 
   const actionModalCheck = useMemo(
     () => analysis?.checks.find((check) => check.id === actionModalCheckId),
@@ -2370,9 +2388,11 @@ function App() {
             <p>
               Nur nötig, wenn zusätzlich Logauszüge oder aktive CCU-Verbindungen geprüft werden sollen. CPU, RAM, Temperatur, Speicher und Backups kommen bevorzugt aus dem CCU-WebUI-Script.
             </p>
-            <p className={`setup-note ${collectorStatus?.available ? "setup-note-ok" : ""}`}>
+            <p className={`setup-note ${collectorStatus?.available && collectorStatus.state !== "stale" ? "setup-note-ok" : ""}`}>
               {collectorStatus?.available
-                ? `Empfangen: ${collectorStatus.host ?? "Zentrale"}, zuletzt ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"} · ${collectorStatus.logs} Logzeilen · ${collectorStatus.connections} Verbindungen.`
+                ? collectorStatus.state === "stale"
+                  ? `Früher erkannt, aber nicht mehr aktuell: ${collectorStatus.host ?? "Zentrale"}, letzter Empfang ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "unbekannt"}. Cronjob und Zieladresse prüfen.`
+                  : `Empfangen: ${collectorStatus.host ?? "Zentrale"}, zuletzt ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"} · ${collectorStatus.logs} Logzeilen · ${collectorStatus.connections} Verbindungen.`
                 : "Noch keine Shell-Zusatzdaten empfangen. Nur für Logs und Verbindungen nötig."}
             </p>
             <div className="form-grid form-grid-2 compact-grid">
@@ -3027,8 +3047,20 @@ function App() {
             <div className="system-collector-empty">
               <div>
                 <p className="eyebrow">Keine Logs</p>
-                <h3>Noch keine Logdaten empfangen</h3>
-                <p>Führe den Shell-Collector auf der CCU/RaspberryMatic aus, damit Logs hier 1:1 angezeigt werden.</p>
+                <h3>
+                  {logPayload?.collectorState === "stale"
+                    ? "Collector sendet nicht mehr"
+                    : logPayload?.collectorAvailable
+                      ? "Collector findet keine Logdatei"
+                      : "Noch keine Logdaten empfangen"}
+                </h3>
+                <p>
+                  {logPayload?.collectorState === "stale"
+                    ? `Der Collector war bereits verbunden, der letzte Snapshot ist aber ${logPayload.collectorAgeMinutes ?? "viele"} Minuten alt. Installiere den dauerhaften Cronjob erneut.`
+                    : logPayload?.collectorAvailable
+                      ? "Systemdaten kommen an, aber auf der CCU wurde keine lesbare Logquelle gefunden. Prüfe /var/log/messages, /var/log/syslog oder journalctl."
+                      : "Führe den Shell-Collector auf der CCU/RaspberryMatic aus, damit Logs hier 1:1 angezeigt werden."}
+                </p>
               </div>
               <div className="script-copy-row">
                 <code>{recommendedCollectorCommand}</code>
@@ -3864,22 +3896,46 @@ function App() {
           <section className="confirm-dialog action-modal" role="dialog" aria-modal="true" aria-labelledby="action-modal-title" onMouseDown={(event) => event.stopPropagation()}>
             {actionModal === "collector" && (
               <>
-                <p className="eyebrow">Logdaten ergänzen</p>
-                <h2 id="action-modal-title">Collector auf der CCU einrichten</h2>
+                <p className="eyebrow">{collectorStatus?.available ? "Collector prüfen" : "Logdaten ergänzen"}</p>
+                <h2 id="action-modal-title">
+                  {collectorStatus?.state === "stale"
+                    ? "Der Collector war eingerichtet, sendet aber nicht mehr"
+                    : collectorStatus?.available
+                      ? "Collector sendet, findet aber keine Logs"
+                      : "Collector auf der CCU einrichten"}
+                </h2>
                 <p>
-                  Das Script läuft auf der CCU/RaspberryMatic und sendet die Logdaten an diesen Analyzer.
-                  Dein PC oder Smartphone spielt dabei keine Rolle.
+                  {collectorStatus?.state === "stale"
+                    ? `Der Analyzer hat den Collector früher erkannt. Der letzte Snapshot kam am ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "unbekannten Zeitpunkt"}. Nach einem CCU-Neustart oder Update kann der alte, nicht dauerhaft gespeicherte Cronjob verschwunden sein.`
+                    : collectorStatus?.available
+                      ? "Der Collector ist verbunden und sendet Systemwerte. Es wurden jedoch keine lesbaren Logzeilen gefunden; eine Neuinstallation ist dafür normalerweise nicht nötig."
+                      : "Das Script läuft auf der CCU/RaspberryMatic und sendet die Logdaten an diesen Analyzer. Dein PC oder Smartphone spielt dabei keine Rolle."}
                 </p>
-                <ol className="action-modal-steps">
-                  <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
-                  <li>Den Befehl kopieren und im SSH-Fenster einfügen.</li>
-                  <li>Nach der Erfolgsmeldung kurz warten; Logs werden automatisch neu geladen.</li>
-                </ol>
-                <div className="modal-command">
-                  <code>{recommendedCollectorCommand}</code>
-                  <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>Kopieren</button>
-                </div>
-                <p className="modal-note">Empfohlen: regelmäßige Übertragung minütlich. Das belastet die CCU nur mit einem kleinen lokalen Snapshot.</p>
+                {collectorStatus?.available && collectorStatus.state !== "stale" ? (
+                  <>
+                    <ol className="action-modal-steps">
+                      <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
+                      <li>Logquellen prüfen: <code>ls -l /var/log/messages /var/log/syslog 2&gt;/dev/null</code></li>
+                      <li>Falls vorhanden, einen Auszug testen: <code>tail -n 20 /var/log/messages</code></li>
+                    </ol>
+                    <p className="modal-note">Der Analyzer behauptet hier nicht, dass das Script fehlt: Es fehlen nur Logzeilen im aktuellen Snapshot.</p>
+                  </>
+                ) : (
+                  <>
+                    <ol className="action-modal-steps">
+                      <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
+                      <li>Den Befehl kopieren und im SSH-Fenster einfügen.</li>
+                      <li>Nach der Erfolgsmeldung kurz warten; Logs werden automatisch neu geladen.</li>
+                    </ol>
+                    <div className="modal-command">
+                      <code>{recommendedCollectorCommand}</code>
+                      <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>Kopieren</button>
+                    </div>
+                    <p className="modal-note">
+                      Die neue Installation speichert den Cronjob auf OpenCCU/RaspberryMatic dauerhaft unter <code>/usr/local/crontabs/root</code>.
+                    </p>
+                  </>
+                )}
               </>
             )}
 

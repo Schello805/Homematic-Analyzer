@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAnalysis } from "./analyzer.js";
-import type { CcuSnapshot, SnifferSnapshot } from "./types.js";
+import type { CcuSnapshot, CollectorPayload, SnifferSnapshot } from "./types.js";
 
 function failedSnapshot(overrides: Partial<CcuSnapshot>): CcuSnapshot {
   return {
@@ -154,4 +154,27 @@ test("bewertet ein einzelnes schwaches Sniffer-Telegramm noch nicht als belastba
   assert.equal(signalQuality?.status, "improvement");
   assert.match(signalQuality?.summary ?? "", /mindestens 3/);
   assert.match(signalQuality?.recommendation ?? "", /30 bis 60 Minuten/);
+});
+
+test("bewertet Wochen alte Collector-Logs nicht als aktuellen Zustand", () => {
+  const staleCollector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    logs: ["Jun 1 10:00:00 error: alter Fehler"],
+    network: {
+      connections: ["192.168.1.10:1234 192.168.1.22:8181 ESTABLISHED"]
+    }
+  };
+
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    staleCollector
+  );
+  const logs = checks.find((check) => check.id === "logs");
+  const externalAccess = checks.find((check) => check.id === "external-access");
+
+  assert.equal(logs?.status, "unavailable");
+  assert.match(logs?.summary ?? "", /früher erkannt/);
+  assert.match(logs?.recommendation ?? "", /bereits eingerichtet/);
+  assert.equal(externalAccess?.status, "unavailable");
 });

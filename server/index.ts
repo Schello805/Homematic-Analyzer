@@ -1161,8 +1161,11 @@ app.post("/api/collector", async (request, response) => {
 });
 
 app.get("/api/collector/latest", (_request, response) => {
+  const age = dataAgeStatus(latestCollector?.collectedAt, 3);
   response.json({
     available: Boolean(latestCollector),
+    state: age.state,
+    ageMinutes: age.ageMinutes,
     collectedAt: latestCollector?.collectedAt,
     host: latestCollector?.host,
     logs: latestCollector?.logs?.length ?? 0,
@@ -1171,8 +1174,12 @@ app.get("/api/collector/latest", (_request, response) => {
 });
 
 app.get("/api/logs/latest", (_request, response) => {
+  const age = dataAgeStatus(latestCollector?.collectedAt, 3);
   response.json({
     available: Boolean(latestCollector?.logs?.length),
+    collectorAvailable: Boolean(latestCollector),
+    collectorState: age.state,
+    collectorAgeMinutes: age.ageMinutes,
     analyzerVersion: appVersion,
     servedAt: new Date().toISOString(),
     collectedAt: latestCollector?.collectedAt,
