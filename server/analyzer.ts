@@ -1,4 +1,5 @@
 import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
+import { buildRoutingTopology } from "./routingTopology.js";
 
 const now = () => new Date().toISOString();
 const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
@@ -259,7 +260,7 @@ function isHmIpSnifferDevice(device: SnifferDeviceSummary): boolean {
 
 function isHmIpRouterCandidateType(type?: string): boolean {
   if (!type) return false;
-  return /^HmIP-(HAP|WLAN-HAP|DRAP|PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|WRC|MIOB)/i.test(type);
+  return /^HmIP-(HAP|WLAN-HAP|DRAP|PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|MIOB)/i.test(type);
 }
 
 function snifferDeviceLabel(device: SnifferDeviceSummary): string {
@@ -302,6 +303,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const inventoryDevices = masterdata?.devices?.length ? masterdata.devices : ccu?.devices ?? [];
   const hmipDevices = inventoryDevices.filter((device) => isHmIpType(device.type));
   const hmipRouterCandidates = hmipDevices.filter((device) => isHmIpRouterCandidateType(device.type));
+  const routingTopology = buildRoutingTopology(
+    masterdata,
+    [...(currentCollector?.hmipRoutingLogs ?? []), ...(currentCollector?.hmipLogs ?? [])],
+    currentCollector?.host,
+    currentCollector?.collectedAt
+  );
   const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
   const reliableSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams >= 3);
   const provisionalSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams < 3);
@@ -653,7 +660,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "routing-topology",
       title: "HmIP Routing",
       category: "Topologie",
-      status: hmipDevices.length > 0
+      status: routingTopology.metrics.confirmedRoutes > 0 || routingTopology.metrics.confirmedRouters > 0
+        ? "ok"
+        : hmipDevices.length > 0
         ? weakHmipSnifferDevices.some((device) => (device.avgRssi ?? 0) <= -95)
           ? "warning"
           : weakHmipSnifferDevices.length > 0
@@ -662,7 +671,11 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
               ? "ok"
               : "unavailable"
         : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
-      summary: hmipDevices.length > 0
+      summary: routingTopology.metrics.confirmedRoutes > 0
+        ? `${routingTopology.metrics.confirmedRouters} Router und ${routingTopology.metrics.confirmedRoutes} aktive Routingpfade sind durch HmIPServer-Daten belegt.`
+        : routingTopology.metrics.confirmedRouters > 0
+          ? `${routingTopology.metrics.confirmedRouters} Geräte sind als Router belegt. Aktive Gerätepfade sind im aktuellen Log noch nicht eindeutig zugeordnet.`
+        : hmipDevices.length > 0
         ? hmipSnifferDevicesWithRssi.length > 0
           ? weakHmipSnifferDevices.length > 0
             ? `${hmipDevices.length} HmIP-Geräte bekannt, ${hmipSnifferDevicesWithRssi.length} per Sniffer-RSSI gesehen. Schwache HmIP-Geräte: ${weakHmipSnifferDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
@@ -671,7 +684,11 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : hasCcuData || masterdataDeviceCount > 0
           ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
           : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
-      recommendation: hmipDevices.length > 0
+      recommendation: routingTopology.metrics.confirmedRoutes > 0
+        ? "Öffne die Routing-Karte, um belegte Wege und Geräte ohne nachgewiesene Zuordnung zu prüfen."
+        : routingTopology.metrics.confirmedRouters > 0
+          ? "Router sind erkannt. Betätige HmIP-Geräte und aktualisiere die Karte, um mögliche aktive Pfade im Log zu erfassen."
+        : hmipDevices.length > 0
         ? weakHmipSnifferDevices.length > 0
           ? "Bei schwachen HmIP-Geräten zuerst Standort, Entfernung und Stromversorgung prüfen. Danach einen HmIP-Router/Access Point näher am betroffenen Bereich testen."
           : hmipSnifferDevicesWithRssi.length > 0
@@ -683,6 +700,11 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       access: ["ccu"],
       evidence: hmipDevices.length > 0
         ? [
+          ...(routingTopology.metrics.confirmedRouters > 0 || routingTopology.metrics.confirmedRoutes > 0 ? [{
+            source: "HmIPServer-Routing",
+            detail: `${routingTopology.metrics.confirmedRouters} bestätigte Router, ${routingTopology.metrics.routingEnabled} Geräte mit aktivem Routing, ${routingTopology.metrics.multicastRouters} Multicast-Router und ${routingTopology.metrics.confirmedRoutes} belegte Pfade.`,
+            timestamp: currentCollector?.collectedAt
+          }] : []),
           {
             source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
             detail: `${hmipDevices.length} HmIP-Geräte erkannt. Mögliche Router-/Repeater-Kandidaten: ${hmipRouterCandidates.slice(0, 10).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine sicher erkannt"}.`,
@@ -701,9 +723,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ]
         : [],
       details: [
-        "Router-Kandidaten sind Geräte, deren Typ typischerweise netzbetrieben ist und als HmIP-Router/Repeater infrage kommt.",
+        "Router-Kandidaten sind Gerätetypen, die typischerweise netzversorgt sind und als HmIP-Router/Repeater infrage kommen.",
         "Sniffer-RSSI bewertet die Abdeckung am Sniffer-Standort. Das ist ein guter Hinweis, aber noch kein beweisbarer aktiver Routingpfad.",
-        "Aktive Routing-Pfade werden erst behauptet, wenn HmIPServer-Daten oder passende Logs sie belegen."
+        "Die Grafik zeigt aktive Routing-Pfade nur durchgezogen, wenn HmIPServer-Daten oder passende Logs sie ausdrücklich belegen."
       ]
     },
     {

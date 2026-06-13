@@ -24,16 +24,18 @@ RESPONSE_FILE="$(make_tmp_file response)"
 BACKUP_LIST_FILE="$(make_tmp_file backups)"
 LOG_LIST_FILE="$(make_tmp_file logs)"
 HMIP_LOG_LIST_FILE="$(make_tmp_file hmip-logs)"
+HMIP_ROUTING_LOG_LIST_FILE="$(make_tmp_file hmip-routing-logs)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
 : > "$BACKUP_LIST_FILE"
 : > "$LOG_LIST_FILE"
 : > "$HMIP_LOG_LIST_FILE"
+: > "$HMIP_ROUTING_LOG_LIST_FILE"
 : > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -220,8 +222,10 @@ fi
 
 if [ -r "$HMIP_LOG_SOURCE" ]; then
   tail -n 250 "$HMIP_LOG_SOURCE" > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
+  tail -n 5000 "$HMIP_LOG_SOURCE" 2>/dev/null | grep -Ei 'ROUTER_MODULE_ENABLED|MULTICAST_ROUTER_MODULE_ENABLED|ENABLE_ROUTING|[[:space:]]via[[:space:]]|[[:space:]]router[[:space:]]|[[:space:]]hop[[:space:]]|routing' | tail -n 500 > "$HMIP_ROUTING_LOG_LIST_FILE" 2>/dev/null || true
 elif [ -r /var/log/hmserver.log.1 ]; then
   tail -n 250 /var/log/hmserver.log.1 > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
+  tail -n 5000 /var/log/hmserver.log.1 2>/dev/null | grep -Ei 'ROUTER_MODULE_ENABLED|MULTICAST_ROUTER_MODULE_ENABLED|ENABLE_ROUTING|[[:space:]]via[[:space:]]|[[:space:]]router[[:space:]]|[[:space:]]hop[[:space:]]|routing' | tail -n 500 > "$HMIP_ROUTING_LOG_LIST_FILE" 2>/dev/null || true
 fi
 
 {
@@ -307,6 +311,20 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$encoded_line"
   done < "$HMIP_LOG_LIST_FILE"
+  printf '\n  ],\n'
+  printf '  "hmipRoutingLogsBase64": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$encoded_line"
+  done < "$HMIP_ROUTING_LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connectionsBase64": [\n'

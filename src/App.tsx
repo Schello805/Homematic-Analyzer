@@ -306,6 +306,44 @@ type RoutingStatus = {
   sample: string[];
 };
 
+type RoutingTopologyNode = {
+  id: string;
+  name: string;
+  serial?: string;
+  address?: string;
+  type?: string;
+  role: "central" | "router" | "candidate" | "device";
+  routerEnabled: boolean;
+  routingEnabled: boolean;
+  multicastRouting: boolean;
+  evidence: string[];
+};
+
+type RoutingTopology = {
+  generatedAt: string;
+  collectedAt?: string;
+  sourceHost?: string;
+  state: "ready" | "partial" | "missing";
+  nodes: RoutingTopologyNode[];
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    kind: "confirmed-route";
+    evidence: string;
+  }>;
+  metrics: {
+    devices: number;
+    confirmedRouters: number;
+    routerCandidates: number;
+    routingEnabled: number;
+    multicastRouters: number;
+    confirmedRoutes: number;
+    unknownAssignments: number;
+  };
+  diagnostics: string[];
+};
+
 const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const setupStorageKey = "homematic-analyzer.setup.v1";
@@ -815,6 +853,179 @@ function donutSegmentPath(startPercent: number, endPercent: number, outerRadius 
   ].join(" ");
 }
 
+function RoutingTopologyView({
+  topology,
+  loading,
+  selectedNodeId,
+  onSelectNode,
+  onRefresh
+}: {
+  topology: RoutingTopology | null;
+  loading: boolean;
+  selectedNodeId: string;
+  onSelectNode: (nodeId: string) => void;
+  onRefresh: () => void;
+}) {
+  if (!topology) {
+    return (
+      <section className="routing-topology-card">
+        <div className="routing-topology-empty">
+          <strong>{loading ? "Routingdaten werden geladen …" : "Noch keine Topologiedaten geladen"}</strong>
+          <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
+            {loading ? "Lädt …" : "Jetzt laden"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const central = topology.nodes.find((node) => node.role === "central");
+  const routers = topology.nodes.filter((node) => node.role === "router");
+  const candidates = topology.nodes.filter((node) => node.role === "candidate");
+  const devices = topology.nodes.filter((node) => node.role === "device");
+  const selectedNode = topology.nodes.find((node) => node.id === selectedNodeId) ?? central;
+  const confirmedSourceIds = new Set(topology.edges.map((edge) => edge.source));
+  const center = { x: 450, y: 260 };
+  const positions = new Map<string, { x: number; y: number }>();
+  positions.set("central", center);
+
+  const placeRing = (nodes: RoutingTopologyNode[], radius: number, offset = -90) => {
+    nodes.forEach((node, index) => {
+      const angle = ((offset + (360 / Math.max(nodes.length, 1)) * index) * Math.PI) / 180;
+      positions.set(node.id, {
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius
+      });
+    });
+  };
+
+  placeRing(routers, 125);
+  placeRing(candidates, 190, -82);
+  placeRing(devices, 232, -88);
+
+  const nodeClass = (node: RoutingTopologyNode) => {
+    if (node.role === "central") return "is-central";
+    if (node.role === "router") return "is-router";
+    if (node.role === "candidate") return "is-candidate";
+    return "is-device";
+  };
+
+  return (
+    <section className="routing-topology-card">
+      <div className="routing-topology-header">
+        <div>
+          <p className="eyebrow">Routing-Karte</p>
+          <h4>HmIP-Geräte und belegte Routingpfade</h4>
+          <p>Durchgezogen = belegt oder als Router konfiguriert. Gestrichelt = Zuordnung noch nicht im Log nachgewiesen.</p>
+        </div>
+        <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
+          {loading ? "Aktualisiert …" : "Karte aktualisieren"}
+        </button>
+      </div>
+
+      <div className="routing-metrics">
+        <span><strong>{topology.metrics.devices}</strong> HmIP-Geräte</span>
+        <span><strong>{topology.metrics.confirmedRouters}</strong> bestätigte Router</span>
+        <span><strong>{topology.metrics.confirmedRoutes}</strong> belegte Pfade</span>
+        <span><strong>{topology.metrics.multicastRouters}</strong> Multicast-Router</span>
+      </div>
+
+      <div className="routing-topology-layout">
+        <div className="routing-map-wrap">
+          <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
+            <circle className="routing-orbit routing-orbit-router" cx={center.x} cy={center.y} r="125" />
+            <circle className="routing-orbit routing-orbit-candidate" cx={center.x} cy={center.y} r="190" />
+            <circle className="routing-orbit routing-orbit-device" cx={center.x} cy={center.y} r="232" />
+
+            {topology.nodes.filter((node) => node.role !== "central" && node.role !== "router" && !confirmedSourceIds.has(node.id)).map((node) => {
+              const position = positions.get(node.id);
+              if (!position) return null;
+              return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={center.x} y1={center.y} x2={position.x} y2={position.y} />;
+            })}
+
+            {routers.map((node) => {
+              const position = positions.get(node.id);
+              if (!position) return null;
+              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={center.x} y1={center.y} x2={position.x} y2={position.y} />;
+            })}
+
+            {topology.edges.map((edge) => {
+              const source = positions.get(edge.source);
+              const target = positions.get(edge.target);
+              if (!source || !target) return null;
+              return (
+                <line className="routing-edge is-confirmed" key={edge.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y}>
+                  <title>{edge.evidence}</title>
+                </line>
+              );
+            })}
+
+            {topology.nodes.map((node) => {
+              const position = positions.get(node.id);
+              if (!position) return null;
+              const isSelected = selectedNode?.id === node.id;
+              return (
+                <g
+                  className={`routing-node ${nodeClass(node)} ${isSelected ? "is-selected" : ""}`}
+                  key={node.id}
+                  transform={`translate(${position.x} ${position.y})`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectNode(node.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
+                  }}
+                >
+                  <circle r={node.role === "central" ? 31 : node.role === "router" ? 18 : 12} />
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}`}</title>
+                  {(node.role === "central" || node.role === "router" || isSelected) && (
+                    <text y={node.role === "central" ? 48 : 29} textAnchor="middle">{node.name}</text>
+                  )}
+                  {node.role === "router" && <text className="routing-node-icon" y="5" textAnchor="middle">R</text>}
+                </g>
+              );
+            })}
+          </svg>
+
+          <div className="routing-legend">
+            <span><i className="legend-dot is-central" /> Zentrale</span>
+            <span><i className="legend-dot is-router" /> bestätigter Router</span>
+            <span><i className="legend-dot is-candidate" /> möglicher netzversorgter Router</span>
+            <span><i className="legend-line is-confirmed" /> belegter Pfad</span>
+            <span><i className="legend-line is-unknown" /> Zuordnung unbekannt</span>
+          </div>
+        </div>
+
+        <aside className="routing-node-detail">
+          <small>Ausgewählter Knoten</small>
+          <h5>{selectedNode?.name ?? "Keine Auswahl"}</h5>
+          {selectedNode?.type && <p>{selectedNode.type}</p>}
+          {selectedNode?.serial && <p>Seriennummer: {selectedNode.serial}</p>}
+          {selectedNode?.role !== "central" && (
+            <dl>
+              <div><dt>Dient als Router</dt><dd>{selectedNode?.routerEnabled ? "Ja, belegt" : "Nicht belegt"}</dd></div>
+              <div><dt>Routing aktiv</dt><dd>{selectedNode?.routingEnabled ? "Ja" : "Nicht belegt"}</dd></div>
+              <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
+            </dl>
+          )}
+          {selectedNode?.evidence.length ? (
+            <ul>{selectedNode.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+          ) : (
+            <p className="muted">Für diesen Knoten liegt noch kein spezieller Routing-Beleg im aktuellen Log vor.</p>
+          )}
+        </aside>
+      </div>
+
+      {topology.metrics.confirmedRoutes === 0 && (
+        <div className="routing-truth-note">
+          <strong>Geräte und Router-Schalter sind sichtbar – aktive Wege noch nicht.</strong>
+          <span>Die Karte erfindet keine Pfade. Betätige HmIP-Geräte und aktualisiere anschließend die Karte, damit passende HmIPServer-Zeilen erfasst werden können.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -836,6 +1047,9 @@ function App() {
   const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
   const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null>(null);
   const [routingStatusLoading, setRoutingStatusLoading] = useState(false);
+  const [routingTopology, setRoutingTopology] = useState<RoutingTopology | null>(null);
+  const [routingTopologyLoading, setRoutingTopologyLoading] = useState(false);
+  const [selectedRoutingNodeId, setSelectedRoutingNodeId] = useState("central");
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [savingSettings, setSavingSettings] = useState(false);
@@ -1095,6 +1309,36 @@ function App() {
       }
     } finally {
       setRoutingStatusLoading(false);
+    }
+  }
+
+  async function loadRoutingTopology(showResultToast = false) {
+    setRoutingTopologyLoading(true);
+    try {
+      const response = await fetch("/api/routing/topology");
+      if (!response.ok) throw new Error("Routing-Topologie konnte nicht geladen werden.");
+      const result = (await response.json()) as RoutingTopology;
+      setRoutingTopology(result);
+      setSelectedRoutingNodeId((current) => result.nodes.some((node) => node.id === current) ? current : "central");
+      if (showResultToast) {
+        showToast({
+          type: result.state === "ready" ? "success" : result.state === "partial" ? "info" : "warning",
+          title: result.state === "ready" ? "Routing-Topologie aktualisiert" : "Routing-Daten aktualisiert",
+          message: result.metrics.confirmedRoutes > 0
+            ? `${result.metrics.confirmedRoutes} belegte Pfade und ${result.metrics.confirmedRouters} bestätigte Router gefunden.`
+            : `${result.metrics.devices} HmIP-Geräte gefunden; aktive Pfade sind im aktuellen Log noch nicht belegt.`
+        });
+      }
+    } catch (caughtError) {
+      if (showResultToast) {
+        showToast({
+          type: "error",
+          title: "Topologie nicht verfügbar",
+          message: caughtError instanceof Error ? caughtError.message : "Unbekannter Fehler"
+        });
+      }
+    } finally {
+      setRoutingTopologyLoading(false);
     }
   }
 
@@ -2101,6 +2345,14 @@ function App() {
       setActiveCheck(firstRelevantCheckId(nextAnalysis));
     }
   }, [form.hmipRoutingEnabled, analysis, activeCheck]);
+
+  useEffect(() => {
+    if (!form.hmipRoutingEnabled || currentPage !== "analysis") return;
+
+    void loadRoutingTopology();
+    const interval = window.setInterval(() => void loadRoutingTopology(), 30000);
+    return () => window.clearInterval(interval);
+  }, [form.hmipRoutingEnabled, currentPage]);
 
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
@@ -3679,6 +3931,16 @@ function App() {
                       <h3>{check.title}</h3>
                     </div>
                     <p className="lead">{check.summary}</p>
+
+                    {check.id === "routing-topology" && (
+                      <RoutingTopologyView
+                        topology={routingTopology}
+                        loading={routingTopologyLoading}
+                        selectedNodeId={selectedRoutingNodeId}
+                        onSelectNode={setSelectedRoutingNodeId}
+                        onRefresh={() => void loadRoutingTopology(true)}
+                      />
+                    )}
                     
                     <div className={`recommendation-banner status-${check.status}`}>
                       <div className="banner-icon">

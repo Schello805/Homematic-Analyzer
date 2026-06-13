@@ -13,6 +13,7 @@ import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
+import { buildRoutingTopology } from "./routingTopology.js";
 import { parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
 import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
@@ -143,6 +144,8 @@ const collectorSchema = z.object({
   logsBase64: z.array(z.string().max(8000)).max(500).optional(),
   hmipLogs: z.array(z.coerce.string().max(4000)).max(250).optional(),
   hmipLogsBase64: z.array(z.string().max(8000)).max(250).optional(),
+  hmipRoutingLogs: z.array(z.coerce.string().max(4000)).max(500).optional(),
+  hmipRoutingLogsBase64: z.array(z.string().max(8000)).max(500).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional(),
     connectionsBase64: z.array(z.string().max(8000)).max(250).optional()
@@ -1162,10 +1165,12 @@ app.post("/api/collector", async (request, response) => {
 
   const decodedLogs = decodeBase64Lines(parsed.data.logsBase64);
   const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
+  const decodedHmipRoutingLogs = decodeBase64Lines(parsed.data.hmipRoutingLogsBase64);
   const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
   const {
     logsBase64: _logsBase64,
     hmipLogsBase64: _hmipLogsBase64,
+    hmipRoutingLogsBase64: _hmipRoutingLogsBase64,
     network: encodedNetwork,
     ...collectorData
   } = parsed.data;
@@ -1175,6 +1180,7 @@ app.post("/api/collector", async (request, response) => {
     ...collectorData,
     logs: parsed.data.logs ?? decodedLogs,
     hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
+    hmipRoutingLogs: parsed.data.hmipRoutingLogs ?? decodedHmipRoutingLogs,
     network: encodedNetwork
       ? {
           ...network,
@@ -1220,6 +1226,19 @@ app.get("/api/routing/status", async (_request, response) => {
     hmipLogReceived: age.state === "fresh" && hmipLogs.length > 0,
     sample: hmipLogs.slice(-5)
   });
+});
+
+app.get("/api/routing/topology", (_request, response) => {
+  const age = dataAgeStatus(latestCollector?.collectedAt, 3);
+  const currentLogs = age.state === "fresh"
+    ? [...(latestCollector?.hmipRoutingLogs ?? []), ...(latestCollector?.hmipLogs ?? [])]
+    : [];
+  response.json(buildRoutingTopology(
+    latestCcuMasterdata,
+    currentLogs,
+    latestCollector?.host,
+    latestCollector?.collectedAt
+  ));
 });
 
 app.get("/api/logs/latest", (_request, response) => {

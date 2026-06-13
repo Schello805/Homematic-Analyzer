@@ -128,10 +128,51 @@ export type CollectorPayload = {
   system?: Record<string, unknown>;
   logs?: string[];
   hmipLogs?: string[];
+  hmipRoutingLogs?: string[];
   network?: {
     connections?: string[];
   };
   backups?: Record<string, unknown>;
+};
+
+export type RoutingTopologyNode = {
+  id: string;
+  name: string;
+  serial?: string;
+  address?: string;
+  type?: string;
+  role: "central" | "router" | "candidate" | "device";
+  routerEnabled: boolean;
+  routingEnabled: boolean;
+  multicastRouting: boolean;
+  evidence: string[];
+};
+
+export type RoutingTopologyEdge = {
+  id: string;
+  source: string;
+  target: string;
+  kind: "confirmed-route";
+  evidence: string;
+};
+
+export type RoutingTopology = {
+  generatedAt: string;
+  collectedAt?: string;
+  sourceHost?: string;
+  state: "ready" | "partial" | "missing";
+  nodes: RoutingTopologyNode[];
+  edges: RoutingTopologyEdge[];
+  metrics: {
+    devices: number;
+    confirmedRouters: number;
+    routerCandidates: number;
+    routingEnabled: number;
+    multicastRouters: number;
+    confirmedRoutes: number;
+    unknownAssignments: number;
+  };
+  diagnostics: string[];
 };
 
 export type CollectorHistoryPoint = {

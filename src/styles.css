@@ -4061,3 +4061,321 @@ pre {
     padding: 11px 11px 11px 13px;
   }
 }
+.routing-topology-card {
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #d9e4f3;
+  border-radius: 22px;
+  background: linear-gradient(145deg, #fbfdff, #f5f9ff);
+}
+
+.routing-topology-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.routing-topology-header h4 {
+  margin: 2px 0 4px;
+  font-size: 1.2rem;
+}
+
+.routing-topology-header p {
+  margin: 0;
+}
+
+.routing-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.routing-metrics span {
+  padding: 10px 12px;
+  border: 1px solid #dde7f3;
+  border-radius: 14px;
+  background: #fff;
+  color: #53627a;
+  font-size: .82rem;
+}
+
+.routing-metrics strong {
+  display: block;
+  color: #162033;
+  font-size: 1.05rem;
+}
+
+.routing-topology-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.routing-map-wrap,
+.routing-node-detail {
+  border: 1px solid #dce6f3;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .9);
+}
+
+.routing-map-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.routing-map {
+  display: block;
+  width: 100%;
+  min-height: 470px;
+}
+
+.routing-orbit {
+  fill: none;
+  stroke: #e4ebf5;
+  stroke-width: 1;
+  stroke-dasharray: 4 8;
+}
+
+.routing-orbit-router {
+  stroke: #a9e4cd;
+}
+
+.routing-orbit-candidate {
+  stroke: #f7d89d;
+}
+
+.routing-edge {
+  vector-effect: non-scaling-stroke;
+}
+
+.routing-edge.is-unknown {
+  stroke: #cbd5e1;
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+  opacity: .44;
+}
+
+.routing-edge.is-router-config {
+  stroke: #22a879;
+  stroke-width: 2;
+  opacity: .72;
+}
+
+.routing-edge.is-confirmed {
+  stroke: #3478f6;
+  stroke-width: 3;
+}
+
+.routing-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.routing-node circle {
+  stroke: #fff;
+  stroke-width: 3;
+  transition: transform .16s ease, stroke-width .16s ease;
+}
+
+.routing-node:hover circle,
+.routing-node:focus circle,
+.routing-node.is-selected circle {
+  transform: scale(1.25);
+  stroke-width: 4;
+}
+
+.routing-node text {
+  fill: #28364c;
+  font-size: 11px;
+  font-weight: 650;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.routing-node .routing-node-icon {
+  fill: #fff;
+  stroke: none;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.routing-node.is-central circle {
+  fill: #173e78;
+}
+
+.routing-node.is-router circle {
+  fill: #20a878;
+}
+
+.routing-node.is-candidate circle {
+  fill: #f59e0b;
+}
+
+.routing-node.is-device circle {
+  fill: #7b8da8;
+}
+
+.routing-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 15px;
+  padding: 12px 15px 15px;
+  border-top: 1px solid #e5edf7;
+  color: #5d6b82;
+  font-size: .78rem;
+}
+
+.routing-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #7b8da8;
+}
+
+.legend-dot.is-central {
+  background: #173e78;
+}
+
+.legend-dot.is-router {
+  background: #20a878;
+}
+
+.legend-dot.is-candidate {
+  background: #f59e0b;
+}
+
+.legend-line {
+  width: 20px;
+  border-top: 2px solid #3478f6;
+}
+
+.legend-line.is-unknown {
+  border-top: 1px dashed #9aa9bd;
+}
+
+.routing-node-detail {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.6fr);
+  align-items: start;
+  column-gap: 20px;
+}
+
+.routing-node-detail > small {
+  color: #66748b;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 700;
+}
+
+.routing-node-detail h5 {
+  margin: 5px 0 10px;
+  font-size: 1.05rem;
+}
+
+.routing-node-detail p {
+  margin: 6px 0;
+}
+
+.routing-node-detail dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  grid-column: 2;
+  grid-row: 1 / span 4;
+}
+
+.routing-node-detail dl div {
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: #f3f7fc;
+}
+
+.routing-node-detail dt {
+  color: #68768c;
+  font-size: .72rem;
+}
+
+.routing-node-detail dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+
+.routing-node-detail ul {
+  padding-left: 18px;
+  grid-column: 2;
+}
+
+.routing-truth-note {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 4px solid #f59e0b;
+  border-radius: 12px;
+  background: #fff8e7;
+  color: #6f5012;
+}
+
+.routing-topology-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .routing-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .routing-node-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .routing-node-detail dl,
+  .routing-node-detail ul {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .routing-topology-card {
+    padding: 12px;
+    border-radius: 17px;
+  }
+
+  .routing-topology-header {
+    flex-direction: column;
+  }
+
+  .routing-topology-header button {
+    width: 100%;
+  }
+
+  .routing-map {
+    min-height: 350px;
+    min-width: 620px;
+  }
+
+  .routing-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .routing-node-detail dl {
+    grid-template-columns: 1fr;
+  }
+}
