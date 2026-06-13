@@ -55,7 +55,9 @@ function ccuConnectionRecommendation(ccu?: CcuSnapshot): string {
     case "dns":
       return "Verwende im Setup testweise die lokale IP-Adresse der CCU statt eines Hostnamens. Prüfe außerdem die DNS-Einstellungen des Analyzer-Servers/LXC.";
     case "timeout":
-      return "Prüfe vom Analyzer-System aus die Route zur CCU, Firewall-Regeln und bei Proxmox die Netzwerkfreigabe des LXC. Ein Browserzugriff von deinem PC beweist diesen Netzwerkweg nicht.";
+      return ccu?.webUiReachable
+        ? "Die CCU-WebUI ist erreichbar, aber die XML-API-Geräteliste antwortet zu langsam oder hängt. Starte die Analyse erneut. Bleibt der Fehler bestehen, öffne `statelist.cgi` direkt und prüfe, ob die vollständige XML-Ausgabe innerhalb von 30 Sekunden erscheint."
+        : "Prüfe vom Analyzer-System aus die Route zur CCU, Firewall-Regeln und bei Proxmox die Netzwerkfreigabe des LXC. Ein Browserzugriff von deinem PC beweist diesen Netzwerkweg nicht.";
     case "connection-refused":
       return "Prüfe Protokoll und Port im CCU-Host. Eventuell wurde HTTPS eingetragen, obwohl die CCU nur HTTP anbietet – oder umgekehrt.";
     case "network":

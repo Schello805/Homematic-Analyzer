@@ -61,3 +61,24 @@ test("erklärt, dass Browser und Analyzer unterschiedliche Netzwerkwege nutzen",
   assert.match(connection?.summary ?? "", /Browser unterscheiden/);
   assert.match(connection?.details.join(" ") ?? "", /nicht von deinem PC/);
 });
+
+test("erklärt bei erreichbarer WebUI einen XML-API-Timeout statt eines Netzwerkfehlers", () => {
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret", xmlApiToken: "token12345" },
+    undefined,
+    failedSnapshot({
+      webUiReachable: true,
+      xmlApiReachable: false,
+      authentication: "not-tested",
+      errorCode: "timeout",
+      diagnostics: [
+        { step: "Netzwerk / WebUI", status: "ok", detail: "HTTP 200" },
+        { step: "XML-API Geräteliste", status: "failed", detail: "statelist.cgi antwortete nicht innerhalb von 30 Sekunden." }
+      ]
+    })
+  );
+  const xmlApi = checks.find((check) => check.id === "xml-api");
+
+  assert.match(xmlApi?.recommendation ?? "", /XML-API-Geräteliste antwortet zu langsam/);
+  assert.doesNotMatch(xmlApi?.recommendation ?? "", /Firewall/);
+});

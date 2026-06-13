@@ -12,6 +12,8 @@ const parser = new XMLParser({
 });
 
 const requestTimeoutMs = 6000;
+const xmlApiRequestTimeoutMs = 12000;
+const xmlApiStateListTimeoutMs = 30000;
 const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
 
 class CcuRequestError extends Error {
@@ -205,9 +207,14 @@ function findSidValue(value: unknown): string | undefined {
   return undefined;
 }
 
+export function xmlApiTimeoutForPath(path: string) {
+  return path.endsWith("/statelist.cgi") ? xmlApiStateListTimeoutMs : xmlApiRequestTimeoutMs;
+}
+
 async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequest): Promise<UnknownRecord> {
+  const timeoutMs = xmlApiTimeoutForPath(path);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const headers: Record<string, string> = {};
 
   const passwordIsSid = Boolean(
@@ -231,6 +238,16 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
     const decoded = decodeXmlBuffer(Buffer.from(await response.arrayBuffer()));
     console.info(`[CCU DEBUG] XML ${path}: encoding=${decoded.encoding}, chars=${decoded.text.length}, replacements=${replacementCount(decoded.text)}`);
     return asRecord(parser.parse(decoded.text));
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      const endpointName = path.split("/").pop() ?? path;
+      throw new CcuRequestError(
+        `${endpointName} antwortete nicht innerhalb von ${timeoutMs / 1000} Sekunden. Die XML-API-Antwort wurde nicht rechtzeitig vollständig übertragen.`,
+        undefined,
+        "timeout"
+      );
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -771,6 +788,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       sid: activeSid
     };
 
+    const xmlApiStartedAt = Date.now();
     const [stateList, notifications, alarms] = await Promise.all([
       fetchXml(endpointWithAuth, "/addons/xmlapi/statelist.cgi", config),
       fetchXml(endpointWithAuth, "/addons/xmlapi/systemNotification.cgi", config).catch(() => ({})),
@@ -788,7 +806,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     diagnostics.push({
       step: "XML-API",
       status: "ok",
-      detail: `${endpoint.basePath ?? "/addons/xmlapi"}/statelist.cgi lieferte eine Geräteliste.`
+      detail: `${endpoint.basePath ?? "/addons/xmlapi"}/statelist.cgi lieferte die Geräteliste nach ${((Date.now() - xmlApiStartedAt) / 1000).toFixed(1)} Sekunden.`
     });
 
     const nameMap = collectNameMap(stateList);

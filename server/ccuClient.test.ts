@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyCcuConnectionError } from "./ccuClient.js";
+import { classifyCcuConnectionError, xmlApiTimeoutForPath } from "./ccuClient.js";
 
 test("erkennt DNS-Fehler des Analyzer-Servers", () => {
   const error = new Error("fetch failed", { cause: { code: "ENOTFOUND" } });
@@ -25,4 +25,9 @@ test("erkennt Zeitüberschreitung", () => {
   const result = classifyCcuConnectionError(error);
   assert.equal(result.code, "timeout");
   assert.match(result.detail, /6 Sekunden/);
+});
+
+test("gibt der großen XML-API-Geräteliste deutlich mehr Zeit", () => {
+  assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/statelist.cgi"), 30000);
+  assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/systemNotification.cgi"), 12000);
 });
