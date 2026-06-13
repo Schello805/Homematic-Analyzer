@@ -21,15 +21,17 @@ TMP_FILE="$(make_tmp_file payload)"
 RESPONSE_FILE="$(make_tmp_file response)"
 BACKUP_LIST_FILE="$(make_tmp_file backups)"
 LOG_LIST_FILE="$(make_tmp_file logs)"
+HMIP_LOG_LIST_FILE="$(make_tmp_file hmip-logs)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
 : > "$BACKUP_LIST_FILE"
 : > "$LOG_LIST_FILE"
+: > "$HMIP_LOG_LIST_FILE"
 : > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -209,6 +211,12 @@ elif command -v journalctl >/dev/null 2>&1; then
   journalctl -n 500 --no-pager > "$LOG_LIST_FILE" 2>/dev/null || true
 fi
 
+if [ -r /var/log/hmserver.log ]; then
+  tail -n 250 /var/log/hmserver.log > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
+elif [ -r /var/log/hmserver.log.1 ]; then
+  tail -n 250 /var/log/hmserver.log.1 > "$HMIP_LOG_LIST_FILE" 2>/dev/null || true
+fi
+
 {
   ss -Htanp 2>/dev/null
   netstat -tnp 2>/dev/null
@@ -276,6 +284,18 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
   done < "$LOG_LIST_FILE"
+  printf '\n  ],\n'
+  printf '  "hmipLogs": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$(printf '%s' "$line" | json_escape)"
+  done < "$HMIP_LOG_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connections": [\n'

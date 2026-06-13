@@ -920,5 +920,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     });
   }
 
-  return checks;
+  return config.hmipRoutingEnabled
+    ? checks
+    : checks.filter((check) => check.id !== "routing-topology");
 }

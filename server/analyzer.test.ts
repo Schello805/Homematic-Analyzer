@@ -178,3 +178,11 @@ test("bewertet Wochen alte Collector-Logs nicht als aktuellen Zustand", () => {
   assert.match(logs?.recommendation ?? "", /bereits eingerichtet/);
   assert.equal(externalAccess?.status, "unavailable");
 });
+
+test("blendet die HmIP-Routing-Prüfung nur bei aktivierter Funktion ein", () => {
+  const disabledChecks = createAnalysis({});
+  const enabledChecks = createAnalysis({ hmipRoutingEnabled: true });
+
+  assert.equal(disabledChecks.some((check) => check.id === "routing-topology"), false);
+  assert.equal(enabledChecks.some((check) => check.id === "routing-topology"), true);
+});

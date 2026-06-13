@@ -280,7 +280,7 @@ type SnifferSnapshot = {
   diagnostics: string[];
 };
 
-type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort">>;
+type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
 
 type CollectorStatus = {
   available: boolean;
@@ -289,7 +289,21 @@ type CollectorStatus = {
   collectedAt?: string;
   host?: string;
   logs: number;
+  hmipLogs?: number;
   connections: number;
+};
+
+type RoutingStatus = {
+  enabled: boolean;
+  logLevelConfirmed: boolean;
+  restartConfirmed: boolean;
+  collectorState: "missing" | "fresh" | "stale";
+  collectorAgeMinutes?: number;
+  collectedAt?: string;
+  host?: string;
+  hmipLogLines: number;
+  hmipLogReceived: boolean;
+  sample: string[];
 };
 
 const appVersion = packageInfo.version;
@@ -382,7 +396,10 @@ const initialForm = {
   xmlApiToken: "",
   sshUser: "root",
   sshPassword: "",
-  snifferPort: ""
+  snifferPort: "",
+  hmipRoutingEnabled: false,
+  hmipRoutingLogLevelSet: false,
+  hmipRoutingRestarted: false
 };
 
 type SetupForm = typeof initialForm;
@@ -441,7 +458,10 @@ function loadSavedSetup(): SetupForm {
       xmlApiToken: parsedSetup.xmlApiToken ?? "",
       sshUser: parsedSetup.sshUser ?? "root",
       sshPassword: parsedSetup.sshPassword ?? "",
-      snifferPort: parsedSetup.snifferPort ?? ""
+      snifferPort: parsedSetup.snifferPort ?? "",
+      hmipRoutingEnabled: parsedSetup.hmipRoutingEnabled ?? false,
+      hmipRoutingLogLevelSet: parsedSetup.hmipRoutingLogLevelSet ?? false,
+      hmipRoutingRestarted: parsedSetup.hmipRoutingRestarted ?? false
     };
   } catch {
     return initialForm;
@@ -759,6 +779,17 @@ function hasShellSystemData(systemDashboard?: SystemDashboard) {
   );
 }
 
+function getCcuUiUrl(host: string) {
+  const trimmed = host.trim();
+  if (!trimmed) return undefined;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`);
+    return `${url.origin}/`;
+  } catch {
+    return undefined;
+  }
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -778,6 +809,8 @@ function App() {
   const [collectorCommandPreview, setCollectorCommandPreview] = useState("");
   const [masterdataStatus, setMasterdataStatus] = useState<MasterdataStatus | null>(null);
   const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
+  const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null>(null);
+  const [routingStatusLoading, setRoutingStatusLoading] = useState(false);
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [savingSettings, setSavingSettings] = useState(false);
@@ -877,6 +910,7 @@ function App() {
     });
     return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
   }, []);
+  const ccuUiUrl = useMemo(() => getCcuUiUrl(form.ccuHost), [form.ccuHost]);
 
   const usesLocalAnalyzerUrl = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -949,7 +983,10 @@ function App() {
           ccuHost: nextForm.ccuHost.trim(),
           ccuUser: nextForm.ccuUser.trim(),
           xmlApiToken: (nextForm.xmlApiToken ?? "").trim(),
-          snifferPort: nextForm.snifferPort.trim()
+          snifferPort: nextForm.snifferPort.trim(),
+          hmipRoutingEnabled: nextForm.hmipRoutingEnabled,
+          hmipRoutingLogLevelSet: nextForm.hmipRoutingLogLevelSet,
+          hmipRoutingRestarted: nextForm.hmipRoutingRestarted
         })
       });
     } catch {
@@ -991,6 +1028,37 @@ function App() {
       }
     } finally {
       setUsbPortsLoading(false);
+    }
+  }
+
+  async function loadRoutingStatus(showResultToast = false) {
+    setRoutingStatusLoading(true);
+    try {
+      const response = await fetch("/api/routing/status");
+      if (!response.ok) throw new Error("Routing-Diagnose konnte nicht geprüft werden.");
+      const result = (await response.json()) as RoutingStatus;
+      setRoutingStatus(result);
+      if (showResultToast) {
+        showToast({
+          type: result.hmipLogReceived ? "success" : "warning",
+          title: result.hmipLogReceived ? "HmIP-Log wird empfangen" : "Noch keine HmIP-Logdaten",
+          message: result.hmipLogReceived
+            ? `${result.hmipLogLines} aktuelle Zeilen von ${result.host ?? "der Zentrale"} empfangen.`
+            : result.collectorState === "stale"
+              ? "Der Collector sendet nicht mehr aktuell. Bitte den Collector zuerst reparieren."
+              : "Nach Log-Level-Änderung, Neustart und Collector-Lauf erneut testen."
+        });
+      }
+    } catch (caughtError) {
+      if (showResultToast) {
+        showToast({
+          type: "error",
+          title: "Routing-Test fehlgeschlagen",
+          message: caughtError instanceof Error ? caughtError.message : "Unbekannter Fehler"
+        });
+      }
+    } finally {
+      setRoutingStatusLoading(false);
     }
   }
 
@@ -1610,7 +1678,10 @@ function App() {
             ccuHost: currentForm.ccuHost || defaults.ccuHost || "",
             ccuUser: currentForm.ccuUser || defaults.ccuUser || "",
             xmlApiToken: currentForm.xmlApiToken || defaults.xmlApiToken || "",
-            snifferPort: currentForm.snifferPort || defaults.snifferPort || ""
+            snifferPort: currentForm.snifferPort || defaults.snifferPort || "",
+            hmipRoutingEnabled: defaults.hmipRoutingEnabled ?? currentForm.hmipRoutingEnabled,
+            hmipRoutingLogLevelSet: defaults.hmipRoutingLogLevelSet ?? currentForm.hmipRoutingLogLevelSet,
+            hmipRoutingRestarted: defaults.hmipRoutingRestarted ?? currentForm.hmipRoutingRestarted
           };
           try {
             window.localStorage.setItem(setupStorageKey, JSON.stringify(nextForm));
@@ -1957,6 +2028,26 @@ function App() {
     void loadDiagnostics(false);
   }, [currentPage]);
 
+  useEffect(() => {
+    if (currentPage !== "settings" || !form.hmipRoutingEnabled) return;
+    void loadRoutingStatus(false);
+    const interval = window.setInterval(() => void loadRoutingStatus(false), 15000);
+    return () => window.clearInterval(interval);
+  }, [currentPage, form.hmipRoutingEnabled]);
+
+  useEffect(() => {
+    if (form.hmipRoutingEnabled || !analysis?.checks.some((check) => check.id === "routing-topology")) return;
+    const nextAnalysis = {
+      ...analysis,
+      checks: analysis.checks.filter((check) => check.id !== "routing-topology")
+    };
+    setAnalysis(nextAnalysis);
+    saveAnalysisSnapshot(nextAnalysis);
+    if (activeCheck === "routing-topology") {
+      setActiveCheck(firstRelevantCheckId(nextAnalysis));
+    }
+  }, [form.hmipRoutingEnabled, analysis, activeCheck]);
+
   async function fetchAnalysisSnapshot(options: { notify: boolean }) {
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -1972,6 +2063,7 @@ function App() {
         sshPassword: form.sshPassword,
         hasSshPassword: Boolean(form.sshPassword),
         snifferPort: form.snifferPort.trim(),
+        hmipRoutingEnabled: form.hmipRoutingEnabled,
         externalSystems: [],
         notificationSettings,
         notify: options.notify
@@ -3546,8 +3638,8 @@ function App() {
         <section className="panel settings-page">
           <div className="panel__header">
             <p className="eyebrow">Einstellungen</p>
-            <h2>Benachrichtigungen</h2>
-            <p>Telegram, E-Mail und KI-Einstellungen werden serverseitig in der lokalen Analyzer-Datenbank gespeichert und bei jeder Analyse verwendet.</p>
+            <h2>Optionale Funktionen</h2>
+            <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
             <p className="setup-note">Für lokale Nutzung okay. Für öffentliche Deployments später bitte verschlüsselte Secret-Verwaltung nutzen.</p>
             <div className="script-actions">
               <button type="button" onClick={() => void saveNotificationSettings()} disabled={savingSettings}>
@@ -3560,6 +3652,127 @@ function App() {
           </div>
 
           <div className="settings-grid">
+            <details className="setup-card settings-block routing-settings" open>
+              <summary>
+                <span>HmIP-Routing-Analyse</span>
+                <small>{form.hmipRoutingEnabled ? "Aktiv · Einrichtung prüfen" : "Optional · ausgeschaltet"}</small>
+              </summary>
+              <div className="settings-block__body">
+                <label className="toggle routing-master-toggle">
+                  <input
+                    type="checkbox"
+                    checked={form.hmipRoutingEnabled}
+                    onChange={(event) => updateForm({ ...form, hmipRoutingEnabled: event.target.checked })}
+                  />
+                  <span>HmIP-Routing analysieren</span>
+                </label>
+
+                {!form.hmipRoutingEnabled ? (
+                  <div className="routing-disabled-note">
+                    <strong>Der Routing-Prüfpunkt ist ausgeblendet.</strong>
+                    <span>Aktiviere ihn nur, wenn du Router, Routing-Aktivität und später echte Verbindungswege untersuchen möchtest.</span>
+                  </div>
+                ) : (
+                  <div className="routing-guide">
+                    <div className="routing-guide__intro">
+                      <div>
+                        <strong>Einmalige Vorbereitung</strong>
+                        <span>Die App wertet nur belegte HmIPServer-Daten aus. Die ersten drei Schritte bestätigst du, der letzte Haken wird automatisch gesetzt.</span>
+                      </div>
+                      <span className={`routing-readiness ${routingStatus?.hmipLogReceived ? "is-ready" : ""}`}>
+                        {routingStatus?.hmipLogReceived ? "Empfang bereit" : "Noch nicht vollständig"}
+                      </span>
+                    </div>
+
+                    <ol className="routing-checklist">
+                      <li className="is-complete">
+                        <input type="checkbox" checked readOnly aria-label="Routing-Analyse aktiviert" />
+                        <div>
+                          <strong>Routing-Analyse aktiviert</strong>
+                          <span>Der Prüfpunkt erscheint ab der nächsten Analyse.</span>
+                        </div>
+                      </li>
+                      <li className={form.hmipRoutingLogLevelSet ? "is-complete" : ""}>
+                        <input
+                          type="checkbox"
+                          checked={form.hmipRoutingLogLevelSet}
+                          onChange={(event) => updateForm({ ...form, hmipRoutingLogLevelSet: event.target.checked })}
+                          aria-label="HmIP-Logging auf DEBUG oder TRACE gestellt"
+                        />
+                        <div>
+                          <strong>HmIP-Logging auf DEBUG oder TRACE stellen</strong>
+                          <span>
+                            In der CCU WebUI unter Einstellungen → Systemsteuerung → Zentralen-Wartung → Fehlerprotokoll.
+                            {ccuUiUrl && <> <a href={ccuUiUrl} target="_blank" rel="noreferrer">CCU WebUI öffnen</a></>}
+                          </span>
+                        </div>
+                      </li>
+                      <li className={form.hmipRoutingRestarted ? "is-complete" : ""}>
+                        <input
+                          type="checkbox"
+                          checked={form.hmipRoutingRestarted}
+                          onChange={(event) => updateForm({ ...form, hmipRoutingRestarted: event.target.checked })}
+                          aria-label="Zentrale nach Änderung neu gestartet"
+                        />
+                        <div>
+                          <strong>Zentrale danach neu starten</strong>
+                          <span>Die Änderung des HmIPServer-Loglevels wird erst nach dem Neustart zuverlässig aktiv.</span>
+                        </div>
+                      </li>
+                      <li className={routingStatus?.collectorState === "fresh" ? "is-complete" : ""}>
+                        <input type="checkbox" checked={routingStatus?.collectorState === "fresh"} readOnly aria-label="Collector sendet aktuell" />
+                        <div>
+                          <strong>Aktuellen Collector auf der CCU ausführen</strong>
+                          <span>
+                            {routingStatus?.collectorState === "fresh"
+                              ? `Letzte Daten: ${routingStatus.collectedAt ? new Date(routingStatus.collectedAt).toLocaleString("de-DE") : "soeben"}.`
+                              : "Der Collector muss auch /var/log/hmserver.log übertragen. Kopiere den Befehl per SSH auf die CCU."}
+                          </span>
+                          {routingStatus?.collectorState !== "fresh" && (
+                            <div className="routing-command">
+                              <code>{recommendedCollectorCommand}</code>
+                              <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>Kopieren</button>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                      <li className={routingStatus?.hmipLogReceived ? "is-complete is-automatic" : "is-automatic"}>
+                        <input type="checkbox" checked={Boolean(routingStatus?.hmipLogReceived)} readOnly aria-label="HmIPServer-Log wird empfangen" />
+                        <div>
+                          <strong>HmIPServer-Daten werden empfangen</strong>
+                          <span>
+                            {routingStatus?.hmipLogReceived
+                              ? `${routingStatus.hmipLogLines} aktuelle Logzeilen von ${routingStatus.host ?? "der CCU"} erkannt.`
+                              : "Dieser Haken wird automatisch gesetzt, sobald nach dem Neustart passende Daten eintreffen."}
+                          </span>
+                        </div>
+                      </li>
+                    </ol>
+
+                    <div className="routing-actions">
+                      <button type="button" onClick={() => void loadRoutingStatus(true)} disabled={routingStatusLoading}>
+                        {routingStatusLoading ? "Empfang wird geprüft …" : "Empfang jetzt testen"}
+                      </button>
+                      <button type="button" className="light-button" onClick={() => { setCurrentPage("analysis"); void runAnalysis(); }}>
+                        Analyse neu starten
+                      </button>
+                    </div>
+
+                    {routingStatus?.sample.length ? (
+                      <details className="routing-log-sample">
+                        <summary>Empfangene HmIPServer-Zeilen ansehen</summary>
+                        <pre>{routingStatus.sample.join("\n")}</pre>
+                      </details>
+                    ) : null}
+
+                    <p className="routing-warning">
+                      Nach erfolgreicher Datenerfassung kannst du das HmIP-Loglevel wieder auf INFO stellen. DEBUG/TRACE erzeugt deutlich mehr Logdaten.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </details>
+
             <details className="setup-card settings-block" open>
               <summary><span>Telegram</span><small>Bot und Chat-ID</small></summary>
               <div className="settings-block__body">

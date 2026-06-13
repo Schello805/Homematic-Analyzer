@@ -9,6 +9,7 @@ import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
 import { createAnalysis } from "./analyzer.js";
 import { readCcuSnapshot } from "./ccuClient.js";
 import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
+import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
 import { parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
@@ -120,6 +121,7 @@ const analyzeSchema = z.object({
   sshPassword: z.string().optional(),
   hasSshPassword: z.boolean().optional(),
   snifferPort: z.string().optional(),
+  hmipRoutingEnabled: z.boolean().optional(),
   telegramEnabled: z.boolean().optional(),
   externalSystems: z.array(z.string()).optional(),
   notificationSettings: notificationSettingsSchema.optional(),
@@ -137,6 +139,7 @@ const collectorSchema = z.object({
   collectedAt: z.coerce.string().max(120).optional(),
   system: z.record(z.unknown()).optional(),
   logs: z.array(z.coerce.string().max(2000)).max(500).optional(),
+  hmipLogs: z.array(z.coerce.string().max(4000)).max(250).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional()
   }).optional(),
@@ -155,7 +158,10 @@ const setupDefaultsSchema = z.object({
   ccuHost: z.string().max(300).optional(),
   ccuUser: z.string().max(120).optional(),
   xmlApiToken: z.string().max(300).optional(),
-  snifferPort: z.string().max(300).optional()
+  snifferPort: z.string().max(300).optional(),
+  hmipRoutingEnabled: z.boolean().optional(),
+  hmipRoutingLogLevelSet: z.boolean().optional(),
+  hmipRoutingRestarted: z.boolean().optional()
 });
 
 const ccuConnectionTestSchema = z.object({
@@ -1042,16 +1048,15 @@ app.post("/api/setup/defaults", async (request, response) => {
   const cleanDefaults = Object.fromEntries(
     Object.entries(parsed.data)
       .map(([key, value]) => [key, typeof value === "string" ? value.trim() : value])
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-  );
+      .filter((entry): entry is [string, string | boolean] => typeof entry[1] === "string" || typeof entry[1] === "boolean")
+  ) as SetupDefaults;
   await updateLocalDatabase(localDatabaseFile, (currentDatabase) => {
-    const nextSetupDefaults = { ...currentDatabase.setupDefaults };
-    for (const [key, value] of Object.entries(cleanDefaults)) {
-      if (value) {
-        nextSetupDefaults[key as keyof typeof nextSetupDefaults] = value;
-      } else {
-        delete nextSetupDefaults[key as keyof typeof nextSetupDefaults];
-      }
+    const nextSetupDefaults: SetupDefaults = {
+      ...currentDatabase.setupDefaults,
+      ...cleanDefaults
+    };
+    for (const key of ["ccuHost", "ccuUser", "xmlApiToken", "snifferPort"] as const) {
+      if (cleanDefaults[key] === "") delete nextSetupDefaults[key];
     }
     return {
       ...currentDatabase,
@@ -1169,7 +1174,28 @@ app.get("/api/collector/latest", (_request, response) => {
     collectedAt: latestCollector?.collectedAt,
     host: latestCollector?.host,
     logs: latestCollector?.logs?.length ?? 0,
+    hmipLogs: latestCollector?.hmipLogs?.length ?? 0,
     connections: latestCollector?.network?.connections?.length ?? 0
+  });
+});
+
+app.get("/api/routing/status", async (_request, response) => {
+  const database = await readLocalDatabase(localDatabaseFile);
+  const setup = database.setupDefaults ?? {};
+  const age = dataAgeStatus(latestCollector?.collectedAt, 3);
+  const hmipLogs = latestCollector?.hmipLogs ?? [];
+
+  response.json({
+    enabled: Boolean(setup.hmipRoutingEnabled),
+    logLevelConfirmed: Boolean(setup.hmipRoutingLogLevelSet),
+    restartConfirmed: Boolean(setup.hmipRoutingRestarted),
+    collectorState: age.state,
+    collectorAgeMinutes: age.ageMinutes,
+    collectedAt: latestCollector?.collectedAt,
+    host: latestCollector?.host,
+    hmipLogLines: hmipLogs.length,
+    hmipLogReceived: age.state === "fresh" && hmipLogs.length > 0,
+    sample: hmipLogs.slice(-5)
   });
 });
 

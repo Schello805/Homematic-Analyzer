@@ -7,6 +7,9 @@ export type SetupDefaults = {
   ccuUser?: string;
   xmlApiToken?: string;
   snifferPort?: string;
+  hmipRoutingEnabled?: boolean;
+  hmipRoutingLogLevelSet?: boolean;
+  hmipRoutingRestarted?: boolean;
 };
 
 export type LocalDatabase = {

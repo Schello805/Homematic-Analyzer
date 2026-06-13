@@ -32,6 +32,7 @@ export type AnalyzeRequest = {
   sshPassword?: string;
   hasSshPassword?: boolean;
   snifferPort?: string;
+  hmipRoutingEnabled?: boolean;
   telegramEnabled?: boolean;
   externalSystems?: string[];
   notificationSettings?: NotificationSettings;
@@ -126,6 +127,7 @@ export type CollectorPayload = {
   collectedAt?: string;
   system?: Record<string, unknown>;
   logs?: string[];
+  hmipLogs?: string[];
   network?: {
     connections?: string[];
   };
