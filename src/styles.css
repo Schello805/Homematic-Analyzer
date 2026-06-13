@@ -56,10 +56,13 @@ main {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 18px;
+  position: sticky;
+  top: 8px;
+  z-index: 40;
   border-radius: 22px;
   padding: 10px 12px;
   margin-bottom: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(18px);
 }
 
@@ -1175,6 +1178,22 @@ h2 {
 .dc-duty-legend-row b {
   color: #1849a9;
   font-size: 0.92rem;
+}
+
+.dc-duty-explanation {
+  display: flex;
+  gap: 8px;
+  border-left: 3px solid #3478f6;
+  border-radius: 0 12px 12px 0;
+  padding: 10px 12px;
+  color: #53627a;
+  background: #f4f8ff;
+  font-size: .84rem;
+}
+
+.dc-duty-explanation strong {
+  flex: 0 0 auto;
+  color: #1849a9;
 }
 
 .dc-table-wrap {
@@ -4053,7 +4072,8 @@ pre {
     gap: 10px;
     padding: 10px;
     border-radius: 20px;
-    position: relative;
+    position: sticky;
+    top: 6px;
     z-index: 30;
   }
 
@@ -4266,6 +4286,10 @@ pre {
 
   .dc-duty-donut {
     width: min(78vw, 260px);
+  }
+
+  .dc-duty-explanation {
+    display: grid;
   }
 
   .dc-page__header .analyze-button-compact {

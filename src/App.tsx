@@ -3311,36 +3311,55 @@ function App() {
             <div className="dc-duty-panel">
               <div>
                 <p className="eyebrow">Funklast</p>
-                <h3>Anteil an der gemessenen Funkzeit pro Gerät</h3>
-                <p>Gleitender Zeitraum: letzte 60 Minuten. Die Prozentzahl verteilt nur die gemessene Sendezeit auf die Geräte und ist nicht deren absoluter Duty Cycle.</p>
+                <h3>Belegter Duty Cycle nach Verursacher</h3>
+                <p>
+                  Gleitender Zeitraum: letzte 60 Minuten. Der Kreis entspricht 100% der verfügbaren Funkstunde:
+                  Geräte belegen ihren absoluten Anteil, der graue Bereich ist noch frei.
+                </p>
               </div>
               {(() => {
                 const colors = ["#3478f6", "#20a783", "#f59e0b", "#8b5cf6", "#ec4899"];
                 const topDevices = snifferSnapshot.devices.slice(0, 5);
-                const topShare = topDevices.reduce((sum, device) => sum + device.dutyShare, 0);
+                const measuredDutyCycle = Math.max(0, snifferSnapshot.summary.dutyCycle ?? 0);
+                const displayedDutyCycle = Math.min(100, measuredDutyCycle);
+                const topDutyCycle = topDevices.reduce((sum, device) => sum + device.dutyCycle, 0);
+                const chartScale = measuredDutyCycle > 100 ? 100 / measuredDutyCycle : 1;
                 const remainingDevices = Math.max(0, snifferSnapshot.devices.length - topDevices.length);
-                const remainingShare = Math.max(0, Math.round((100 - topShare) * 10) / 10);
+                const remainingDutyCycle = Math.max(0, Math.round((measuredDutyCycle - topDutyCycle) * 10) / 10);
+                const freeDutyCycle = Math.max(0, Math.round((100 - displayedDutyCycle) * 10) / 10);
                 const segments = [
                   ...topDevices.map((device, index) => ({
                     key: device.address,
                     label: device.name,
                     detail: `${device.serial ? `${device.serial} · ` : ""}${device.address}`,
-                    share: device.dutyShare,
+                    value: device.dutyCycle,
+                    share: device.dutyCycle * chartScale,
+                    kind: "device" as const,
                     color: colors[index]
                   })),
-                  ...(remainingDevices > 0 && remainingShare > 0.1 ? [{
+                  ...(remainingDevices > 0 && remainingDutyCycle > 0.01 ? [{
                     key: "remaining",
                     label: `Weitere ${remainingDevices} Geräte`,
-                    detail: "Zusammengefasster Restanteil",
-                    share: remainingShare,
-                    color: "#cbd5e1"
+                    detail: "Zusammengefasster belegter Duty Cycle",
+                    value: remainingDutyCycle,
+                    share: remainingDutyCycle * chartScale,
+                    kind: "device" as const,
+                    color: "#94a3b8"
+                  }] : []),
+                  ...(freeDutyCycle > 0.01 ? [{
+                    key: "free",
+                    label: "Noch verfügbar",
+                    detail: "Unbelegter Anteil der Funkstunde",
+                    value: freeDutyCycle,
+                    share: freeDutyCycle,
+                    kind: "free" as const,
+                    color: "#e5ebf3"
                   }] : [])
                 ];
-                const chartTotal = segments.reduce((sum, segment) => sum + segment.share, 0) || 1;
                 let position = 0;
                 const chartSegments = segments.map((segment) => {
                   const start = position;
-                  position += (segment.share / chartTotal) * 100;
+                  position += segment.share;
                   return {
                     ...segment,
                     start,
@@ -3355,7 +3374,7 @@ function App() {
                     <div
                       className="dc-duty-donut"
                       role="img"
-                      aria-label={segments.map((segment) => `${segment.label}: ${segment.share}%`).join(", ")}
+                      aria-label={`Duty Cycle ${measuredDutyCycle} Prozent. ${segments.map((segment) => `${segment.label}: ${segment.value} Prozentpunkte`).join(", ")}`}
                     >
                       <svg viewBox="0 0 100 100" aria-hidden="true">
                         {chartSegments.map((segment) => {
@@ -3370,11 +3389,11 @@ function App() {
                               onFocus={() => setHoveredDutySegmentKey(segment.key)}
                               onBlur={() => setHoveredDutySegmentKey(null)}
                             >
-                              <title>{segment.label}: {segment.share}% der gemessenen Funkzeit</title>
+                              <title>{segment.label}: {segment.value}% der verfügbaren Funkstunde</title>
                               <path d={donutSegmentPath(segment.start, segment.end)} fill={segment.color} />
-                              {segment.share >= 4 && (
+                              {segment.value >= 4 && (
                                 <text x={labelPosition.x} y={labelPosition.y} textAnchor="middle" dominantBaseline="central">
-                                  {segment.share}%
+                                  {segment.value}%
                                 </text>
                               )}
                             </g>
@@ -3384,15 +3403,15 @@ function App() {
                       <div className="dc-duty-donut__center">
                         {hoveredSegment ? (
                           <>
-                            <strong>{hoveredSegment.share}%</strong>
+                            <strong>{hoveredSegment.value}%</strong>
                             <span>{hoveredSegment.label}</span>
-                            <small>gemessene Funkzeit</small>
+                            <small>{hoveredSegment.kind === "free" ? "noch verfügbar" : "absoluter DC-Anteil"}</small>
                           </>
                         ) : (
                           <>
-                            <strong>{snifferSnapshot.devices.length}</strong>
-                            <span>aktive Geräte</span>
-                            <small>Segment berühren</small>
+                            <strong>{measuredDutyCycle}%</strong>
+                            <span>Duty Cycle belegt</span>
+                            <small>{measuredDutyCycle > 100 ? "Messwert über 100% – prüfen" : `${freeDutyCycle}% verfügbar`}</small>
                           </>
                         )}
                       </div>
@@ -3405,13 +3424,20 @@ function App() {
                             <strong>{segment.label}</strong>
                             <span>{segment.detail}</span>
                           </div>
-                          <b>{segment.share}%</b>
+                          <b>{segment.value}% DC</b>
                         </div>
                       ))}
                     </div>
                   </div>
                 );
               })()}
+              <div className="dc-duty-explanation">
+                <strong>So liest du das Diagramm:</strong>
+                <span>
+                  62% in der Mitte bedeutet beispielsweise: 62% der erlaubten Funkzeit waren in den letzten 60 Minuten belegt.
+                  Die farbigen Gerätesegmente erklären, wer wie viele Prozentpunkte davon verursacht hat.
+                </span>
+              </div>
             </div>
 
             <details className="dc-table-card dc-data-details">
