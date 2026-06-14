@@ -180,6 +180,10 @@ Der DC-Analyzer orientiert sich am AskSinAnalyzerXS: echte Sniffer-Telegramme we
 
 Ein Sniffer ist optional. Ohne Sniffer liefert die CCU bereits Geräte-RSSI und Zustände aus Sicht der Zentrale. Der Sniffer ergänzt Informationen, die die CCU so nicht liefert: einzelne Telegramme, gemessene Sendezeit/Funklast pro Gerät, Carrier Sense beziehungsweise Rauschpegel und RSSI am Standort des Sniffers.
 
+Unter **Einstellungen → AskSin-Sniffer** lässt sich die Erweiterung vollständig ein- oder ausschalten. Im ausgeschalteten Zustand verschwindet der DC-Analyzer aus der Navigation; Port und bisherige Einrichtung bleiben für eine spätere Reaktivierung gespeichert. Die normale Homematic-Analyse funktioniert weiterhin ohne Zusatzhardware.
+
+Der Sniffer-Verlauf wird in echten Minutenwerten dargestellt. Hover oder Antippen zeigt Uhrzeit, Telegrammzahl, geschätzte Funkzeit und den gemessenen Rauschpegel in dBm. Überzählige Rohschätzungen werden proportional auf maximal 100 Prozent der verfügbaren Funkstunde normiert.
+
 Für verständliche Gerätenamen braucht der Analyzer die kompatible CCU-Systemvariable `AskSinAnalyzerDevList`. Wer AskSinAnalyzerXS bereits nutzt, hat diese Variable oft schon. Dann sendet das normale CCU-Stammdaten-Script sie automatisch mit. Falls sie fehlt, zeigt der DC-Analyzer einen Hinweis und bietet ein Copy-Paste-WebUI-Script an, das `AskSinAnalyzerDevList` erstellt oder aktualisiert.
 
 ## Aktueller Funktionsstand

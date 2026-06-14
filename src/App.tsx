@@ -277,10 +277,19 @@ type SnifferSnapshot = {
     raw: string;
     rssi?: number;
   }>;
+  timeline?: Array<{
+    minute: string;
+    telegrams: number;
+    dutyCycle: number;
+    noiseSamples: number;
+    noiseAverage?: number;
+    noiseMinimum?: number;
+    noiseMaximum?: number;
+  }>;
   diagnostics: string[];
 };
 
-type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
+type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferEnabled" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
 
 type CollectorStatus = {
   available: boolean;
@@ -383,7 +392,7 @@ const checkThemes = [
     id: "devices",
     title: "Geräte",
     description: "Meldungen, Batterien, Erreichbarkeit und Firmware",
-    checkIds: ["alarm-messages", "service-messages", "batteries", "reachability", "config-pending", "firmware-overview"]
+    checkIds: ["alarm-messages", "service-messages", "reachability", "config-pending", "firmware-overview", "batteries"]
   },
   {
     id: "radio",
@@ -480,6 +489,7 @@ const initialForm = {
   xmlApiToken: "",
   sshUser: "root",
   sshPassword: "",
+  snifferEnabled: false,
   snifferPort: "",
   hmipRoutingEnabled: false,
   hmipRoutingLogLevelSet: false,
@@ -542,6 +552,7 @@ function loadSavedSetup(): SetupForm {
       xmlApiToken: parsedSetup.xmlApiToken ?? "",
       sshUser: parsedSetup.sshUser ?? "root",
       sshPassword: parsedSetup.sshPassword ?? "",
+      snifferEnabled: parsedSetup.snifferEnabled ?? Boolean(parsedSetup.snifferPort),
       snifferPort: parsedSetup.snifferPort ?? "",
       hmipRoutingEnabled: parsedSetup.hmipRoutingEnabled ?? false,
       hmipRoutingLogLevelSet: parsedSetup.hmipRoutingLogLevelSet ?? false,
@@ -756,6 +767,14 @@ function formatPercent(value: number) {
 function formatSnifferTime(value?: string) {
   if (!value) return "–";
   return new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function noiseAssessment(value?: number) {
+  if (value === undefined) return { label: "Nicht gemessen", className: "unknown" };
+  if (value <= -100) return { label: "Sehr ruhiger Funkhintergrund", className: "excellent" };
+  if (value <= -90) return { label: "Ruhiger Funkhintergrund", className: "good" };
+  if (value <= -80) return { label: "Erhöhter Rauschpegel", className: "medium" };
+  return { label: "Starker Funkhintergrund", className: "weak" };
 }
 
 function formatDataAge(value?: string) {
@@ -1339,6 +1358,7 @@ function App() {
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
   const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
+  const [showHealthyChecks, setShowHealthyChecks] = useState(false);
   const [expandedCheckThemes, setExpandedCheckThemes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -1366,6 +1386,7 @@ function App() {
   const [snifferLoading, setSnifferLoading] = useState(false);
   const [showAllSnifferDevices, setShowAllSnifferDevices] = useState(false);
   const [showAllSnifferEvents, setShowAllSnifferEvents] = useState(false);
+  const [activeSnifferMinute, setActiveSnifferMinute] = useState<number | null>(null);
   const [hoveredDutySegmentKey, setHoveredDutySegmentKey] = useState<string | null>(null);
   const [logPayload, setLogPayload] = useState<LogPayload | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -1513,7 +1534,7 @@ function App() {
       Boolean(form.ccuUser.trim() && form.ccuPassword),
       Boolean((form.xmlApiToken ?? "").trim()),
       Boolean(form.sshUser.trim() && form.sshPassword),
-      Boolean(form.snifferPort.trim())
+      !form.snifferEnabled || Boolean(form.snifferPort.trim())
     ];
     const completed = steps.filter(Boolean).length;
     return {
@@ -1563,6 +1584,7 @@ function App() {
           ccuHost: nextForm.ccuHost.trim(),
           ccuUser: nextForm.ccuUser.trim(),
           xmlApiToken: (nextForm.xmlApiToken ?? "").trim(),
+          snifferEnabled: nextForm.snifferEnabled,
           snifferPort: nextForm.snifferPort.trim(),
           hmipRoutingEnabled: nextForm.hmipRoutingEnabled,
           hmipRoutingLogLevelSet: nextForm.hmipRoutingLogLevelSet,
@@ -1673,6 +1695,11 @@ function App() {
   }
 
   async function loadSnifferSnapshot(showSuccessToast = false, showLoading = true) {
+    if (!form.snifferEnabled) {
+      setSnifferSnapshot(null);
+      setSnifferHistory(null);
+      return;
+    }
     if (snifferAutoRefreshInFlight.current) return;
     snifferAutoRefreshInFlight.current = true;
     if (showLoading) setSnifferLoading(true);
@@ -2124,7 +2151,9 @@ function App() {
           .filter((check): check is AnalysisCheck => Boolean(check));
         const checks = selectedStatusFilter
           ? allChecks.filter((check) => check.status === selectedStatusFilter)
-          : allChecks;
+          : showHealthyChecks
+            ? allChecks
+            : allChecks.filter((check) => check.status !== "ok");
         const counts = allChecks.reduce<Record<CheckStatus, number>>(
           (accumulator, check) => {
             accumulator[check.status] += 1;
@@ -2144,7 +2173,7 @@ function App() {
         };
       })
       .filter((theme) => theme.checks.length > 0);
-  }, [analysis, selectedStatusFilter]);
+  }, [analysis, selectedStatusFilter, showHealthyChecks]);
 
   const summary = useMemo(() => {
     if (!analysis) return null;
@@ -2157,6 +2186,7 @@ function App() {
       { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
     );
   }, [analysis]);
+  const healthyCheckCount = summary?.ok ?? 0;
 
   useEffect(() => {
     if (!analysis) {
@@ -2248,9 +2278,11 @@ function App() {
         priority: 75,
         eyebrow: "Funk",
         title: "Duty Cycle beobachten",
-        detail: `${dutyCheck.summary} Der Sniffer zeigt mögliche Hauptverursacher.`,
-        button: "Funklast aufteilen",
-        modal: "duty",
+        detail: form.snifferEnabled
+          ? `${dutyCheck.summary} Der Sniffer kann mögliche Hauptverursacher ergänzen.`
+          : `${dutyCheck.summary} Dieser CCU-Wert funktioniert ohne Sniffer.`,
+        button: form.snifferEnabled ? "Funklast aufteilen" : "Duty Cycle einordnen",
+        modal: form.snifferEnabled ? "duty" : "check",
         checkId: dutyCheck.id
       });
     }
@@ -2293,7 +2325,7 @@ function App() {
     }
 
     return actions.sort((left, right) => right.priority - left.priority).slice(0, 5);
-  }, [analysis, collectorStatus]);
+  }, [analysis, collectorStatus, form.snifferEnabled]);
 
   const actionModalCheck = useMemo(
     () => analysis?.checks.find((check) => check.id === actionModalCheckId),
@@ -2323,7 +2355,9 @@ function App() {
 
     const visibleChecks = selectedStatusFilter
       ? analysis.checks.filter((check) => check.status === selectedStatusFilter)
-      : analysis.checks;
+      : showHealthyChecks
+        ? analysis.checks
+        : analysis.checks.filter((check) => check.status !== "ok");
 
     if (visibleChecks.length > 0) {
       const isActiveVisible = visibleChecks.some((check) => check.id === activeCheck);
@@ -2333,7 +2367,7 @@ function App() {
     } else {
       setActiveCheck(null);
     }
-  }, [selectedStatusFilter, analysis, activeCheck]);
+  }, [selectedStatusFilter, showHealthyChecks, analysis, activeCheck]);
 
   useEffect(() => {
     let isActive = true;
@@ -2357,6 +2391,7 @@ function App() {
             ccuHost: currentForm.ccuHost || defaults.ccuHost || "",
             ccuUser: currentForm.ccuUser || defaults.ccuUser || "",
             xmlApiToken: currentForm.xmlApiToken || defaults.xmlApiToken || "",
+            snifferEnabled: defaults.snifferEnabled ?? currentForm.snifferEnabled,
             snifferPort: currentForm.snifferPort || defaults.snifferPort || "",
             hmipRoutingEnabled: defaults.hmipRoutingEnabled ?? currentForm.hmipRoutingEnabled,
             hmipRoutingLogLevelSet: defaults.hmipRoutingLogLevelSet ?? currentForm.hmipRoutingLogLevelSet,
@@ -2666,7 +2701,13 @@ function App() {
   }, [hasAnalysis, currentPage, loading, form, notificationSettings]);
 
   useEffect(() => {
-    if (currentPage !== "dc") return;
+    if (!form.snifferEnabled && currentPage === "dc") {
+      navigateTo("analysis");
+    }
+  }, [form.snifferEnabled, currentPage]);
+
+  useEffect(() => {
+    if (currentPage !== "dc" || !form.snifferEnabled) return;
     void loadUsbPorts(false);
     void loadSnifferSnapshot(false, true);
 
@@ -2675,7 +2716,7 @@ function App() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [currentPage, form.snifferPort]);
+  }, [currentPage, form.snifferEnabled, form.snifferPort]);
 
   useEffect(() => {
     if (currentPage !== "logs") return;
@@ -2698,9 +2739,9 @@ function App() {
   }, [currentPage]);
 
   useEffect(() => {
-    if (!analysis || currentPage !== "analysis" || !form.snifferPort.trim()) return;
+    if (!analysis || currentPage !== "analysis" || !form.snifferEnabled || !form.snifferPort.trim()) return;
     void loadSnifferSnapshot(false, false);
-  }, [analysis?.generatedAt, currentPage, form.snifferPort]);
+  }, [analysis?.generatedAt, currentPage, form.snifferEnabled, form.snifferPort]);
 
   useEffect(() => {
     if (currentPage !== "diagnostics") return;
@@ -2758,6 +2799,7 @@ function App() {
         sshUser: form.sshUser.trim(),
         sshPassword: form.sshPassword,
         hasSshPassword: Boolean(form.sshPassword),
+        snifferEnabled: form.snifferEnabled,
         snifferPort: form.snifferPort.trim(),
         hmipRoutingEnabled: form.hmipRoutingEnabled,
         externalSystems: [],
@@ -2958,9 +3000,11 @@ function App() {
             <button type="button" className={currentPage === "analysis" ? "is-active" : ""} onClick={() => navigateTo("analysis")}>
               Analyse
             </button>
-            <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => navigateTo("dc")}>
-              DC-Analyzer
-            </button>
+            {form.snifferEnabled && (
+              <button type="button" className={currentPage === "dc" ? "is-active" : ""} onClick={() => navigateTo("dc")}>
+                DC-Analyzer
+              </button>
+            )}
             <button type="button" className={currentPage === "logs" ? "is-active" : ""} onClick={() => navigateTo("logs")}>
               Logs
             </button>
@@ -3109,43 +3153,57 @@ function App() {
 
             <fieldset className="setup-card setup-card-optional">
               <legend>Optionale Erweiterungen</legend>
-              <p>Ein Sniffer ist nicht für die Basisanalyse nötig. Die Zentrale liefert Geräte-RSSI; der Sniffer ergänzt Funkverkehr, Sendezeit, Carrier Sense und Messwerte an seinem eigenen Standort.</p>
+              <label className="toggle sniffer-master-toggle">
+                <input
+                  type="checkbox"
+                  checked={form.snifferEnabled}
+                  onChange={(event) => updateForm({ ...form, snifferEnabled: event.target.checked })}
+                />
+                <span>AskSin-Sniffer verwenden</span>
+              </label>
+              <p>Die Basisanalyse ist bewusst ohne Löten nutzbar. Die Zentrale liefert Geräte, Meldungen, Batterien, Duty Cycle und Zentralen-RSSI; der Sniffer ergänzt nur tiefere Funkdetails.</p>
               <details className="inline-help">
                 <summary>Brauche ich den AskSin-Sniffer überhaupt?</summary>
                 <ul>
-                  <li><strong>Ohne Sniffer:</strong> RSSI der Zentrale, Geräteprobleme und Funk-Topologie aus CCU-Daten.</li>
+                  <li><strong>Ohne Sniffer:</strong> Geräte- und Alarmmeldungen, Batterien, Erreichbarkeit, Konfiguration, CCU-Duty-Cycle, RSSI der Zentrale und Funk-Topologie aus CCU-Daten.</li>
                   <li><strong>Mit Sniffer:</strong> einzelne Telegramme, Funklast pro Gerät, Carrier Sense und Empfang am Sniffer-Standort.</li>
                   <li>Gateways und Access Points sind zusätzliche Funkempfänger. Sie werden nicht pauschal als Router behandelt.</li>
                 </ul>
               </details>
-              <div className="usb-port-picker">
-                <label>
-                  AskSin Analyzer XS USB-Port
-                  <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
-                    <option value="">Kein Sniffer / später einrichten</option>
-                    {usbPorts.map((usbPort) => (
-                      <option value={usbPort.path} key={usbPort.path}>
-                        {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
-                      </option>
-                    ))}
-                    <option value="__manual__">Manuell eintragen</option>
-                  </select>
-                </label>
-                <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
-                  {usbPortsLoading ? "Suche läuft ..." : "Ports neu suchen"}
-                </button>
-              </div>
-              {showManualSnifferPort && (
-                <label>
-                  Manueller USB-Port
-                  <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
-                </label>
+              {form.snifferEnabled ? (
+                <>
+                  <div className="usb-port-picker">
+                    <label>
+                      AskSin Analyzer XS USB-Port
+                      <select value={snifferPortSelectValue} onChange={(event) => selectSnifferPort(event.target.value)}>
+                        <option value="">Port noch nicht ausgewählt</option>
+                        {usbPorts.map((usbPort) => (
+                          <option value={usbPort.path} key={usbPort.path}>
+                            {usbPort.stable ? "Stabil: " : ""}{usbPort.label}
+                          </option>
+                        ))}
+                        <option value="__manual__">Manuell eintragen</option>
+                      </select>
+                    </label>
+                    <button type="button" className="ghost-button" onClick={() => void loadUsbPorts(true)} disabled={usbPortsLoading}>
+                      {usbPortsLoading ? "Suche läuft ..." : "Ports neu suchen"}
+                    </button>
+                  </div>
+                  {showManualSnifferPort && (
+                    <label>
+                      Manueller USB-Port
+                      <input value={form.snifferPort} onChange={(event) => updateForm({ ...form, snifferPort: event.target.value })} placeholder="/dev/serial/by-id/... oder /dev/ttyUSB0" />
+                    </label>
+                  )}
+                  <p className={usbPorts.length > 0 ? "setup-note setup-note-ok" : "setup-note"}>
+                    {usbPorts.length > 0
+                      ? "Gefundene Ports werden bevorzugt als stabile /dev/serial/by-id Pfade angezeigt."
+                      : "Wenn hier nichts erscheint: Sniffer anstecken oder in Proxmox/LXC erst den USB-Port durchreichen."}
+                  </p>
+                </>
+              ) : (
+                <p className="setup-note setup-note-ok">Sniffer ausgeschaltet. Die App zeigt nur Funktionen, die ohne Zusatzhardware zuverlässig verfügbar sind.</p>
               )}
-              <p className={usbPorts.length > 0 ? "setup-note setup-note-ok" : "setup-note"}>
-                {usbPorts.length > 0
-                  ? "Gefundene Ports werden bevorzugt als stabile /dev/serial/by-id Pfade angezeigt."
-                  : "Wenn hier nichts erscheint: Sniffer anstecken oder in Proxmox/LXC erst den USB-Port durchreichen."}
-              </p>
             </fieldset>
           </div>
 
@@ -3466,24 +3524,42 @@ function App() {
               </p>
             </div>
             <div className="dc-chart">
-              <div className="dc-chart-bars" aria-label="Verlauf von Telegrammen und gemessenem Rauschpegel">
-                {(() => {
-                  const telegrams = snifferSnapshot?.events.slice().reverse() ?? [];
-                  const noises = snifferSnapshot?.rssiNoise.slice(-40) ?? [];
-                  const maxItems = Math.max(telegrams.length, noises.length, 12);
-                  const hasChartData = telegrams.length > 0 || noises.length > 0;
-                  return (
-                    <>
-                      {Array.from({ length: maxItems }).map((_, index) => {
-                        const telegram = telegrams[index];
-                        const noise = noises[index];
-                        const telegramHeight = telegram ? Math.max(14, Math.min(100, (telegram.len / 32) * 100)) : 0;
-                        const noiseHeight = noise?.rssi !== undefined ? Math.max(8, Math.min(100, ((120 + noise.rssi) / 60) * 100)) : 0;
+              {(() => {
+                const timeline = snifferSnapshot?.timeline ?? [];
+                const hasChartData = timeline.some((point) => point.telegrams > 0 || point.noiseSamples > 0);
+                const maxTelegrams = Math.max(1, ...timeline.map((point) => point.telegrams));
+                const latestDataIndex = timeline.reduce(
+                  (latest, point, index) => point.telegrams > 0 || point.noiseSamples > 0 ? index : latest,
+                  -1
+                );
+                const selectedIndex = activeSnifferMinute ?? latestDataIndex;
+                const selectedPoint = selectedIndex >= 0 ? timeline[selectedIndex] : undefined;
+                const selectedNoise = noiseAssessment(selectedPoint?.noiseAverage);
+
+                return (
+                  <>
+                    <div className="dc-chart-bars" aria-label="Minutenverlauf von Telegrammen und gemessenem Rauschpegel">
+                      {timeline.map((point, index) => {
+                        const telegramHeight = point.telegrams > 0
+                          ? Math.max(8, Math.min(100, (point.telegrams / maxTelegrams) * 100))
+                          : 0;
+                        const noiseHeight = point.noiseAverage !== undefined
+                          ? Math.max(8, Math.min(100, ((120 + point.noiseAverage) / 60) * 100))
+                          : 0;
+                        const time = new Date(point.minute).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
                         return (
-                          <div className="dc-chart-column" key={`dc-chart-${index}`}>
-                            <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} title={noise ? `Gemessener Rauschpegel ${noise.rssi} dBm` : ""} />
-                            <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} title={telegram ? `${telegram.fromName ?? telegram.fromAddress}: ${telegram.type || "Telegramm"}` : ""} />
-                          </div>
+                          <button
+                            type="button"
+                            className={`dc-chart-column ${selectedIndex === index ? "is-active" : ""}`}
+                            key={point.minute}
+                            onMouseEnter={() => setActiveSnifferMinute(index)}
+                            onFocus={() => setActiveSnifferMinute(index)}
+                            onClick={() => setActiveSnifferMinute(index)}
+                            aria-label={`${time}: ${point.telegrams} Telegramme, ${point.noiseAverage ?? "kein"} dBm Rauschpegel`}
+                          >
+                            <span className="dc-chart-noise" style={{ height: `${noiseHeight}%` }} />
+                            <span className="dc-chart-telegram" style={{ height: `${telegramHeight}%` }} />
+                          </button>
                         );
                       })}
                       {!hasChartData && (
@@ -3492,10 +3568,28 @@ function App() {
                           <span>Der Port wird dauerhaft überwacht. Löse ein Homematic-Gerät aus.</span>
                         </div>
                       )}
-                    </>
-                  );
-                })()}
-              </div>
+                    </div>
+                    {selectedPoint && (
+                      <div className="dc-chart-inspector" aria-live="polite">
+                        <div>
+                          <small>Minute</small>
+                          <strong>{new Date(selectedPoint.minute).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</strong>
+                        </div>
+                        <div>
+                          <small>Telegramme</small>
+                          <strong>{selectedPoint.telegrams}</strong>
+                          <span>{formatPercent(selectedPoint.dutyCycle)} geschätzte Funkzeit</span>
+                        </div>
+                        <div className={`noise-${selectedNoise.className}`}>
+                          <small>Rauschpegel</small>
+                          <strong>{selectedPoint.noiseAverage !== undefined ? `${selectedPoint.noiseAverage} dBm` : "nicht gemessen"}</strong>
+                          <span>{selectedNoise.label}{selectedPoint.noiseSamples ? ` · ${selectedPoint.noiseSamples} Messungen` : ""}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <div className="dc-chart-axis">
                 <span>← älter · vor bis zu 60 Minuten</span>
                 <strong>neue Werte erscheinen rechts →</strong>
@@ -4145,6 +4239,7 @@ function App() {
                   key={status}
                   onClick={() => {
                     setSelectedStatusFilter((current) => current === status ? null : status);
+                    if (status === "ok") setShowHealthyChecks(true);
                     const firstMatchingCheck = analysis.checks.find((check) => check.status === status);
                     if (firstMatchingCheck) {
                       setActiveCheck(firstMatchingCheck.id);
@@ -4411,6 +4506,26 @@ function App() {
             </section>
           )}
 
+          <div className="analysis-detail-toggle">
+            <div>
+              <strong>{showHealthyChecks ? "Alle Prüfpunkte sichtbar" : "Fokus auf Handlungsbedarf"}</strong>
+              <span>
+                {showHealthyChecks
+                  ? "Auch unauffällige Detailprüfungen wie Batterien und Firmware werden angezeigt."
+                  : `${healthyCheckCount} unauffällige Detailprüfungen sind eingeklappt. Hinweise und Probleme bleiben sichtbar.`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedStatusFilter(null);
+                setShowHealthyChecks((current) => !current);
+              }}
+            >
+              {showHealthyChecks ? "Unauffällige ausblenden" : `${healthyCheckCount} unauffällige anzeigen`}
+            </button>
+          </div>
+
           <div className="check-layout">
             <div className="check-list">
               {groupedChecks.map((group) => {
@@ -4564,6 +4679,36 @@ function App() {
           </div>
 
           <div className="settings-grid">
+            <details className="setup-card settings-block sniffer-settings" open>
+              <summary>
+                <span>AskSin-Sniffer</span>
+                <small>{form.snifferEnabled ? "Aktiv · zusätzliche Funkdetails" : "Aus · Basisanalyse ohne Zusatzhardware"}</small>
+              </summary>
+              <div className="settings-block__body">
+                <label className="toggle sniffer-master-toggle">
+                  <input
+                    type="checkbox"
+                    checked={form.snifferEnabled}
+                    onChange={(event) => updateForm({ ...form, snifferEnabled: event.target.checked })}
+                  />
+                  <span>Sniffer-Funktionen aktivieren</span>
+                </label>
+                <div className="sniffer-feature-comparison">
+                  <div>
+                    <strong>Ohne Sniffer – für die meisten Nutzer</strong>
+                    <span>Geräte, Meldungen, Batterien, Erreichbarkeit, Konfiguration, CCU-Duty-Cycle, Zentralen-RSSI und Topologie.</span>
+                  </div>
+                  <div>
+                    <strong>Zusätzlich mit Sniffer</strong>
+                    <span>Telegramme, Funkzeit je Gerät, Rauschpegel/Carrier Sense und RSSI am Standort des Sniffers.</span>
+                  </div>
+                </div>
+                <p className="setup-note">
+                  Beim Ausschalten bleiben Port und bisherige Einrichtung gespeichert. Du kannst einen defekten oder vorübergehend entfernten Sniffer später einfach wieder aktivieren.
+                </p>
+              </div>
+            </details>
+
             <details className="setup-card settings-block routing-settings" open>
               <summary>
                 <span>HmIP-Routing-Analyse</span>

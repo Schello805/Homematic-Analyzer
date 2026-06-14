@@ -288,7 +288,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
-  const hasSniffer = Boolean(config.snifferPort);
+  const hasSniffer = config.snifferEnabled !== false && Boolean(config.snifferPort);
   const hasNotifications = Boolean(config.notificationSettings?.telegram?.enabled || config.notificationSettings?.email?.enabled || config.telegramEnabled);
   const ccuHostLooksPublic = Boolean(config.ccuHost && !isLocalOrPrivateHost(config.ccuHost));
   const collectorAgeMinutes = collector?.collectedAt
@@ -526,7 +526,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             : ccu.dutyCycle >= 70
               ? "Beobachten: Wenn der Wert länger hoch bleibt, Funklast und externe Abfragen prüfen."
               : ccu.dutyCycle >= 50
-                ? "Erhöht: Den Wert beobachten und im DC-Analyzer prüfen, welche Geräte den größten Anteil an der gemessenen Funkzeit haben."
+                ? hasSniffer
+                  ? "Erhöht: Den Wert beobachten und im DC-Analyzer prüfen, welche Geräte den größten Anteil an der gemessenen Funkzeit haben."
+                  : "Erhöht: Den CCU-Wert beobachten. Häufige Programme, Kommunikationsstörungen und stark abfragende externe Systeme prüfen."
                 : "Kein akuter Handlungsbedarf."
         : "CCU-Zugang einrichten, damit der echte Duty-Cycle-Wert gelesen werden kann.",
       access: ["ccu"],

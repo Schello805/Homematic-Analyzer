@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   calculateDutyCycle,
   calculateSendTimeMs,
+  normalizeDutyCycle,
   parseAskSinTelegram,
   parseRssiNoise
 } from "./snifferProtocol.js";
@@ -36,6 +37,14 @@ test("berechnet Burst-Duty-Cycle nach AskSinAnalyzerXS", () => {
   assert.equal(Math.round(calculateDutyCycle(sendTimeMs) * 1000) / 1000, 1.043);
 });
 
+test("begrenzt eine überzählige Duty-Cycle-Schätzung proportional auf 100 Prozent", () => {
+  assert.deepEqual(normalizeDutyCycle([70, 40]), {
+    estimated: 110,
+    scale: 100 / 110,
+    total: 100
+  });
+});
+
 test("interpretiert HmIP-Flags nicht als klassische Homematic-Flags", () => {
   const telegram = parseAskSinTelegram(":5A0C011080A1B2C3D4E5F6010203;", deviceMap, receivedAt);
 
@@ -58,4 +67,3 @@ test("weist ungültige Zeilen zurück", () => {
   assert.equal(parseAskSinTelegram(":61;", deviceMap, receivedAt), undefined);
   assert.equal(parseRssiNoise(":GG;", receivedAt), undefined);
 });
-

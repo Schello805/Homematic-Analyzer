@@ -54,6 +54,16 @@ export function calculateDutyCycle(sendTimeMs: number): number {
   return sendTimeMs / 360;
 }
 
+export function normalizeDutyCycle(values: number[]) {
+  const estimated = values.reduce((sum, value) => sum + Math.max(0, value), 0);
+  const scale = estimated > 100 ? 100 / estimated : 1;
+  return {
+    estimated,
+    scale,
+    total: Math.min(100, estimated)
+  };
+}
+
 export function parseAskSinTelegram(
   line: string,
   deviceMap: SnifferDeviceLookup,
@@ -104,4 +114,3 @@ export function parseRssiNoise(line: string, receivedAt = new Date().toISOString
     rssi: -1 * parseInt(trimmed.substring(1, 3), 16)
   };
 }
-

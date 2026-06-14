@@ -6,6 +6,7 @@ export type SetupDefaults = {
   ccuHost?: string;
   ccuUser?: string;
   xmlApiToken?: string;
+  snifferEnabled?: boolean;
   snifferPort?: string;
   hmipRoutingEnabled?: boolean;
   hmipRoutingLogLevelSet?: boolean;

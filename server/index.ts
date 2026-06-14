@@ -14,7 +14,7 @@ import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
 import { buildRoutingTopology } from "./routingTopology.js";
-import { parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
+import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
 import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
 
@@ -122,6 +122,7 @@ const analyzeSchema = z.object({
   sshUser: z.string().optional(),
   sshPassword: z.string().optional(),
   hasSshPassword: z.boolean().optional(),
+  snifferEnabled: z.boolean().optional(),
   snifferPort: z.string().optional(),
   hmipRoutingEnabled: z.boolean().optional(),
   telegramEnabled: z.boolean().optional(),
@@ -167,6 +168,7 @@ const setupDefaultsSchema = z.object({
   ccuHost: z.string().max(300).optional(),
   ccuUser: z.string().max(120).optional(),
   xmlApiToken: z.string().max(300).optional(),
+  snifferEnabled: z.boolean().optional(),
   snifferPort: z.string().max(300).optional(),
   hmipRoutingEnabled: z.boolean().optional(),
   hmipRoutingLogLevelSet: z.boolean().optional(),
@@ -418,7 +420,10 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
   const diagnostics = invalidSnifferLines.slice(-20);
   const telegrams = parsedTelegrams.filter((telegram) => Date.parse(telegram.tstamp) >= firstTimestampOfHour);
   const rssiNoises = parsedRssiNoises.filter((noise) => Date.parse(noise.tstamp) >= firstTimestampOfHour);
-  const totalDutyCycle = telegrams.reduce((sum, event) => sum + event.dutyCycle, 0);
+  const normalizedDutyCycle = normalizeDutyCycle(telegrams.map((event) => event.dutyCycle));
+  const estimatedDutyCycle = normalizedDutyCycle.estimated;
+  const dutyCycleScale = normalizedDutyCycle.scale;
+  const totalDutyCycle = normalizedDutyCycle.total;
   const deviceRows = [...telegrams.reduce((map, telegram) => {
     const key = telegram.fromAddress;
     const current = map.get(key) ?? {
@@ -455,7 +460,7 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     serial: row.serial,
     type: row.type,
     telegrams: row.telegrams,
-    dutyCycle: Math.round(row.dutyCycle * 10) / 10,
+    dutyCycle: Math.round(row.dutyCycle * dutyCycleScale * 10) / 10,
     dutyShare: totalDutyCycle > 0 ? Math.round((row.dutyCycle / totalDutyCycle) * 1000) / 10 : 0,
     sendTimeMs: Math.round(row.sendTimeMs),
     avgRssi: row.rssiValues.length ? Math.round(row.rssiValues.reduce((sum, value) => sum + value, 0) / row.rssiValues.length) : undefined,
@@ -472,6 +477,35 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     ? Math.round(carrierSenseValues.reduce((sum, value) => sum + value, 0) / carrierSenseValues.length)
     : undefined;
   const readerActive = Boolean(snifferReader && activeSnifferPort === port?.trim() && snifferReader.exitCode === null);
+  const currentMinuteStart = Math.floor(Date.parse(checkedAt) / 60000) * 60000;
+  const timelineStart = currentMinuteStart - 59 * 60 * 1000;
+  const timeline = Array.from({ length: 60 }, (_, index) => {
+    const minuteStart = timelineStart + index * 60 * 1000;
+    const minuteEnd = minuteStart + 60 * 1000;
+    const minuteTelegrams = telegrams.filter((telegram) => {
+      const timestamp = Date.parse(telegram.tstamp);
+      return timestamp >= minuteStart && timestamp < minuteEnd;
+    });
+    const minuteNoise = rssiNoises
+      .filter((noise) => {
+        const timestamp = Date.parse(noise.tstamp);
+        return timestamp >= minuteStart && timestamp < minuteEnd;
+      })
+      .map((noise) => noise.rssi)
+      .filter((value): value is number => value !== undefined);
+
+    return {
+      minute: new Date(minuteStart).toISOString(),
+      telegrams: minuteTelegrams.length,
+      dutyCycle: Math.round(minuteTelegrams.reduce((sum, telegram) => sum + telegram.dutyCycle * dutyCycleScale, 0) * 10) / 10,
+      noiseSamples: minuteNoise.length,
+      noiseAverage: minuteNoise.length
+        ? Math.round(minuteNoise.reduce((sum, value) => sum + value, 0) / minuteNoise.length)
+        : undefined,
+      noiseMinimum: minuteNoise.length ? Math.min(...minuteNoise) : undefined,
+      noiseMaximum: minuteNoise.length ? Math.max(...minuteNoise) : undefined
+    };
+  });
 
   const snapshot: SnifferSnapshot = {
     checkedAt,
@@ -500,8 +534,14 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     devices: deviceRows,
     events: telegrams.slice(-40).reverse(),
     rssiNoise: rssiNoises.slice(-80),
-    diagnostics: diagnostics.length > 0
-      ? diagnostics
+    timeline,
+    diagnostics: estimatedDutyCycle > 100
+      ? [
+          `Die Rohschätzung lag bei ${Math.round(estimatedDutyCycle * 10) / 10}%. Sie wurde proportional auf maximal 100% der verfügbaren Funkstunde normiert.`,
+          ...diagnostics
+        ].slice(-20)
+      : diagnostics.length > 0
+        ? diagnostics
       : readerActive && lines.length === 0
         ? ["Serieller Leser ist aktiv und wartet auf Sniffer-Zeilen."]
       : []
@@ -974,8 +1014,12 @@ app.get("/api/diagnostics", async (_request, response) => {
       {
         id: "sniffer",
         label: "AskSin Sniffer",
-        status: latestSnifferSnapshot?.readerActive ? snifferAge.state : setup.snifferPort ? "error" : "optional",
-        detail: latestSnifferSnapshot?.readerActive
+        status: setup.snifferEnabled === false
+          ? "optional"
+          : latestSnifferSnapshot?.readerActive ? snifferAge.state : setup.snifferPort ? "error" : "optional",
+        detail: setup.snifferEnabled === false
+          ? "Bewusst deaktiviert – Basisanalyse läuft ohne Zusatzhardware."
+          : latestSnifferSnapshot?.readerActive
           ? `${latestSnifferSnapshot.summary.telegrams} Telegramme im aktuellen 60-Minuten-Fenster.`
           : setup.snifferPort ? "Port ist gespeichert, aber kein aktiver Leser wurde bestätigt." : "Optional – kein Sniffer eingerichtet.",
         lastSuccessAt: latestSnifferSnapshot?.checkedAt,
@@ -1091,9 +1135,11 @@ app.post("/api/analyze", async (request, response) => {
       events: { critical: true }
     });
     const releaseCheck = notificationSettings.events?.releases ? await checkRepositoryRelease(appVersion) : undefined;
-    const snifferSnapshot = parsed.data.snifferPort
-      ? await readSnifferSnapshot(parsed.data.snifferPort)
-      : latestSnifferSnapshot;
+    const snifferSnapshot = parsed.data.snifferEnabled === false
+      ? undefined
+      : parsed.data.snifferPort
+        ? await readSnifferSnapshot(parsed.data.snifferPort)
+        : latestSnifferSnapshot;
     latestSnifferSnapshot = snifferSnapshot;
 
     const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot);

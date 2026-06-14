@@ -31,6 +31,7 @@ export type AnalyzeRequest = {
   sshUser?: string;
   sshPassword?: string;
   hasSshPassword?: boolean;
+  snifferEnabled?: boolean;
   snifferPort?: string;
   hmipRoutingEnabled?: boolean;
   telegramEnabled?: boolean;
@@ -287,6 +288,15 @@ export type SnifferSnapshot = {
     tstamp: string;
     raw: string;
     rssi?: number;
+  }>;
+  timeline?: Array<{
+    minute: string;
+    telegrams: number;
+    dutyCycle: number;
+    noiseSamples: number;
+    noiseAverage?: number;
+    noiseMinimum?: number;
+    noiseMaximum?: number;
   }>;
   diagnostics: string[];
 };

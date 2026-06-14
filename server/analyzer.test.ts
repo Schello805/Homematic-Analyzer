@@ -83,7 +83,7 @@ test("erklärt bei erreichbarer WebUI einen XML-API-Timeout statt eines Netzwerk
   assert.doesNotMatch(xmlApi?.recommendation ?? "", /Firewall/);
 });
 
-test("empfiehlt bei erhöhtem Duty Cycle eine Verursacheranalyse", () => {
+test("ordnet erhöhten Duty Cycle auch ohne Sniffer verständlich ein", () => {
   const checks = createAnalysis(
     { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },
     undefined,
@@ -104,7 +104,30 @@ test("empfiehlt bei erhöhtem Duty Cycle eine Verursacheranalyse", () => {
   const dutyCycle = checks.find((check) => check.id === "duty-cycle");
 
   assert.equal(dutyCycle?.status, "improvement");
-  assert.match(dutyCycle?.recommendation ?? "", /DC-Analyzer/);
+  assert.match(dutyCycle?.recommendation ?? "", /CCU-Wert beobachten/);
+  assert.doesNotMatch(dutyCycle?.recommendation ?? "", /DC-Analyzer/);
+});
+
+test("verweist bei aktiviertem Sniffer auf die Verursacheranalyse", () => {
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret", snifferEnabled: true, snifferPort: "/dev/ttyUSB0" },
+    undefined,
+    {
+      ...failedSnapshot({}),
+      reachable: true,
+      dutyCycle: 62,
+      counters: {
+        devices: 1,
+        lowBattery: 0,
+        unreachable: 0,
+        configPending: 0,
+        serviceMessages: 0,
+        alarmMessages: 0
+      }
+    }
+  );
+
+  assert.match(checks.find((check) => check.id === "duty-cycle")?.recommendation ?? "", /DC-Analyzer/);
 });
 
 test("bewertet ein einzelnes schwaches Sniffer-Telegramm noch nicht als belastbaren Beleg", () => {
