@@ -323,7 +323,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const weakHmipSnifferDevices = weakSnifferDevices(hmipSnifferDevicesWithRssi);
   const topologyRadioNodes = routingTopology.nodes.filter((node) => node.role !== "central" && node.role !== "gateway");
   const topologyMeasuredNodes = topologyRadioNodes.filter((node) => node.ccuRssi !== undefined || node.snifferRssi !== undefined);
-  const weakTopologyNodes = topologyMeasuredNodes.filter((node) => (node.ccuRssi ?? node.snifferRssi ?? 0) <= -85);
+  const weakTopologyNodes = topologyMeasuredNodes.filter((node) => (
+    [node.ccuRssi, node.snifferRssi].some((value) => value !== undefined && value <= -85)
+  ));
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
@@ -609,59 +611,51 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "signal-strength",
       title: "Signalqualität",
       category: "Funk",
-      status: reliableSnifferDevicesWithRssi.length > 0
-        ? snifferSignalStatus(reliableSnifferDevicesWithRssi)
+      status: topologyMeasuredNodes.length > 0
+        ? weakTopologyNodes.some((device) => (
+          [device.ccuRssi, device.snifferRssi].some((value) => value !== undefined && value <= -95)
+        ))
+          ? "warning"
+          : weakTopologyNodes.length > 0 ? "improvement" : "ok"
+        : snifferDevicesWithRssi.length > 0 ? "improvement" : "unavailable",
+      summary: topologyMeasuredNodes.length > 0
+        ? weakTopologyNodes.length > 0
+          ? `${topologyMeasuredNodes.length} Geräte mit RSSI bewertet. Auffällig: ${weakTopologyNodes.slice(0, 5).map((device) => `${device.name} (Zentrale ${device.ccuRssi ?? "–"} / Sniffer ${device.snifferRssi ?? "–"} dBm)`).join(", ")}.`
+          : `${topologyMeasuredNodes.length} Geräte mit RSSI bewertet. Keine auffällig schwachen Werte von Zentrale oder Sniffer.`
         : snifferDevicesWithRssi.length > 0
-          ? "improvement"
-          : "unavailable",
-      summary: snifferDevicesWithRssi.length > 0
-        ? weakSignalDevices.length > 0
-          ? `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, davon ${reliableSnifferDevicesWithRssi.length} ausreichend gemessen. Belastbar schwach empfangen: ${weakSignalDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
-          : reliableSnifferDevicesWithRssi.length > 0
-            ? `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, davon ${reliableSnifferDevicesWithRssi.length} mit mindestens 3 Telegrammen. Keine belastbar schwachen Werte.`
-            : `${snifferDevicesWithRssi.length} Geräte mit RSSI erkannt, aber noch keines mit mindestens 3 Telegrammen. Die Messung braucht mehr Zeit.`
-        : hasSniffer && sniffer?.connected
-          ? "Der Sniffer antwortet, aber es wurden noch keine auswertbaren Homematic-Telegramme mit Gerätenamen/RSSI erkannt."
-          : hasSniffer
-            ? "Sniffer-Port ist eingetragen, aber es liegen noch keine auswertbaren Snifferdaten vor."
-        : hasCcuData
-          ? "Keine belegbaren Signalstärken vorhanden. Die CCU-Daten reichen dafür aktuell nicht aus."
-          : "Signalqualität braucht CCU-Daten oder optional den AskSin Analyzer XS.",
-      recommendation: snifferDevicesWithRssi.length > 0
-        ? weakSignalDevices.length > 0
-          ? "Schwach empfangene Geräte räumlich prüfen: Abstand, Wände, Metall, Batteriestand und möglichen Router/Access Point in der Nähe bewerten."
-          : reliableSnifferDevicesWithRssi.length > 0
-            ? "Gut: Bei ausreichend oft empfangenen Geräten gibt es aktuell keine auffällig schwachen RSSI-Werte."
-            : "Sniffer mindestens 30 bis 60 Minuten weiterlaufen lassen. Ein einzelnes Telegramm reicht nicht für eine belastbare Signalbewertung."
-        : hasSniffer
-          ? "Ein Homematic-Gerät auslösen und im DC-Analyzer erneut prüfen. Für Gerätenamen das AskSinAnalyzerDevList-/CCU-Stammdaten-Script verwenden."
-        : "Optional AskSin Analyzer XS anschließen. Ohne echte RSSI-/Snifferdaten wird hier kein Funkproblem behauptet.",
-      access: hasSniffer ? ["sniffer"] : ["ccu"],
-      evidence: snifferDevicesWithRssi.length > 0
+          ? `${snifferDevicesWithRssi.length} Snifferwerte vorhanden, aber noch nicht sicher CCU-Geräten zugeordnet. Zentralenwert daher noch nicht verfügbar; für eine belastbare Snifferbewertung sind mindestens 3 Telegramme nötig.`
+          : "Noch keine belegbaren RSSI-Werte von Zentrale oder Sniffer vorhanden.",
+      recommendation: topologyMeasuredNodes.length > 0
+        ? weakTopologyNodes.length > 0
+          ? "Beide Messpositionen vergleichen. Ist nur der Sniffer schwach, kann dessen Standort ungünstig sein. Ist auch die Zentrale schwach, Gerät, Entfernung und passenden Router beziehungsweise Gateway prüfen."
+          : "Kein unmittelbarer Handlungsbedarf. Zentrale und Sniffer messen an unterschiedlichen Orten und dürfen voneinander abweichen."
+        : snifferDevicesWithRssi.length > 0
+          ? "Sniffer 30 bis 60 Minuten weiterlaufen lassen und CCU-Stammdaten beziehungsweise AskSinAnalyzerDevList aktualisieren, damit Sniffer- und Zentralenwert demselben Gerät zugeordnet werden können."
+          : "CCU/XML-API für Zentralen-RSSI prüfen. Optional einen Sniffer ergänzen, wenn eine zweite Messposition und Funklastdaten benötigt werden.",
+      access: hasSniffer ? ["ccu", "sniffer"] : ["ccu"],
+      evidence: topologyMeasuredNodes.length > 0
         ? [
           {
-            source: "Sniffer-RSSI",
-            detail: `${snifferDevicesWithRssi.length} Geräte mit RSSI, ${reliableSnifferDevicesWithRssi.length} mit mindestens 3 Telegrammen, ${provisionalSnifferDevicesWithRssi.length} noch vorläufig. Schwelle: ab -85 dBm Optimierung, ab -95 dBm Hinweis.`,
-            timestamp: sniffer?.checkedAt
+            source: "RSSI-Vergleich",
+            detail: `${topologyMeasuredNodes.length} Geräte bewertet. Zentralenwerte: ${routingTopology.rssiSources.ccu}, Snifferwerte: ${routingTopology.rssiSources.sniffer}.`,
+            timestamp: sniffer?.checkedAt ?? ccu?.collectedAt ?? now()
           },
-          ...weakSignalDevices.slice(0, 8).map((device) => ({
-            source: "Sniffer-RSSI",
-            detail: snifferDeviceLabel(device),
-            timestamp: device.lastSeen
+          ...weakTopologyNodes.slice(0, 8).map((device) => ({
+            source: "RSSI-Vergleich",
+            detail: `${device.name}: Zentrale ${device.ccuRssi ?? "nicht verfügbar"} dBm, Sniffer ${device.snifferRssi ?? "nicht verfügbar"} dBm.`,
+            timestamp: sniffer?.checkedAt ?? ccu?.collectedAt
           }))
         ]
-        : hasSniffer
-          ? [
-            {
-              source: "Sniffer-Konfiguration",
-              detail: `USB-Port ${config.snifferPort} angegeben. Telegramme: ${sniffer?.summary.telegrams ?? 0}, RSSI-Noise: ${sniffer?.rssiNoise.length ?? 0}.`,
-              timestamp: sniffer?.checkedAt ?? now()
-            }
-          ]
+        : snifferDevicesWithRssi.length > 0
+          ? [{
+            source: "Sniffer-RSSI",
+            detail: `${snifferDevicesWithRssi.length} Snifferwerte vorhanden; passende Zentralenwerte konnten noch nicht zugeordnet werden.`,
+            timestamp: sniffer?.checkedAt
+          }]
           : [],
       details: [
-        "RSSI-Werte stammen vom Sniffer-Standort. Sie zeigen, wie gut der Sniffer Telegramme empfängt, nicht zwingend die direkte Strecke zur CCU.",
-        "Als belastbar bewertet werden Geräte erst ab mindestens 3 empfangenen Telegrammen im Messzeitraum.",
+        "Der Zentralenwert stammt aus der CCU/XML-API. Der Snifferwert beschreibt den Empfang am Standort des Sniffers.",
+        "Snifferwerte werden erst mit mehreren Telegrammen belastbarer; Zentralen- und Snifferwert können wegen verschiedener Standorte deutlich abweichen.",
         "Ohne Messwert bleibt der Punkt bewusst nicht geprüft."
       ]
     },
@@ -672,7 +666,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       status: routingTopology.metrics.confirmedRoutes > 0 || routingTopology.metrics.confirmedRouters > 0
         ? "ok"
         : routingTopology.metrics.devices > 0
-        ? weakTopologyNodes.some((device) => (device.ccuRssi ?? device.snifferRssi ?? 0) <= -95)
+        ? weakTopologyNodes.some((device) => (
+          [device.ccuRssi, device.snifferRssi].some((value) => value !== undefined && value <= -95)
+        ))
           ? "warning"
           : weakTopologyNodes.length > 0
             ? "improvement"

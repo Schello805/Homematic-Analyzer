@@ -794,6 +794,33 @@ function RssiAssessment({ value }: { value?: number }) {
   );
 }
 
+function DualRssiAssessment({
+  ccu,
+  sniffer,
+  compact = false
+}: {
+  ccu?: number;
+  sniffer?: number;
+  compact?: boolean;
+}) {
+  return (
+    <span className={`dual-rssi ${compact ? "is-compact" : ""}`}>
+      <span>
+        <small>Zentrale</small>
+        <RssiAssessment value={ccu} />
+      </span>
+      <span>
+        <small>Sniffer</small>
+        <RssiAssessment value={sniffer} />
+      </span>
+    </span>
+  );
+}
+
+function normalizeRadioIdentifier(value?: string) {
+  return (value ?? "").trim().toUpperCase().replace(/:\d+$/, "");
+}
+
 function flagClass(flag: string) {
   if (flag === "BURST") return "danger";
   if (flag === "BIDI") return "warn";
@@ -1067,7 +1094,7 @@ function RoutingTopologyView({
           </span>
         </div>
         <label>
-          RSSI anzeigen von
+          Positionen berechnen nach
           <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
             <option value="ccu" disabled={!ccuRssiAvailable}>
               Zentrale / XML-API ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Geräte)
@@ -1086,7 +1113,7 @@ function RoutingTopologyView({
             <strong>{weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}</strong>
             <p>
               {weakNodes.length > 0
-                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (${nodeRssi(node)} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
+                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (CCU ${node.ccuRssi ?? "–"} / Sniffer ${node.snifferRssi ?? "–"} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
                 : measuredNodes.length > 0
                   ? `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`
                   : `Für die Quelle „${rssiSourceLabel}“ liegen noch keine RSSI-Werte vor.`}
@@ -1113,7 +1140,7 @@ function RoutingTopologyView({
           <summary>
             <span>
               <strong>Schwächste HmIP-Geräte · {rssiSourceLabel}</strong>
-              <small>Nach RSSI sortiert · Quelle: {rssiSourceLabel}</small>
+              <small>Nach {rssiSourceLabel} sortiert · beide Messquellen werden angezeigt</small>
             </span>
             <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
           </summary>
@@ -1127,7 +1154,7 @@ function RoutingTopologyView({
                     {rssiSource === "sniffer" ? ` · ${node.rssiTelegrams ?? 0} Telegramme` : " · CCU-Livewert"}
                   </small>
                 </span>
-                <RssiAssessment value={nodeRssi(node)} />
+                <DualRssiAssessment ccu={node.ccuRssi} sniffer={node.snifferRssi} compact />
               </button>
             ))}
           </div>
@@ -1203,7 +1230,7 @@ function RoutingTopologyView({
                     />
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "gateway" ? 20 : node.role === "router" ? 18 : 12} />
-                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${rssi !== undefined ? ` · ${rssiAssessment(rssi).label} (${rssi} dBm, ${rssiSourceLabel})` : ""}`}</title>
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · Zentrale: ${node.ccuRssi ?? "nicht verfügbar"} dBm · Sniffer: ${node.snifferRssi ?? "nicht verfügbar"} dBm`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
@@ -1215,13 +1242,11 @@ function RoutingTopologyView({
 
             {hoveredNode && hoveredPosition && (
               <g className="routing-hover-label" transform={`translate(${hoverLabelX - 105} ${hoverLabelY})`} pointerEvents="none">
-                <rect width="210" height={nodeRssi(hoveredNode) !== undefined ? 38 : 28} rx="9" />
+                <rect width="210" height="38" rx="9" />
                 <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
-                {nodeRssi(hoveredNode) !== undefined && (
-                  <text className={`routing-hover-signal ${rssiClass(nodeRssi(hoveredNode))}`} x="105" y="31" textAnchor="middle">
-                    {rssiAssessment(nodeRssi(hoveredNode)).label} · {nodeRssi(hoveredNode)} dBm
-                  </text>
-                )}
+                <text className="routing-hover-signal" x="105" y="31" textAnchor="middle">
+                  CCU {hoveredNode.ccuRssi ?? "–"} · Sniffer {hoveredNode.snifferRssi ?? "–"} dBm
+                </text>
               </g>
             )}
           </svg>
@@ -1258,11 +1283,11 @@ function RoutingTopologyView({
               )}
               <div><dt>Nächster Empfänger</dt><dd>{selectedReceiver?.name ?? "Noch nicht belegt"}</dd></div>
               <div>
-                <dt>Signal · {rssiSourceLabel}</dt>
+                <dt>Signalwerte</dt>
                 <dd>
-                  <RssiAssessment value={nodeRssi(selectedNode)} />
-                  {rssiSource === "sniffer" && selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Telegramme</small>}
-                  {rssiSource === "ccu" && selectedNode?.ccuPeerRssi !== undefined && <small>RSSI_PEER zusätzlich: {selectedNode.ccuPeerRssi} dBm</small>}
+                  <DualRssiAssessment ccu={selectedNode?.ccuRssi} sniffer={selectedNode?.snifferRssi} />
+                  {selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Sniffer-Telegramme</small>}
+                  {selectedNode?.ccuPeerRssi !== undefined && <small>CCU RSSI_PEER zusätzlich: {selectedNode.ccuPeerRssi} dBm</small>}
                 </dd>
               </div>
             </dl>
@@ -1394,6 +1419,20 @@ function App() {
   const visibleSnifferEvents = showAllSnifferEvents
     ? snifferSnapshot?.events ?? []
     : snifferSnapshot?.events.slice(0, 10) ?? [];
+  const routingNodeByIdentifier = useMemo(() => {
+    const map = new Map<string, RoutingTopologyNode>();
+    for (const node of routingTopology?.nodes ?? []) {
+      for (const identifier of [node.id, node.serial, node.address]) {
+        const normalized = normalizeRadioIdentifier(identifier);
+        if (normalized) map.set(normalized, node);
+      }
+    }
+    return map;
+  }, [routingTopology]);
+  const topologyNodeFor = (device: { address?: string; serial?: string }) => (
+    routingNodeByIdentifier.get(normalizeRadioIdentifier(device.serial))
+    ?? routingNodeByIdentifier.get(normalizeRadioIdentifier(device.address))
+  );
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
     ? `${snifferSnapshot.summary.carrierSense} dBm`
     : "nicht gemessen";
@@ -2698,7 +2737,7 @@ function App() {
   }, [form.hmipRoutingEnabled, analysis, activeCheck]);
 
   useEffect(() => {
-    if (!form.hmipRoutingEnabled || currentPage !== "analysis") return;
+    if (currentPage !== "dc" && (!form.hmipRoutingEnabled || currentPage !== "analysis")) return;
 
     void loadRoutingTopology();
     const interval = window.setInterval(() => void loadRoutingTopology(), 30000);
@@ -3383,7 +3422,7 @@ function App() {
               ...gatewayDutyCycleCards.map((gateway, index) => [
                 `Gateway DC ${index + 1}`,
                 `${gateway.dutyCycle}%`,
-                `${gateway.name}${gateway.avgRssi !== undefined ? ` · Ø ${gateway.avgRssi} dBm` : ""}`
+                `${gateway.name} · Zentrale ${topologyNodeFor(gateway)?.ccuRssi ?? "–"} dBm · Sniffer ${gateway.avgRssi ?? "–"} dBm`
               ]),
               ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
               ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
@@ -3402,7 +3441,9 @@ function App() {
               ],
               [
                 "Schwächstes RSSI",
-                snifferSnapshot?.summary.weakestRssi !== undefined ? `${snifferSnapshot.summary.weakestRssi} dBm` : "nicht gemessen",
+                weakestRssiDevice
+                  ? `Zentrale ${topologyNodeFor(weakestRssiDevice)?.ccuRssi ?? "–"} · Sniffer ${snifferSnapshot?.summary.weakestRssi ?? "–"} dBm`
+                  : "nicht gemessen",
                 weakestRssiDevice
                   ? `${weakestRssiDevice.name}${weakestRssiDevice.type ? ` · ${weakestRssiDevice.type}` : ""}`
                   : "Schwächstes empfangenes Telegramm."
@@ -3628,7 +3669,8 @@ function App() {
                       <th>Telegramme</th>
                       <th>DC</th>
                       <th>Anteil</th>
-                      <th>Ø RSSI</th>
+                      <th>RSSI Zentrale</th>
+                      <th>RSSI Sniffer Ø</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3645,7 +3687,8 @@ function App() {
                           <div className="dc-mini-bar"><span style={{ width: `${Math.max(2, device.dutyShare)}%` }} /></div>
                           {device.dutyShare}%
                         </td>
-                        <td>{device.avgRssi !== undefined ? `${device.avgRssi} dBm` : "–"}</td>
+                        <td><RssiAssessment value={topologyNodeFor(device)?.ccuRssi} /></td>
+                        <td><RssiAssessment value={device.avgRssi} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -3690,7 +3733,8 @@ function App() {
                       <th>Von</th>
                       <th>Von/An</th>
                       <th>An</th>
-                      <th>RSSI</th>
+                      <th>RSSI Zentrale</th>
+                      <th>RSSI Sniffer</th>
                       <th>Len</th>
                       <th>Cnt</th>
                       <th>DC</th>
@@ -3711,7 +3755,8 @@ function App() {
                           <strong>{event.toName ?? event.toAddress}</strong>
                           <span>{event.toSerial ?? event.toAddress}</span>
                         </td>
-                        <td><span className={`rssi-badge ${rssiClass(event.rssi)}`}>{event.rssi}</span></td>
+                        <td><RssiAssessment value={topologyNodeFor({ serial: event.fromSerial, address: event.fromAddress })?.ccuRssi} /></td>
+                        <td><RssiAssessment value={event.rssi} /></td>
                         <td>{event.len}</td>
                         <td>{event.cnt}</td>
                         <td>{Math.round(event.dutyCycle * 10) / 10}%</td>
@@ -5110,7 +5155,7 @@ function App() {
                           <strong>{device.name}</strong>
                           <span>{device.type ?? device.serial ?? device.address}</span>
                         </div>
-                        <RssiAssessment value={device.avgRssi} />
+                        <DualRssiAssessment ccu={topologyNodeFor(device)?.ccuRssi} sniffer={device.avgRssi} />
                         <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
                           {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
                         </small>

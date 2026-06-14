@@ -5140,6 +5140,46 @@ pre {
   background: #ffe8e6;
   color: #a9231d;
 }
+
+.dual-rssi {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 6px;
+  align-items: start;
+}
+
+.dual-rssi > span {
+  display: grid;
+  gap: 3px;
+}
+
+.dual-rssi > span > small {
+  color: #69778d;
+  font-size: .68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.dual-rssi.is-compact {
+  grid-template-columns: 1fr;
+}
+
+.dual-rssi.is-compact .rssi-assessment {
+  padding: 3px 6px;
+  font-size: .72rem;
+}
+
+.dc-table .rssi-assessment {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .dual-rssi {
+    grid-template-columns: 1fr;
+  }
+}
+
 .routing-node-detail ul {
   padding-left: 18px;
   grid-column: 2;
