@@ -14,7 +14,7 @@ import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase }
 import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
-import { buildRoutingTopology } from "./routingTopology.js";
+import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
 import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
@@ -150,6 +150,8 @@ const collectorSchema = z.object({
   hmipRoutingLogsBase64: z.array(z.string().max(8000)).max(500).optional(),
   hmipRoutingConfig: z.array(z.coerce.string().max(1000)).max(500).optional(),
   hmipRoutingConfigBase64: z.array(z.string().max(4000)).max(500).optional(),
+  radioGateways: z.array(z.coerce.string().max(1000)).max(50).optional(),
+  radioGatewaysBase64: z.array(z.string().max(4000)).max(50).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional(),
     connectionsBase64: z.array(z.string().max(8000)).max(250).optional()
@@ -1237,12 +1239,14 @@ app.post("/api/collector", async (request, response) => {
   const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
   const decodedHmipRoutingLogs = decodeBase64Lines(parsed.data.hmipRoutingLogsBase64);
   const decodedHmipRoutingConfig = decodeBase64Lines(parsed.data.hmipRoutingConfigBase64);
+  const decodedRadioGateways = decodeBase64Lines(parsed.data.radioGatewaysBase64);
   const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
   const {
     logsBase64: _logsBase64,
     hmipLogsBase64: _hmipLogsBase64,
     hmipRoutingLogsBase64: _hmipRoutingLogsBase64,
     hmipRoutingConfigBase64: _hmipRoutingConfigBase64,
+    radioGatewaysBase64: _radioGatewaysBase64,
     network: encodedNetwork,
     ...collectorData
   } = parsed.data;
@@ -1254,6 +1258,7 @@ app.post("/api/collector", async (request, response) => {
     hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
     hmipRoutingLogs: parsed.data.hmipRoutingLogs ?? decodedHmipRoutingLogs,
     hmipRoutingConfig: parsed.data.hmipRoutingConfig ?? decodedHmipRoutingConfig,
+    radioGateways: parsed.data.radioGateways ?? decodedRadioGateways,
     network: encodedNetwork
       ? {
           ...network,
@@ -1316,7 +1321,8 @@ app.get("/api/routing/topology", (_request, response) => {
     latestCollector?.host,
     latestCollector?.collectedAt,
     latestSnifferSnapshot?.devices ?? [],
-    latestCcuSnapshot?.devices ?? []
+    latestCcuSnapshot?.devices ?? [],
+    parseRadioGateways(latestCollector?.radioGateways ?? [])
   ));
 });
 

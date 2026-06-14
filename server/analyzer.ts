@@ -1,5 +1,5 @@
 import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
-import { buildRoutingTopology } from "./routingTopology.js";
+import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 
 const now = () => new Date().toISOString();
 const xmlApiInstallUrl = "https://github.com/homematic-community/XML-API";
@@ -313,7 +313,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     currentCollector?.host,
     currentCollector?.collectedAt,
     sniffer?.devices ?? [],
-    ccu?.devices ?? []
+    ccu?.devices ?? [],
+    parseRadioGateways(currentCollector?.radioGateways ?? [])
   );
   const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
   const reliableSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams >= 3);

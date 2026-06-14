@@ -26,6 +26,7 @@ LOG_LIST_FILE="$(make_tmp_file logs)"
 HMIP_LOG_LIST_FILE="$(make_tmp_file hmip-logs)"
 HMIP_ROUTING_LOG_LIST_FILE="$(make_tmp_file hmip-routing-logs)"
 HMIP_ROUTING_CONFIG_FILE="$(make_tmp_file hmip-routing-config)"
+RADIO_GATEWAY_FILE="$(make_tmp_file radio-gateways)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
@@ -34,10 +35,11 @@ CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$HMIP_LOG_LIST_FILE"
 : > "$HMIP_ROUTING_LOG_LIST_FILE"
 : > "$HMIP_ROUTING_CONFIG_FILE"
+: > "$RADIO_GATEWAY_FILE"
 : > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$RADIO_GATEWAY_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -275,6 +277,64 @@ EOF_ROUTING_CONFIG
   ) > "$HMIP_ROUTING_CONFIG_FILE" 2>/dev/null || true
 fi
 
+if [ -r /etc/config/rfd.conf ]; then
+  awk '
+    function clean(value) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      gsub(/^"|"$/, "", value)
+      gsub(/[|\r\n]/, " ", value)
+      return value
+    }
+    function reset() {
+      section = ""
+      type = ""
+      name = ""
+      serial = ""
+      address = ""
+    }
+    function emit() {
+      marker = tolower(type " " name)
+      if (marker !~ /(hmlgw|hm-lgw|hm-cfg-lan|lan gateway|lan-gateway|lan interface)/) {
+        return
+      }
+      if (name == "") {
+        name = type
+      }
+      printf "RADIO_GATEWAY|protocol=bidcos|name=%s|type=%s|serial=%s|address=%s\n", clean(name), clean(type), clean(serial), clean(address)
+    }
+    BEGIN {
+      reset()
+    }
+    /^\[[^]]+\][[:space:]]*$/ {
+      emit()
+      reset()
+      section = clean($0)
+      next
+    }
+    {
+      separator = index($0, "=")
+      if (separator <= 0) {
+        next
+      }
+      key = clean(substr($0, 1, separator - 1))
+      value = clean(substr($0, separator + 1))
+      normalized = tolower(key)
+      if (normalized == "type") {
+        type = value
+      } else if (normalized == "name" || normalized == "interfacename" || normalized == "description") {
+        name = value
+      } else if (normalized == "serial number" || normalized == "serialnumber" || normalized == "serial") {
+        serial = value
+      } else if (normalized == "ip address" || normalized == "ipaddress" || normalized == "host" || normalized == "hostname") {
+        address = value
+      }
+    }
+    END {
+      emit()
+    }
+  ' /etc/config/rfd.conf | sort -u > "$RADIO_GATEWAY_FILE" 2>/dev/null || true
+fi
+
 {
   ss -Htanp 2>/dev/null
   netstat -tnp 2>/dev/null
@@ -386,6 +446,20 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$encoded_line"
   done < "$HMIP_ROUTING_CONFIG_FILE"
+  printf '\n  ],\n'
+  printf '  "radioGatewaysBase64": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$encoded_line"
+  done < "$RADIO_GATEWAY_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connectionsBase64": [\n'

@@ -1110,6 +1110,13 @@ function RoutingTopologyView({
         <span><strong>{visibleEdges.length}</strong> belegte Wege</span>
       </div>
 
+      {(topologyScope === "bidcos" || topologyScope === "combined") && gateways.length === 0 ? (
+        <div className="routing-truth-note">
+          <strong>Keine klassischen LAN-Gateways im aktuellen Snapshot</strong>
+          <span>Aktualisiere die App und führe danach den Shell-Collector im Setup einmal erneut auf der CCU aus. Erst der neue Collector liest die Funk-Schnittstellen sicher aus.</span>
+        </div>
+      ) : null}
+
       <div className="routing-rssi-source">
         <div>
           <strong>Signalquelle</strong>

@@ -4,6 +4,7 @@ import type {
   RoutingTopologyEdge,
   RoutingTopologyNode,
   CcuDevice,
+  RadioGateway,
   SnifferDeviceSummary
 } from "./types.js";
 
@@ -15,6 +16,7 @@ const bidcosPattern = /^(?:HM-(?!W)|HMLGW)/i;
 const gatewayPattern = /^(?:HmIP-(?:HAP|WLAN-HAP|DRAP)|HmIPW-DRAP|HM-(?:LGW|CFG-LAN)|HMLGW)/i;
 const settingKeys = ["ROUTER_MODULE_ENABLED", "MULTICAST_ROUTER_MODULE_ENABLED", "ENABLE_ROUTING"] as const;
 const routingConfigPattern = /^ROUTING_CONFIG\|([^|]+)\|([^|]*)\|router=([^|]+)\|routing=([^|]+)\|multicast=([^|]+)$/i;
+const radioGatewayPattern = /^RADIO_GATEWAY\|(.+)$/i;
 
 function normalizeIdentifier(value?: string | number): string {
   return String(value ?? "").trim().toUpperCase();
@@ -85,16 +87,45 @@ function parseExplicitRoute(
   return { sourceIdentifier, targetIdentifier };
 }
 
+export function parseRadioGateways(lines: string[]): RadioGateway[] {
+  const gateways = new Map<string, RadioGateway>();
+
+  lines.forEach((line) => {
+    const match = line.trim().match(radioGatewayPattern);
+    if (!match) return;
+
+    const values = new Map<string, string>();
+    match[1].split("|").forEach((entry) => {
+      const separator = entry.indexOf("=");
+      if (separator <= 0) return;
+      values.set(entry.slice(0, separator).trim().toLowerCase(), entry.slice(separator + 1).trim());
+    });
+
+    const protocol = values.get("protocol")?.toLowerCase() === "hmip" ? "hmip" : "bidcos";
+    const type = values.get("type") || undefined;
+    const serial = values.get("serial") || undefined;
+    const address = values.get("address") || undefined;
+    const name = values.get("name") || type || serial || address;
+    if (!name) return;
+
+    const key = normalizeIdentifier(serial || address || `${protocol}-${name}`);
+    gateways.set(key, { protocol, name, type, serial, address });
+  });
+
+  return [...gateways.values()];
+}
+
 export function buildRoutingTopology(
   masterdata?: CcuMasterdataPayload,
   hmipLogs: string[] = [],
   sourceHost?: string,
   collectedAt?: string,
   snifferDevices: SnifferDeviceSummary[] = [],
-  ccuDevices: CcuDevice[] = []
+  ccuDevices: CcuDevice[] = [],
+  radioGateways: RadioGateway[] = []
 ): RoutingTopology {
   const devices = (masterdata?.devices ?? []).filter(isRadioDevice);
-  const nodes: RoutingTopologyNode[] = devices.map((device, index) => ({
+  const deviceNodes: RoutingTopologyNode[] = devices.map((device, index) => ({
     id: nodeId(device, index),
     name: device.name?.trim() || device.serial?.trim() || device.address?.trim() || `HmIP-Gerät ${index + 1}`,
     serial: device.serial?.trim(),
@@ -109,6 +140,29 @@ export function buildRoutingTopology(
     multicastRouting: false,
     evidence: []
   }));
+  const existingGatewayIdentifiers = new Set(
+    devices.filter((device) => gatewayPattern.test(device.type ?? ""))
+      .flatMap(deviceIdentifiers)
+  );
+  const gatewayNodes: RoutingTopologyNode[] = radioGateways
+    .filter((gateway) => {
+      const identifiers = [gateway.serial, gateway.address].map(normalizeIdentifier).filter(Boolean);
+      return !identifiers.some((identifier) => existingGatewayIdentifiers.has(identifier));
+    })
+    .map((gateway, index) => ({
+      id: normalizeIdentifier(gateway.serial || gateway.address) || `radio-gateway-${index + 1}`,
+      name: gateway.name,
+      serial: gateway.serial,
+      address: gateway.address,
+      type: gateway.type,
+      protocol: gateway.protocol,
+      role: "gateway",
+      routerEnabled: false,
+      routingEnabled: false,
+      multicastRouting: false,
+      evidence: ["Als Funk-Schnittstelle aus der CCU-Konfiguration gelesen."]
+    }));
+  const nodes = [...deviceNodes, ...gatewayNodes];
 
   const centralNode: RoutingTopologyNode = {
     id: "central",
@@ -124,7 +178,7 @@ export function buildRoutingTopology(
   const identifiers = new Map<string, string>();
 
   devices.forEach((device, index) => {
-    const id = nodes[index].id;
+    const id = deviceNodes[index].id;
     deviceIdentifiers(device).forEach((identifier) => identifiers.set(identifier, id));
   });
 
@@ -138,9 +192,9 @@ export function buildRoutingTopology(
       .map((identifier) => snifferByIdentifier.get(identifier))
       .find(Boolean);
     if (!snifferDevice) return;
-    nodes[index].avgRssi = snifferDevice.avgRssi;
-    nodes[index].snifferRssi = snifferDevice.avgRssi;
-    nodes[index].rssiTelegrams = snifferDevice.telegrams;
+    deviceNodes[index].avgRssi = snifferDevice.avgRssi;
+    deviceNodes[index].snifferRssi = snifferDevice.avgRssi;
+    deviceNodes[index].rssiTelegrams = snifferDevice.telegrams;
   });
 
   const ccuByIdentifier = new Map<string, CcuDevice>();
@@ -153,8 +207,8 @@ export function buildRoutingTopology(
       .map((identifier) => ccuByIdentifier.get(identifier))
       .find(Boolean);
     if (!ccuDevice) return;
-    nodes[index].ccuRssi = ccuDevice.rssiDevice;
-    nodes[index].ccuPeerRssi = ccuDevice.rssiPeer;
+    deviceNodes[index].ccuRssi = ccuDevice.rssiDevice;
+    deviceNodes[index].ccuPeerRssi = ccuDevice.rssiPeer;
   });
 
   const edges: RoutingTopologyEdge[] = [];
@@ -266,6 +320,9 @@ export function buildRoutingTopology(
       hmipLogs.some((line) => routingConfigPattern.test(line.trim()))
         ? "Router-, Routing- und Multicast-Schalter wurden direkt aus den HmIP-RF-Geräteparametern gelesen."
         : "Der aktuelle Collector enthält noch keine HmIP-RF-Geräteparameter. Collector erneut auf der CCU ausführen.",
+      radioGateways.length > 0
+        ? `${radioGateways.length} Funk-Gateway-Konfigurationen wurden vom CCU-Collector geliefert.`
+        : "Der aktuelle Collector enthält noch keine Funk-Gateway-Konfiguration. Collector nach dem Update erneut auf der CCU ausführen.",
       edges.length > 0
         ? `${edges.length} Routingpfade sind durch ausdrückliche Logzeilen belegt.`
         : "Noch kein aktiver Routingpfad ist ausdrücklich im Log belegt. Gestrichelte Verbindungen sind daher nur unbekannte Zuordnungen."

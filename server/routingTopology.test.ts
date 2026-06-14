@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRoutingTopology } from "./routingTopology.js";
+import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import type { CcuMasterdataPayload } from "./types.js";
 
 const masterdata: CcuMasterdataPayload = {
@@ -46,6 +46,20 @@ test("behandelt Access Points und LAN-Gateways nicht als Geräte-Router", () => 
   }
   assert.equal(topology.metrics.gateways, 6);
   assert.equal(topology.metrics.confirmedRouters, 0);
+});
+
+test("übernimmt klassische LAN-Gateways aus der CCU-Schnittstellenkonfiguration", () => {
+  const gateways = parseRadioGateways([
+    "RADIO_GATEWAY|protocol=bidcos|name=Funk-Gateway Erdgeschoss|type=HMLGW2|serial=JEQ0123456|address=192.168.1.31",
+    "RADIO_GATEWAY|protocol=bidcos|name=Funk-Gateway Obergeschoss|type=HMLGW2|serial=KEQ0123456|address=192.168.1.32"
+  ]);
+  const topology = buildRoutingTopology(masterdata, [], undefined, undefined, [], [], gateways);
+
+  assert.equal(gateways.length, 2);
+  assert.equal(topology.metrics.gateways, 2);
+  assert.equal(topology.nodes.find((node) => node.serial === "JEQ0123456")?.role, "gateway");
+  assert.equal(topology.nodes.find((node) => node.serial === "KEQ0123456")?.address, "192.168.1.32");
+  assert.match(topology.diagnostics.join(" "), /2 Funk-Gateway-Konfigurationen/);
 });
 
 test("erkennt belegte Router-Schalter aus HmIPServer-Zeilen", () => {

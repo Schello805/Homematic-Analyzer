@@ -133,10 +133,19 @@ export type CollectorPayload = {
   hmipLogs?: string[];
   hmipRoutingLogs?: string[];
   hmipRoutingConfig?: string[];
+  radioGateways?: string[];
   network?: {
     connections?: string[];
   };
   backups?: Record<string, unknown>;
+};
+
+export type RadioGateway = {
+  protocol: "hmip" | "bidcos";
+  name: string;
+  type?: string;
+  serial?: string;
+  address?: string;
 };
 
 export type RoutingTopologyNode = {
