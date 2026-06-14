@@ -2153,7 +2153,7 @@ function App() {
           ? allChecks.filter((check) => check.status === selectedStatusFilter)
           : showHealthyChecks
             ? allChecks
-            : allChecks.filter((check) => check.status !== "ok");
+            : allChecks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
         const counts = allChecks.reduce<Record<CheckStatus, number>>(
           (accumulator, check) => {
             accumulator[check.status] += 1;
@@ -2186,7 +2186,7 @@ function App() {
       { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
     );
   }, [analysis]);
-  const healthyCheckCount = summary?.ok ?? 0;
+  const healthyCheckCount = analysis?.checks.filter((check) => check.status === "ok" && check.id !== "routing-topology").length ?? 0;
 
   useEffect(() => {
     if (!analysis) {
@@ -2357,7 +2357,7 @@ function App() {
       ? analysis.checks.filter((check) => check.status === selectedStatusFilter)
       : showHealthyChecks
         ? analysis.checks
-        : analysis.checks.filter((check) => check.status !== "ok");
+        : analysis.checks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
 
     if (visibleChecks.length > 0) {
       const isActiveVisible = visibleChecks.some((check) => check.id === activeCheck);
@@ -2402,11 +2402,6 @@ function App() {
           } catch {
           }
           return nextForm;
-        });
-        showToast({
-          type: "success",
-          title: "Setup übernommen",
-          message: "Installer-Vorgaben wurden aus der lokalen Datenbank geladen."
         });
       } catch {
       }
@@ -4167,7 +4162,7 @@ function App() {
           )}
         </div>
         <div className="analysis-start__actions">
-          {form.hmipRoutingEnabled && routingStatus?.hmipLogReceived && (
+          {form.hmipRoutingEnabled && analysis?.checks.some((check) => check.id === "routing-topology") && (
             <button
               type="button"
               className="routing-entry-button"
