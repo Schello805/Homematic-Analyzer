@@ -1625,6 +1625,29 @@ h2 {
   padding: 16px;
 }
 
+.configuration-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .routing-settings {
   border-color: #bfd4fa;
   background: linear-gradient(145deg, #fbfdff, #f4f8ff);

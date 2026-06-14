@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -9,7 +9,8 @@ import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
 import { createAnalysis } from "./analyzer.js";
 import { readCcuSnapshot } from "./ccuClient.js";
 import { decodeBase64Lines } from "./collectorPayload.js";
-import { readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
+import { createConfigurationBackup, restoreConfigurationBackup } from "./configurationBackup.js";
+import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import type { SetupDefaults } from "./localDatabase.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
@@ -167,12 +168,32 @@ const aiLogAnalysisSchema = z.object({
 const setupDefaultsSchema = z.object({
   ccuHost: z.string().max(300).optional(),
   ccuUser: z.string().max(120).optional(),
+  ccuPassword: z.string().max(300).optional(),
   xmlApiToken: z.string().max(300).optional(),
+  sshUser: z.string().max(120).optional(),
+  sshPassword: z.string().max(300).optional(),
   snifferEnabled: z.boolean().optional(),
   snifferPort: z.string().max(300).optional(),
   hmipRoutingEnabled: z.boolean().optional(),
   hmipRoutingLogLevelSet: z.boolean().optional(),
   hmipRoutingRestarted: z.boolean().optional()
+});
+
+const configurationBackupSchema = z.object({
+  passphrase: z.string().min(8).max(300)
+});
+
+const configurationRestoreSchema = z.object({
+  passphrase: z.string().min(8).max(300),
+  backup: z.object({
+    format: z.literal("homematic-analyzer-config"),
+    version: z.literal(1),
+    createdAt: z.string(),
+    salt: z.string(),
+    iv: z.string(),
+    tag: z.string(),
+    data: z.string()
+  })
 });
 
 const ccuConnectionTestSchema = z.object({
@@ -855,6 +876,7 @@ async function loadPersistedNotificationSettings() {
         ...currentDatabase,
         notificationSettings: persistedNotificationSettings
       }));
+      await unlink(notificationSettingsFile).catch(() => undefined);
     }
   } catch {
     persistedNotificationSettings = defaultNotificationSettings;
@@ -1108,7 +1130,7 @@ app.post("/api/setup/defaults", async (request, response) => {
       ...currentDatabase.setupDefaults,
       ...cleanDefaults
     };
-    for (const key of ["ccuHost", "ccuUser", "xmlApiToken", "snifferPort"] as const) {
+    for (const key of ["ccuHost", "ccuUser", "ccuPassword", "xmlApiToken", "sshUser", "sshPassword", "snifferPort"] as const) {
       if (cleanDefaults[key] === "") delete nextSetupDefaults[key];
     }
     return {
@@ -1351,6 +1373,49 @@ app.get("/api/settings/notifications", (_request, response) => {
   response.json(mergeNotificationSettings(persistedNotificationSettings));
 });
 
+app.post("/api/settings/backup", async (request, response) => {
+  const parsed = configurationBackupSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "Das Backup-Passwort muss mindestens 8 Zeichen haben." });
+    return;
+  }
+  const database = await readLocalDatabase(localDatabaseFile);
+  response.json(createConfigurationBackup({
+    setupDefaults: database.setupDefaults,
+    notificationSettings: mergeNotificationSettings(database.notificationSettings)
+  }, parsed.data.passphrase));
+});
+
+app.post("/api/settings/restore", async (request, response) => {
+  const parsed = configurationRestoreSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: "Ungültige oder unvollständige Backup-Datei." });
+    return;
+  }
+  try {
+    const restored = restoreConfigurationBackup(parsed.data.backup, parsed.data.passphrase);
+    const setupResult = setupDefaultsSchema.safeParse(restored.setupDefaults ?? {});
+    const notificationResult = notificationSettingsSchema.safeParse(restored.notificationSettings ?? {});
+    if (!setupResult.success || !notificationResult.success) {
+      response.status(400).json({ error: "Das Backup enthält keine gültige Analyzer-Konfiguration." });
+      return;
+    }
+    persistedNotificationSettings = mergeNotificationSettings(notificationResult.data);
+    await updateLocalDatabase(localDatabaseFile, (database) => ({
+      ...database,
+      setupDefaults: setupResult.data,
+      notificationSettings: persistedNotificationSettings
+    }));
+    response.json({
+      ok: true,
+      setupDefaults: setupResult.data,
+      notificationSettings: persistedNotificationSettings
+    });
+  } catch {
+    response.status(400).json({ error: "Backup konnte nicht entschlüsselt werden. Prüfe Datei und Passwort." });
+  }
+});
+
 app.get("/api/system/update-status", async (_request, response) => {
   const releaseCheck = await checkRepositoryRelease(appVersion);
   const sourceLabel = releaseCheck.source === "tag" ? "Tag" : releaseCheck.source === "main" ? "main" : "Release";
@@ -1576,6 +1641,7 @@ app.use((request, response, next) => {
 await loadPersistedCcuMasterdata();
 await loadPersistedCollector();
 await loadPersistedNotificationSettings();
+await ensureLocalDatabaseEncryption(localDatabaseFile);
 
 app.listen(port, () => {
   console.log(`Homematic Analyzer API läuft auf http://127.0.0.1:${port}`);

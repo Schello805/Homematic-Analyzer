@@ -26,13 +26,25 @@ test("behandelt Access Points und LAN-Gateways nicht als Geräte-Router", () => 
   const topology = buildRoutingTopology({
     devices: [
       { name: "HmIP Access Point", serial: "3014F711A000000000000001", type: "HmIP-HAP" },
-      { name: "LAN Gateway", serial: "JEQ0123456", type: "HM-LGW-O-TW-W-EU" }
+      { name: "LAN Gateway", serial: "JEQ0123456", type: "HM-LGW-O-TW-W-EU" },
+      { name: "Alter LAN Adapter", serial: "KEQ0123456", type: "HM-CFG-LAN" },
+      { name: "Wired Access Point", serial: "3014F711A000000000000002", type: "HmIPW-DRAP" },
+      { name: "HmIP Access Point DRAP", serial: "3014F711A000000000000003", type: "HmIP-DRAP" },
+      { name: "Legacy Gateway", serial: "HMLGW0001", type: "HMLGW2" }
     ]
   });
 
-  assert.equal(topology.nodes.find((node) => node.serial === "3014F711A000000000000001")?.role, "gateway");
-  assert.equal(topology.nodes.find((node) => node.serial === "JEQ0123456")?.role, "gateway");
-  assert.equal(topology.metrics.gateways, 2);
+  for (const serial of [
+    "3014F711A000000000000001",
+    "JEQ0123456",
+    "KEQ0123456",
+    "3014F711A000000000000002",
+    "3014F711A000000000000003",
+    "HMLGW0001"
+  ]) {
+    assert.equal(topology.nodes.find((node) => node.serial === serial)?.role, "gateway");
+  }
+  assert.equal(topology.metrics.gateways, 6);
   assert.equal(topology.metrics.confirmedRouters, 0);
 });
 

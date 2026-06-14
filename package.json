@@ -1,6 +1,6 @@
 {
   "name": "homematic-analyzer",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "private": true,
   "homepage": "https://github.com/Schello805/Homematic-Analyzer",
   "repository": {
@@ -16,6 +16,7 @@
     "start": "tsx server/index.ts",
     "check": "tsc --noEmit",
     "test": "tsx --test server/*.test.ts",
+    "test:install": "bash scripts/test-installation.sh",
     "release:push": "node scripts/release/push-with-version.mjs"
   },
   "dependencies": {

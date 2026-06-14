@@ -408,8 +408,11 @@ export function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
       });
       return numberValue(datapoint?.value);
     };
-    const rssiDevice = findNumericDatapoint("RSSI_DEVICE");
-    const rssiPeer = findNumericDatapoint("RSSI_PEER");
+    const normalizeRssi = (value?: number) => (
+      value !== undefined && value >= -150 && value <= 0 ? value : undefined
+    );
+    const rssiDevice = normalizeRssi(findNumericDatapoint("RSSI_DEVICE"));
+    const rssiPeer = normalizeRssi(findNumericDatapoint("RSSI_PEER"));
 
     const lowBatteryDatapoint = datapoints.find((datapoint) => {
       const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();

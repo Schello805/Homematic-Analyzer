@@ -53,3 +53,25 @@ test("liest RSSI_DEVICE und RSSI_PEER aus der XML-API-Geräteliste", () => {
   assert.equal(devices[0].rssiDevice, -74);
   assert.equal(devices[0].rssiPeer, -81);
 });
+
+test("verwirft XML-API-Platzhalter statt sie als dBm anzuzeigen", () => {
+  const devices = collectDevices({
+    stateList: {
+      device: {
+        name: "HmIP Gerät ohne RSSI",
+        address: "000A1B2C3D4E77",
+        type: "HmIP-SWDO",
+        channel: {
+          address: "000A1B2C3D4E77:0",
+          datapoint: [
+            { name: "HmIP-RF.000A1B2C3D4E77:0.RSSI_DEVICE", type: "RSSI_DEVICE", value: "-65535" },
+            { name: "HmIP-RF.000A1B2C3D4E77:0.RSSI_PEER", type: "RSSI_PEER", value: "65535" }
+          ]
+        }
+      }
+    }
+  });
+
+  assert.equal(devices[0].rssiDevice, undefined);
+  assert.equal(devices[0].rssiPeer, undefined);
+});

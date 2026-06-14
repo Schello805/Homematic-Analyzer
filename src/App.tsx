@@ -289,7 +289,7 @@ type SnifferSnapshot = {
   diagnostics: string[];
 };
 
-type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "xmlApiToken" | "snifferEnabled" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
+type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "ccuPassword" | "xmlApiToken" | "sshUser" | "sshPassword" | "snifferEnabled" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
 
 type CollectorStatus = {
   available: boolean;
@@ -545,7 +545,7 @@ function loadSavedSetup(): SetupForm {
     if (!savedSetup) return initialForm;
 
     const parsedSetup = JSON.parse(savedSetup) as Partial<SetupForm>;
-    return {
+    const loadedSetup = {
       ccuHost: parsedSetup.ccuHost ?? "",
       ccuUser: parsedSetup.ccuUser ?? "",
       ccuPassword: parsedSetup.ccuPassword ?? "",
@@ -558,6 +558,13 @@ function loadSavedSetup(): SetupForm {
       hmipRoutingLogLevelSet: parsedSetup.hmipRoutingLogLevelSet ?? false,
       hmipRoutingRestarted: parsedSetup.hmipRoutingRestarted ?? false
     };
+    window.localStorage.setItem(setupStorageKey, JSON.stringify({
+      ...loadedSetup,
+      ccuPassword: "",
+      xmlApiToken: "",
+      sshPassword: ""
+    }));
+    return loadedSetup;
   } catch {
     return initialForm;
   }
@@ -1147,7 +1154,7 @@ function RoutingTopologyView({
         </small>
       </div>
 
-      <div className="routing-signal-summary" aria-label={`Verteilung der HmIP-Signalqualität: ${rssiSourceLabel}`}>
+      <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceLabel}`}>
         <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
         <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
         <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
@@ -1158,7 +1165,7 @@ function RoutingTopologyView({
         <details className="routing-weak-devices" open={weakNodes.length > 0}>
           <summary>
             <span>
-              <strong>Schwächste HmIP-Geräte · {rssiSourceLabel}</strong>
+              <strong>Schwächste Geräte · {scopeLabel} · {rssiSourceLabel}</strong>
               <small>Nach {rssiSourceLabel} sortiert · beide Messquellen werden angezeigt</small>
             </span>
             <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
@@ -1405,6 +1412,8 @@ function App() {
   const [actionModal, setActionModal] = useState<ActionModal>(null);
   const [actionModalCheckId, setActionModalCheckId] = useState<string | null>(null);
   const [backupPage, setBackupPage] = useState(0);
+  const [configurationPassphrase, setConfigurationPassphrase] = useState("");
+  const [configurationBusy, setConfigurationBusy] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     state: "checking",
     label: "Update wird geprüft",
@@ -1558,7 +1567,12 @@ function App() {
   function updateForm(nextForm: SetupForm) {
     setForm(nextForm);
     try {
-      window.localStorage.setItem(setupStorageKey, JSON.stringify(nextForm));
+      window.localStorage.setItem(setupStorageKey, JSON.stringify({
+        ...nextForm,
+        ccuPassword: "",
+        xmlApiToken: "",
+        sshPassword: ""
+      }));
     } catch {
       showToast({
         type: "warning",
@@ -1583,7 +1597,10 @@ function App() {
         body: JSON.stringify({
           ccuHost: nextForm.ccuHost.trim(),
           ccuUser: nextForm.ccuUser.trim(),
+          ccuPassword: nextForm.ccuPassword,
           xmlApiToken: (nextForm.xmlApiToken ?? "").trim(),
+          sshUser: nextForm.sshUser.trim(),
+          sshPassword: nextForm.sshPassword,
           snifferEnabled: nextForm.snifferEnabled,
           snifferPort: nextForm.snifferPort.trim(),
           hmipRoutingEnabled: nextForm.hmipRoutingEnabled,
@@ -1592,6 +1609,73 @@ function App() {
         })
       });
     } catch {
+    }
+  }
+
+  async function exportConfigurationBackup() {
+    if (configurationPassphrase.length < 8) {
+      showToast({ type: "warning", title: "Backup-Passwort zu kurz", message: "Bitte mindestens 8 Zeichen verwenden." });
+      return;
+    }
+    setConfigurationBusy(true);
+    try {
+      const response = await fetch("/api/settings/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase: configurationPassphrase })
+      });
+      if (!response.ok) throw new Error("Backup konnte nicht erstellt werden.");
+      const backup = await response.json();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `homematic-analyzer-config-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast({ type: "success", title: "Konfiguration gesichert", message: "Die Backup-Datei ist mit deinem Passwort verschlüsselt." });
+    } catch (caughtError) {
+      showToast({ type: "error", title: "Backup fehlgeschlagen", message: caughtError instanceof Error ? caughtError.message : "Lokale API prüfen." });
+    } finally {
+      setConfigurationBusy(false);
+    }
+  }
+
+  async function restoreConfigurationBackup(file: File) {
+    if (configurationPassphrase.length < 8) {
+      showToast({ type: "warning", title: "Backup-Passwort fehlt", message: "Gib zuerst das Passwort der Backup-Datei ein." });
+      return;
+    }
+    setConfigurationBusy(true);
+    try {
+      const backup = JSON.parse(await file.text());
+      const response = await fetch("/api/settings/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase: configurationPassphrase, backup })
+      });
+      const result = await response.json() as {
+        error?: string;
+        setupDefaults?: SetupDefaults;
+        notificationSettings?: NotificationSettings;
+      };
+      if (!response.ok) throw new Error(result.error ?? "Backup konnte nicht wiederhergestellt werden.");
+      if (result.setupDefaults) {
+        setForm((current) => ({ ...current, ...result.setupDefaults }));
+      }
+      if (result.notificationSettings) {
+        setNotificationSettings({
+          telegram: { ...initialNotificationSettings.telegram, ...result.notificationSettings.telegram },
+          email: { ...initialNotificationSettings.email, ...result.notificationSettings.email },
+          events: { ...initialNotificationSettings.events, ...result.notificationSettings.events },
+          ai: { ...initialNotificationSettings.ai, ...result.notificationSettings.ai }
+        });
+      }
+      showToast({ type: "success", title: "Konfiguration wiederhergestellt", message: "Setup und Einstellungen wurden übernommen." });
+    } catch (caughtError) {
+      showToast({ type: "error", title: "Wiederherstellung fehlgeschlagen", message: caughtError instanceof Error ? caughtError.message : "Datei und Passwort prüfen." });
+    } finally {
+      setConfigurationBusy(false);
     }
   }
 
@@ -2390,7 +2474,10 @@ function App() {
             ...currentForm,
             ccuHost: currentForm.ccuHost || defaults.ccuHost || "",
             ccuUser: currentForm.ccuUser || defaults.ccuUser || "",
+            ccuPassword: currentForm.ccuPassword || defaults.ccuPassword || "",
             xmlApiToken: currentForm.xmlApiToken || defaults.xmlApiToken || "",
+            sshUser: currentForm.sshUser || defaults.sshUser || "root",
+            sshPassword: currentForm.sshPassword || defaults.sshPassword || "",
             snifferEnabled: defaults.snifferEnabled ?? currentForm.snifferEnabled,
             snifferPort: currentForm.snifferPort || defaults.snifferPort || "",
             hmipRoutingEnabled: defaults.hmipRoutingEnabled ?? currentForm.hmipRoutingEnabled,
@@ -2398,7 +2485,12 @@ function App() {
             hmipRoutingRestarted: defaults.hmipRoutingRestarted ?? currentForm.hmipRoutingRestarted
           };
           try {
-            window.localStorage.setItem(setupStorageKey, JSON.stringify(nextForm));
+            window.localStorage.setItem(setupStorageKey, JSON.stringify({
+              ...nextForm,
+              ccuPassword: "",
+              xmlApiToken: "",
+              sshPassword: ""
+            }));
           } catch {
           }
           return nextForm;
@@ -4662,7 +4754,7 @@ function App() {
             <p className="eyebrow">Einstellungen</p>
             <h2>Optionale Funktionen</h2>
             <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
-            <p className="setup-note">Für lokale Nutzung okay. Für öffentliche Deployments später bitte verschlüsselte Secret-Verwaltung nutzen.</p>
+            <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
             <div className="script-actions">
               <button type="button" onClick={() => void saveNotificationSettings()} disabled={savingSettings}>
                 {savingSettings ? "Speichert ..." : "Einstellungen speichern"}
@@ -5159,6 +5251,53 @@ function App() {
                 ))}
               </div>
               <p className="muted">Neue Releases werden als eigener Hinweis verarbeitet, sobald der Release-Check ein Update belegt.</p>
+              </div>
+            </details>
+
+            <details className="setup-card settings-block security-settings" open>
+              <summary><span>Sicherung & Datenschutz</span><small>Verschlüsselte Konfiguration</small></summary>
+              <div className="settings-block__body">
+                <p>
+                  Passwörter, XML-API-Token und API-Keys werden serverseitig AES-256-GCM-verschlüsselt gespeichert.
+                  Im Browser bleiben diese Werte nicht mehr dauerhaft im Klartext.
+                </p>
+                <label>
+                  Passwort für Backup oder Wiederherstellung
+                  <span className="secret-field">
+                    <input
+                      type={visibleSecrets.configurationPassphrase ? "text" : "password"}
+                      value={configurationPassphrase}
+                      onChange={(event) => setConfigurationPassphrase(event.target.value)}
+                      placeholder="Mindestens 8 Zeichen"
+                      autoComplete="new-password"
+                    />
+                    <button type="button" onClick={() => toggleSecret("configurationPassphrase")} aria-label={visibleSecrets.configurationPassphrase ? "Backup-Passwort ausblenden" : "Backup-Passwort anzeigen"}>
+                      {getSecretIcon(Boolean(visibleSecrets.configurationPassphrase))}
+                    </button>
+                  </span>
+                </label>
+                <div className="configuration-backup-actions">
+                  <button type="button" onClick={() => void exportConfigurationBackup()} disabled={configurationBusy}>
+                    {configurationBusy ? "Bitte warten …" : "Konfiguration sichern"}
+                  </button>
+                  <label className="light-button file-button">
+                    Backup wiederherstellen
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      disabled={configurationBusy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void restoreConfigurationBackup(file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="muted">
+                  Das portable Backup enthält Setup und Benachrichtigungseinstellungen einschließlich Secrets – ausschließlich verschlüsselt mit deinem Backup-Passwort.
+                  Messwerte, Logs und Analysehistorie werden nicht exportiert.
+                </p>
               </div>
             </details>
           </div>

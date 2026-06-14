@@ -13,6 +13,16 @@ cd "$ROOT_DIR"
 
 git config --global --add safe.directory "$ROOT_DIR" 2>/dev/null || true
 
+if [ -d "$ROOT_DIR/.data" ]; then
+  backup_file="$ROOT_DIR/.data/pre-update-$(date +%Y%m%d-%H%M%S).tar.gz"
+  temporary_backup="${TMPDIR:-/tmp}/homematic-analyzer-pre-update-$$.tar.gz"
+  printf '[INFO] Lokale Konfiguration wird vor dem Update gesichert: %s\n' "$backup_file"
+  tar --exclude='.data/pre-update-*.tar.gz' -czf "$temporary_backup" -C "$ROOT_DIR" .data
+  mv "$temporary_backup" "$backup_file"
+  chmod 600 "$backup_file"
+  ls -1t "$ROOT_DIR"/.data/pre-update-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm -f
+fi
+
 printf '[INFO] Repository wird aktualisiert ...\n'
 git fetch origin
 current_branch="$(git rev-parse --abbrev-ref HEAD)"

@@ -85,6 +85,12 @@ Danach den Update-Befehl erneut ausführen.
 
 Das Update-Log des Buttons liegt lokal unter `.data/update.log`.
 
+Installation anschließend nur lesend prüfen:
+
+```bash
+sudo bash /opt/homematic-analyzer/scripts/install/verify-installation.sh
+```
+
 ## Versionierung
 
 Die Version im Footer kommt automatisch aus `package.json`. Für Änderungen, die nach GitHub gepusht werden sollen, kann die Patch-Version automatisch erhöht werden:
@@ -119,6 +125,8 @@ npm start
 ## Lokale Datenbank
 
 Der Analyzer speichert Settings und empfangene CCU-Stammdaten lokal in `.data/homematic-analyzer-db.json`. Die Datei wird atomar geschrieben und ist für die lokale Raspberry-/LAN-Nutzung bewusst ohne zusätzliche Datenbank-Abhängigkeit gehalten.
+
+Sensible Werte werden mit AES-256-GCM verschlüsselt. Der lokale Schlüssel liegt mit geschützten Dateirechten unter `.data/secret.key`. Unter **Einstellungen → Sicherung & Datenschutz** kann eine portable, passwortverschlüsselte Konfigurationsdatei exportiert und wiederhergestellt werden.
 
 ## XML-API Token-ID
 
@@ -211,6 +219,7 @@ Noch offen bzw. bewusst nur vorbereitet:
 - Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
 - Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
 - Ausführlichere Langzeitdiagramme und Filter für die bereits gespeicherten Sniffer-Messpunkte.
+- Hardwaretests auf weiteren CCU-/RaspberryMatic-/OpenCCU- und Proxmox-Versionen; die automatischen CI-Tests ersetzen keinen Test auf jeder realen Hardwarekombination.
 
 ## Dokumentation
 
@@ -220,6 +229,8 @@ Noch offen bzw. bewusst nur vorbereitet:
 - AskSin Analyzer XS: `docs/ASKSIN_ANALYZER_XS.md`
 - Proxmox USB-Durchreichung: `docs/PROXMOX_USB.md`
 - HmIP-Routing vorbereiten und entfernen: `docs/HMIP_ROUTING.md`
+- Sicherheit und Datenschutz: `docs/SECURITY_AND_PRIVACY.md`
+- Produktiv- und Deinstallationscheckliste: `docs/PRODUCTION_CHECKLIST.md`
 
 ## GitHub
 

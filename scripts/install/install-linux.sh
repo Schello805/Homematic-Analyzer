@@ -138,6 +138,8 @@ install_app() {
   run_as_service_user npm --prefix "$INSTALL_DIR" run build
   mkdir -p "$INSTALL_DIR/.data"
   chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.data"
+  chmod 700 "$INSTALL_DIR/.data"
+  find "$INSTALL_DIR/.data" -maxdepth 1 -type f -exec chmod 600 {} \; 2>/dev/null || true
 }
 
 has_tty() {

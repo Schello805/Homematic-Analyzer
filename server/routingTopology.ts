@@ -10,9 +10,9 @@ import type {
 type InventoryDevice = NonNullable<CcuMasterdataPayload["devices"]>[number];
 
 const routerCandidatePattern = /^HmIP-(PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|MIOB)/i;
-const hmipPattern = /^HmIP-/i;
-const bidcosPattern = /^HM-(?!W)/i;
-const gatewayPattern = /^(HmIP-(HAP|WLAN-HAP)|HM-LGW)/i;
+const hmipPattern = /^(?:HmIP-|HmIPW-)/i;
+const bidcosPattern = /^(?:HM-(?!W)|HMLGW)/i;
+const gatewayPattern = /^(?:HmIP-(?:HAP|WLAN-HAP|DRAP)|HmIPW-DRAP|HM-(?:LGW|CFG-LAN)|HMLGW)/i;
 const settingKeys = ["ROUTER_MODULE_ENABLED", "MULTICAST_ROUTER_MODULE_ENABLED", "ENABLE_ROUTING"] as const;
 const routingConfigPattern = /^ROUTING_CONFIG\|([^|]+)\|([^|]*)\|router=([^|]+)\|routing=([^|]+)\|multicast=([^|]+)$/i;
 
