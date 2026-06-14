@@ -312,7 +312,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     ],
     currentCollector?.host,
     currentCollector?.collectedAt,
-    sniffer?.devices ?? []
+    sniffer?.devices ?? [],
+    ccu?.devices ?? []
   );
   const snifferDevicesWithRssi = (sniffer?.devices ?? []).filter((device) => device.avgRssi !== undefined);
   const reliableSnifferDevicesWithRssi = snifferDevicesWithRssi.filter((device) => device.telegrams >= 3);

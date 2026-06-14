@@ -4512,6 +4512,44 @@ pre {
   padding-left: 34px;
 }
 
+.routing-rssi-source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .45fr);
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 12px;
+  border: 1px solid #d6e3f3;
+  border-radius: 15px;
+  padding: 11px 13px;
+  background: #f7faff;
+}
+
+.routing-rssi-source > div,
+.routing-rssi-source label {
+  display: grid;
+  gap: 4px;
+}
+
+.routing-rssi-source span {
+  color: #65738a;
+  font-size: .8rem;
+}
+
+.routing-rssi-source label {
+  color: #4f5e75;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.routing-rssi-source select {
+  min-height: 40px;
+  border: 1px solid #cad7e8;
+  border-radius: 11px;
+  padding: 7px 10px;
+  color: #1e2a40;
+  background: #fff;
+}
+
 .routing-signal-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5110,6 +5148,10 @@ pre {
   .routing-signal-summary,
   .routing-weak-devices > div {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .routing-rssi-source {
+    grid-template-columns: 1fr;
   }
 
   .routing-node-detail dl {

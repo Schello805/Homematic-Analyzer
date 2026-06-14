@@ -1247,7 +1247,8 @@ app.get("/api/routing/topology", (_request, response) => {
     currentLogs,
     latestCollector?.host,
     latestCollector?.collectedAt,
-    latestSnifferSnapshot?.devices ?? []
+    latestSnifferSnapshot?.devices ?? [],
+    latestCcuSnapshot?.devices ?? []
   ));
 });
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyCcuConnectionError, xmlApiTimeoutForPath } from "./ccuClient.js";
+import { classifyCcuConnectionError, collectDevices, xmlApiTimeoutForPath } from "./ccuClient.js";
 
 test("erkennt DNS-Fehler des Analyzer-Servers", () => {
   const error = new Error("fetch failed", { cause: { code: "ENOTFOUND" } });
@@ -30,4 +30,26 @@ test("erkennt Zeitüberschreitung", () => {
 test("gibt der großen XML-API-Geräteliste deutlich mehr Zeit", () => {
   assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/statelist.cgi"), 30000);
   assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/systemNotification.cgi"), 12000);
+});
+
+test("liest RSSI_DEVICE und RSSI_PEER aus der XML-API-Geräteliste", () => {
+  const devices = collectDevices({
+    stateList: {
+      device: {
+        name: "HmIP Fenster",
+        address: "000A1B2C3D4E55",
+        type: "HmIP-SWDO",
+        channel: {
+          address: "000A1B2C3D4E55:0",
+          datapoint: [
+            { name: "HmIP-RF.000A1B2C3D4E55:0.RSSI_DEVICE", type: "RSSI_DEVICE", value: "-74" },
+            { name: "HmIP-RF.000A1B2C3D4E55:0.RSSI_PEER", type: "RSSI_PEER", value: "-81" }
+          ]
+        }
+      }
+    }
+  });
+
+  assert.equal(devices[0].rssiDevice, -74);
+  assert.equal(devices[0].rssiPeer, -81);
 });

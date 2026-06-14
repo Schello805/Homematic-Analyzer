@@ -86,6 +86,8 @@ export type CcuDevice = {
   address?: string;
   type?: string;
   firmware?: string;
+  rssiDevice?: number;
+  rssiPeer?: number;
   lowBattery: boolean;
   unreachable: boolean;
   configPending: boolean;
@@ -147,6 +149,9 @@ export type RoutingTopologyNode = {
   routingEnabled: boolean;
   multicastRouting: boolean;
   avgRssi?: number;
+  snifferRssi?: number;
+  ccuRssi?: number;
+  ccuPeerRssi?: number;
   rssiTelegrams?: number;
   evidence: string[];
 };
@@ -176,6 +181,10 @@ export type RoutingTopology = {
     unknownAssignments: number;
   };
   diagnostics: string[];
+  rssiSources: {
+    sniffer: number;
+    ccu: number;
+  };
 };
 
 export type CollectorHistoryPoint = {

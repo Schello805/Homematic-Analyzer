@@ -317,6 +317,9 @@ type RoutingTopologyNode = {
   routingEnabled: boolean;
   multicastRouting: boolean;
   avgRssi?: number;
+  snifferRssi?: number;
+  ccuRssi?: number;
+  ccuPeerRssi?: number;
   rssiTelegrams?: number;
   evidence: string[];
 };
@@ -344,6 +347,10 @@ type RoutingTopology = {
     unknownAssignments: number;
   };
   diagnostics: string[];
+  rssiSources: {
+    sniffer: number;
+    ccu: number;
+  };
 };
 
 const appVersion = packageInfo.version;
@@ -922,6 +929,7 @@ function RoutingTopologyView({
   onRefresh: () => void;
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState("");
+  const [requestedRssiSource, setRequestedRssiSource] = useState<"ccu" | "sniffer">("ccu");
 
   if (!topology) {
     return (
@@ -944,17 +952,29 @@ function RoutingTopologyView({
   const hoveredNode = topology.nodes.find((node) => node.id === hoveredNodeId);
   const selectedRoute = selectedNode ? topology.edges.find((edge) => edge.source === selectedNode.id) : undefined;
   const selectedReceiver = selectedRoute ? topology.nodes.find((node) => node.id === selectedRoute.target) : undefined;
+  const ccuRssiAvailable = (topology.rssiSources?.ccu ?? 0) > 0;
+  const snifferRssiAvailable = (topology.rssiSources?.sniffer ?? 0) > 0;
+  const rssiSource = requestedRssiSource === "ccu" && !ccuRssiAvailable && snifferRssiAvailable
+    ? "sniffer"
+    : requestedRssiSource === "sniffer" && !snifferRssiAvailable && ccuRssiAvailable
+      ? "ccu"
+      : requestedRssiSource;
+  const nodeRssi = (node?: RoutingTopologyNode) => node
+    ? rssiSource === "ccu" ? node.ccuRssi : node.snifferRssi
+    : undefined;
+  const rssiSourceLabel = rssiSource === "ccu" ? "Zentrale / XML-API" : "AskSin-Sniffer";
   const confirmedSourceIds = new Set(topology.edges.map((edge) => edge.source));
   const center = { x: 450, y: 260 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
 
   const signalRadius = (node: RoutingTopologyNode, fallback: number) => {
-    if (node.avgRssi === undefined) return fallback;
-    if (node.avgRssi >= -60) return 145;
-    if (node.avgRssi >= -72) return 145 + ((-60 - node.avgRssi) / 12) * 35;
-    if (node.avgRssi >= -85) return 180 + ((-72 - node.avgRssi) / 13) * 35;
-    return Math.min(245, 215 + ((-85 - node.avgRssi) / 20) * 30);
+    const rssi = nodeRssi(node);
+    if (rssi === undefined) return fallback;
+    if (rssi >= -60) return 145;
+    if (rssi >= -72) return 145 + ((-60 - rssi) / 12) * 35;
+    if (rssi >= -85) return 180 + ((-72 - rssi) / 13) * 35;
+    return Math.min(245, 215 + ((-85 - rssi) / 20) * 30);
   };
 
   const placeRing = (nodes: RoutingTopologyNode[], fallbackRadius: number, offset = -90) => {
@@ -980,12 +1000,12 @@ function RoutingTopologyView({
   };
   const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
   const measuredNodes = topology.nodes
-    .filter((node) => node.role !== "central" && node.avgRssi !== undefined)
-    .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
-  const weakNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "weak");
-  const observedNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "medium");
-  const goodNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "good");
-  const excellentNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "excellent");
+    .filter((node) => node.role !== "central" && nodeRssi(node) !== undefined)
+    .sort((left, right) => (nodeRssi(left) ?? 0) - (nodeRssi(right) ?? 0));
+  const weakNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "weak");
+  const observedNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "medium");
+  const goodNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "good");
+  const excellentNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "excellent");
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
   const hoverLabelX = hoveredPosition ? Math.max(100, Math.min(800, hoveredPosition.x)) : 0;
   const hoverLabelY = hoveredPosition
@@ -1012,6 +1032,28 @@ function RoutingTopologyView({
         <span><strong>{topology.metrics.multicastRouters}</strong> Multicast-Router</span>
       </div>
 
+      <div className="routing-rssi-source">
+        <div>
+          <strong>Signalquelle</strong>
+          <span>
+            {rssiSource === "ccu"
+              ? "Live-Werte aus dem CCU/XML-API-Datenpunkt RSSI_DEVICE."
+              : "Empfangsstärke der Telegramme am Standort des AskSin-Sniffers."}
+          </span>
+        </div>
+        <label>
+          RSSI anzeigen von
+          <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
+            <option value="ccu" disabled={!ccuRssiAvailable}>
+              Zentrale / XML-API ({topology.rssiSources?.ccu ?? 0} Geräte)
+            </option>
+            <option value="sniffer" disabled={!snifferRssiAvailable}>
+              AskSin-Sniffer ({topology.rssiSources?.sniffer ?? 0} Geräte)
+            </option>
+          </select>
+        </label>
+      </div>
+
       <div className={`routing-insight ${weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
         <div>
           <span className="routing-insight-icon" aria-hidden="true">{weakNodes.length > 0 ? "!" : "✓"}</span>
@@ -1019,19 +1061,22 @@ function RoutingTopologyView({
             <strong>{weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}</strong>
             <p>
               {weakNodes.length > 0
-                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (${node.avgRssi} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
+                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (${nodeRssi(node)} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
                 : measuredNodes.length > 0
                   ? `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`
-                  : "Für eine Signalbewertung fehlen noch Sniffer-RSSI-Werte."}
+                  : `Für die Quelle „${rssiSourceLabel}“ liegen noch keine RSSI-Werte vor.`}
             </p>
           </div>
         </div>
         <small>
-          RSSI-Quelle ist der AskSin-Sniffer: Weiter außen bedeutet schwächer an dessen Standort empfangen. Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
+          {rssiSource === "ccu"
+            ? "Weiter außen bedeutet einen schwächeren von der CCU/XML-API gemeldeten RSSI_DEVICE-Wert. Dieser Wert stammt von der Zentrale, nicht vom Sniffer."
+            : "Weiter außen bedeutet schwächer am Standort des Sniffers empfangen. Das ist nicht automatisch die Funkstrecke zur Zentrale."}
+          {" "}Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
         </small>
       </div>
 
-      <div className="routing-signal-summary" aria-label="Verteilung der HmIP-Signalqualität am Sniffer">
+      <div className="routing-signal-summary" aria-label={`Verteilung der HmIP-Signalqualität: ${rssiSourceLabel}`}>
         <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
         <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
         <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
@@ -1042,8 +1087,8 @@ function RoutingTopologyView({
         <details className="routing-weak-devices" open={weakNodes.length > 0}>
           <summary>
             <span>
-              <strong>Schwächste HmIP-Geräte am Sniffer</strong>
-              <small>Nach RSSI sortiert · nicht automatisch die Verbindung zur Zentrale</small>
+              <strong>Schwächste HmIP-Geräte · {rssiSourceLabel}</strong>
+              <small>Nach RSSI sortiert · Quelle: {rssiSourceLabel}</small>
             </span>
             <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
           </summary>
@@ -1052,9 +1097,12 @@ function RoutingTopologyView({
               <button type="button" key={node.id} onClick={() => onSelectNode(node.id)}>
                 <span>
                   <strong>{node.name}</strong>
-                  <small>{node.type ?? "HmIP-Gerät"} · {node.rssiTelegrams ?? 0} Telegramme</small>
+                  <small>
+                    {node.type ?? "HmIP-Gerät"}
+                    {rssiSource === "sniffer" ? ` · ${node.rssiTelegrams ?? 0} Telegramme` : " · CCU-Livewert"}
+                  </small>
                 </span>
-                <RssiAssessment value={node.avgRssi} />
+                <RssiAssessment value={nodeRssi(node)} />
               </button>
             ))}
           </div>
@@ -1100,6 +1148,7 @@ function RoutingTopologyView({
               const position = positions.get(node.id);
               if (!position) return null;
               const isSelected = selectedNode?.id === node.id;
+              const rssi = nodeRssi(node);
               return (
                 <g
                   className={`routing-node ${nodeClass(node)} ${isSelected ? "is-selected" : ""}`}
@@ -1116,14 +1165,14 @@ function RoutingTopologyView({
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
                 >
-                  {node.avgRssi !== undefined && (
+                  {rssi !== undefined && (
                     <circle
-                      className={`routing-signal-ring ${rssiClass(node.avgRssi)}`}
+                      className={`routing-signal-ring ${rssiClass(rssi)}`}
                       r={node.role === "router" ? 23 : 17}
                     />
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "router" ? 18 : 12} />
-                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${node.avgRssi !== undefined ? ` · ${rssiAssessment(node.avgRssi).label} (${node.avgRssi} dBm)` : ""}`}</title>
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${rssi !== undefined ? ` · ${rssiAssessment(rssi).label} (${rssi} dBm, ${rssiSourceLabel})` : ""}`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
@@ -1134,11 +1183,11 @@ function RoutingTopologyView({
 
             {hoveredNode && hoveredPosition && (
               <g className="routing-hover-label" transform={`translate(${hoverLabelX - 105} ${hoverLabelY})`} pointerEvents="none">
-                <rect width="210" height={hoveredNode.avgRssi !== undefined ? 38 : 28} rx="9" />
+                <rect width="210" height={nodeRssi(hoveredNode) !== undefined ? 38 : 28} rx="9" />
                 <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
-                {hoveredNode.avgRssi !== undefined && (
-                  <text className={`routing-hover-signal ${rssiClass(hoveredNode.avgRssi)}`} x="105" y="31" textAnchor="middle">
-                    {rssiAssessment(hoveredNode.avgRssi).label} · {hoveredNode.avgRssi} dBm
+                {nodeRssi(hoveredNode) !== undefined && (
+                  <text className={`routing-hover-signal ${rssiClass(nodeRssi(hoveredNode))}`} x="105" y="31" textAnchor="middle">
+                    {rssiAssessment(nodeRssi(hoveredNode)).label} · {nodeRssi(hoveredNode)} dBm
                   </text>
                 )}
               </g>
@@ -1170,10 +1219,11 @@ function RoutingTopologyView({
               <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
               <div><dt>Nächster Empfänger</dt><dd>{selectedReceiver?.name ?? "Noch nicht belegt"}</dd></div>
               <div>
-                <dt>Signal am Sniffer</dt>
+                <dt>Signal · {rssiSourceLabel}</dt>
                 <dd>
-                  <RssiAssessment value={selectedNode?.avgRssi} />
-                  {selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Telegramme</small>}
+                  <RssiAssessment value={nodeRssi(selectedNode)} />
+                  {rssiSource === "sniffer" && selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Telegramme</small>}
+                  {rssiSource === "ccu" && selectedNode?.ccuPeerRssi !== undefined && <small>RSSI_PEER zusätzlich: {selectedNode.ccuPeerRssi} dBm</small>}
                 </dd>
               </div>
             </dl>

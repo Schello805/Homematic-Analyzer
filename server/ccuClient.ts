@@ -390,7 +390,7 @@ function collectNameMap(parsedStateList: UnknownRecord): Map<string, string> {
   return nameMap;
 }
 
-function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
+export function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
   const devices = getStateListDevices(parsedStateList);
 
   return devices.map((deviceValue) => {
@@ -401,6 +401,15 @@ function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
     const channels = asArray(device.channel);
     const datapoints = channels.flatMap((channel) => asArray(asRecord(channel).datapoint).map((datapoint) => asRecord(datapoint)));
     const evidence: CcuEvidence[] = [];
+    const findNumericDatapoint = (parameterName: string) => {
+      const datapoint = datapoints.find((candidate) => {
+        const marker = `${candidate.type ?? ""} ${candidate.name ?? ""}`.toUpperCase();
+        return marker.includes(parameterName);
+      });
+      return numberValue(datapoint?.value);
+    };
+    const rssiDevice = findNumericDatapoint("RSSI_DEVICE");
+    const rssiPeer = findNumericDatapoint("RSSI_PEER");
 
     const lowBatteryDatapoint = datapoints.find((datapoint) => {
       const marker = `${datapoint.type ?? ""} ${datapoint.name ?? ""}`.toUpperCase();
@@ -436,6 +445,8 @@ function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
       address,
       type,
       firmware: stringValue(device.firmware),
+      rssiDevice,
+      rssiPeer,
       lowBattery: Boolean(lowBatteryDatapoint),
       unreachable: false,
       configPending: Boolean(configPendingDatapoint || readyConfigPending),

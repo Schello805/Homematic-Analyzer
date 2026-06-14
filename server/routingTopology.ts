@@ -3,6 +3,7 @@ import type {
   RoutingTopology,
   RoutingTopologyEdge,
   RoutingTopologyNode,
+  CcuDevice,
   SnifferDeviceSummary
 } from "./types.js";
 
@@ -79,7 +80,8 @@ export function buildRoutingTopology(
   hmipLogs: string[] = [],
   sourceHost?: string,
   collectedAt?: string,
-  snifferDevices: SnifferDeviceSummary[] = []
+  snifferDevices: SnifferDeviceSummary[] = [],
+  ccuDevices: CcuDevice[] = []
 ): RoutingTopology {
   const devices = (masterdata?.devices ?? []).filter(isHmIpDevice);
   const nodes: RoutingTopologyNode[] = devices.map((device, index) => ({
@@ -123,7 +125,22 @@ export function buildRoutingTopology(
       .find(Boolean);
     if (!snifferDevice) return;
     nodes[index].avgRssi = snifferDevice.avgRssi;
+    nodes[index].snifferRssi = snifferDevice.avgRssi;
     nodes[index].rssiTelegrams = snifferDevice.telegrams;
+  });
+
+  const ccuByIdentifier = new Map<string, CcuDevice>();
+  ccuDevices.forEach((device) => {
+    [device.address].map(normalizeIdentifier).filter(Boolean)
+      .forEach((identifier) => ccuByIdentifier.set(identifier, device));
+  });
+  devices.forEach((device, index) => {
+    const ccuDevice = deviceIdentifiers(device)
+      .map((identifier) => ccuByIdentifier.get(identifier))
+      .find(Boolean);
+    if (!ccuDevice) return;
+    nodes[index].ccuRssi = ccuDevice.rssiDevice;
+    nodes[index].ccuPeerRssi = ccuDevice.rssiPeer;
   });
 
   const edges: RoutingTopologyEdge[] = [];
@@ -216,6 +233,10 @@ export function buildRoutingTopology(
       multicastRouters: nodes.filter((node) => node.multicastRouting).length,
       confirmedRoutes: edges.length,
       unknownAssignments
+    },
+    rssiSources: {
+      sniffer: nodes.filter((node) => node.snifferRssi !== undefined).length,
+      ccu: nodes.filter((node) => node.ccuRssi !== undefined).length
     },
     diagnostics: [
       devices.length > 0

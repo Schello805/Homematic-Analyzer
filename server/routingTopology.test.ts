@@ -67,6 +67,26 @@ test("ordnet Sniffer-RSSI den HmIP-Geräten zu", () => {
   const device = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
   assert.equal(device?.avgRssi, -72);
   assert.equal(device?.rssiTelegrams, 8);
+  assert.equal(topology.rssiSources.sniffer, 1);
+});
+
+test("ordnet XML-API-RSSI der HmIP-Routingkarte zu", () => {
+  const topology = buildRoutingTopology(masterdata, [], undefined, undefined, [], [{
+    name: "Steckdose Trockner",
+    address: "0001D3C99C4EAA",
+    type: "HmIP-PSM",
+    rssiDevice: -68,
+    rssiPeer: -72,
+    lowBattery: false,
+    unreachable: false,
+    configPending: false,
+    evidence: []
+  }]);
+
+  const device = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
+  assert.equal(device?.ccuRssi, -68);
+  assert.equal(device?.ccuPeerRssi, -72);
+  assert.equal(topology.rssiSources.ccu, 1);
 });
 
 test("übernimmt nur ausdrücklich geloggte Routingpfade", () => {
