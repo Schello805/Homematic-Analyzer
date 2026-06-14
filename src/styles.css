@@ -3514,6 +3514,21 @@ pre {
   box-shadow: 0 8px 24px rgba(23, 32, 51, 0.035);
 }
 
+.check-theme.status-ok {
+  border-color: #75d7a5;
+  background: #ecfdf3;
+}
+
+.check-theme.status-ok > summary {
+  background: #dcfae6;
+}
+
+.check-theme.status-ok .check-theme__title strong,
+.check-theme.status-ok .check-theme__title small,
+.check-theme.status-ok > summary::after {
+  color: #05603a;
+}
+
 .check-theme > summary {
   position: relative;
   display: grid;
@@ -3673,6 +3688,27 @@ pre {
   color: #172033;
   background: white;
   transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.check-item.status-ok {
+  color: #05603a;
+  border-color: #75d7a5;
+  background: #dcfae6;
+}
+
+.check-item.status-ok small {
+  color: #287a54;
+}
+
+.check-item.status-ok:hover {
+  background: #c7f6d8;
+}
+
+.check-item.status-ok.is-active {
+  color: #044c2e;
+  border-color: #12b76a;
+  background: #baf0cf;
+  box-shadow: 0 10px 28px rgba(18, 183, 106, 0.16);
 }
 
 .check-item:hover {
