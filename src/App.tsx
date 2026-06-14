@@ -988,6 +988,7 @@ function RoutingTopologyView({
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [requestedRssiSource, setRequestedRssiSource] = useState<"ccu" | "sniffer">("ccu");
   const [topologyScope, setTopologyScope] = useState<"hmip" | "bidcos" | "combined">("hmip");
+  const [topologyFilter, setTopologyFilter] = useState<"focus" | "infrastructure" | "all">("focus");
 
   if (!topology) {
     return (
@@ -1013,9 +1014,7 @@ function RoutingTopologyView({
   const gateways = visibleNodes.filter((node) => node.role === "gateway");
   const routers = visibleNodes.filter((node) => node.role === "router");
   const candidates = visibleNodes.filter((node) => node.role === "candidate");
-  const devices = visibleNodes.filter((node) => node.role === "device");
   const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? central;
-  const hoveredNode = visibleNodes.find((node) => node.id === hoveredNodeId);
   const selectedRoute = selectedNode ? visibleEdges.find((edge) => edge.source === selectedNode.id) : undefined;
   const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
   const ccuRssiAvailable = visibleNodes.some((node) => node.ccuRssi !== undefined);
@@ -1030,6 +1029,50 @@ function RoutingTopologyView({
     : undefined;
   const rssiSourceLabel = rssiSource === "ccu" ? "Zentrale / XML-API" : "AskSin-Sniffer";
   const confirmedSourceIds = new Set(visibleEdges.map((edge) => edge.source));
+  const nodeClass = (node: RoutingTopologyNode) => {
+    if (node.role === "central") return "is-central";
+    if (node.role === "gateway") return "is-gateway";
+    if (node.role === "router") return "is-router";
+    if (node.role === "candidate") return "is-candidate";
+    return "is-device";
+  };
+  const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
+  const measuredNodes = visibleNodes
+    .filter((node) => node.role !== "central" && nodeRssi(node) !== undefined)
+    .sort((left, right) => (nodeRssi(left) ?? 0) - (nodeRssi(right) ?? 0));
+  const weakNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "weak");
+  const observedNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "medium");
+  const goodNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "good");
+  const excellentNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "excellent");
+  const confirmedTargetIds = new Set(visibleEdges.map((edge) => edge.target));
+  const focusNodeIds = new Set([
+    "central",
+    ...gateways.map((node) => node.id),
+    ...routers.map((node) => node.id),
+    ...candidates.map((node) => node.id),
+    ...weakNodes.map((node) => node.id),
+    ...observedNodes.map((node) => node.id),
+    ...confirmedSourceIds,
+    ...confirmedTargetIds
+  ]);
+  const infrastructureNodeIds = new Set([
+    "central",
+    ...gateways.map((node) => node.id),
+    ...routers.map((node) => node.id),
+    ...candidates.map((node) => node.id)
+  ]);
+  const graphNodes = visibleNodes.filter((node) => (
+    topologyFilter === "all"
+    || (topologyFilter === "infrastructure" ? infrastructureNodeIds.has(node.id) : focusNodeIds.has(node.id))
+  ));
+  const graphNodeIds = new Set(graphNodes.map((node) => node.id));
+  const graphEdges = visibleEdges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
+  const graphGateways = graphNodes.filter((node) => node.role === "gateway");
+  const graphRouters = graphNodes.filter((node) => node.role === "router");
+  const graphCandidates = graphNodes.filter((node) => node.role === "candidate");
+  const graphDevices = graphNodes.filter((node) => node.role === "device");
+  const hiddenGraphNodes = Math.max(0, visibleNodes.length - graphNodes.length);
+  const hoveredNode = graphNodes.find((node) => node.id === hoveredNodeId);
   const center = { x: 450, y: 260 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
@@ -1054,26 +1097,11 @@ function RoutingTopologyView({
     });
   };
 
-  placeRing(gateways, 100, -90);
-  placeRing(routers, 125);
-  placeRing(candidates, 190, -82);
-  placeRing(devices, 232, -88);
+  placeRing(graphGateways, 95, -135);
+  placeRing(graphRouters, 130, -45);
+  placeRing(graphCandidates, 185, -75);
+  placeRing(graphDevices, 232, -88);
 
-  const nodeClass = (node: RoutingTopologyNode) => {
-    if (node.role === "central") return "is-central";
-    if (node.role === "gateway") return "is-gateway";
-    if (node.role === "router") return "is-router";
-    if (node.role === "candidate") return "is-candidate";
-    return "is-device";
-  };
-  const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
-  const measuredNodes = visibleNodes
-    .filter((node) => node.role !== "central" && nodeRssi(node) !== undefined)
-    .sort((left, right) => (nodeRssi(left) ?? 0) - (nodeRssi(right) ?? 0));
-  const weakNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "weak");
-  const observedNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "medium");
-  const goodNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "good");
-  const excellentNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "excellent");
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
   const hoverLabelX = hoveredPosition ? Math.max(100, Math.min(800, hoveredPosition.x)) : 0;
   const hoverLabelY = hoveredPosition
@@ -1139,17 +1167,21 @@ function RoutingTopologyView({
         </label>
       </div>
 
-      <div className={`routing-insight ${weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
+      <div className={`routing-insight ${measuredNodes.length === 0 ? "is-unavailable" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
         <div>
-          <span className="routing-insight-icon" aria-hidden="true">{weakNodes.length > 0 ? "!" : "✓"}</span>
+          <span className="routing-insight-icon" aria-hidden="true">{measuredNodes.length === 0 ? "?" : weakNodes.length > 0 ? "!" : "✓"}</span>
           <div>
-            <strong>{weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}</strong>
+            <strong>
+              {measuredNodes.length === 0
+                ? "Signalqualität noch nicht bewertbar"
+                : weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}
+            </strong>
             <p>
-              {weakNodes.length > 0
+              {measuredNodes.length === 0
+                ? `Für „${rssiSourceLabel}“ liegen im aktuellen Snapshot keine RSSI-Werte vor. Erkannte Geräte, Gateways und Router werden trotzdem angezeigt – aber nicht als gut oder schlecht bewertet.`
+                : weakNodes.length > 0
                 ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (CCU ${node.ccuRssi ?? "–"} / Sniffer ${node.snifferRssi ?? "–"} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
-                : measuredNodes.length > 0
-                  ? `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`
-                  : `Für die Quelle „${rssiSourceLabel}“ liegen noch keine RSSI-Werte vor.`}
+                : `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`}
             </p>
           </div>
         </div>
@@ -1161,12 +1193,22 @@ function RoutingTopologyView({
         </small>
       </div>
 
-      <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceLabel}`}>
-        <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
-        <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
-        <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
-        <span className="weak"><strong>{weakNodes.length}</strong> schwach <small>unter −85 dBm</small></span>
-      </div>
+      {measuredNodes.length > 0 ? (
+        <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceLabel}`}>
+          <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
+          <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
+          <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
+          <span className="weak"><strong>{weakNodes.length}</strong> schwach <small>unter −85 dBm</small></span>
+        </div>
+      ) : (
+        <div className="routing-no-rssi">
+          <div>
+            <strong>{gateways.length + routers.length} bestätigte Funkempfänger und Router</strong>
+            <span>{gateways.length} Gateway{gateways.length === 1 ? "" : "s"} · {routers.length} bestätigte HmIP-Router · {candidates.length} mögliche Router-Kandidaten</span>
+          </div>
+          <p>Die Karte zeigt zunächst nur die Infrastruktur. Alle Geräte kannst du bei Bedarf über „Alle Geräte“ einblenden.</p>
+        </div>
+      )}
 
       {measuredNodes.length > 0 && (
         <details className="routing-weak-devices" open={weakNodes.length > 0}>
@@ -1194,37 +1236,58 @@ function RoutingTopologyView({
         </details>
       )}
 
+      <div className="routing-display-filter">
+        <div>
+          <strong>In der Grafik anzeigen</strong>
+          <span>
+            {topologyFilter === "focus"
+              ? "Empfänger, Router und auffällige oder beobachtete Geräte"
+              : topologyFilter === "infrastructure" ? "Nur Gateways, Router und mögliche Router" : "Alle erkannten Geräte"}
+          </span>
+        </div>
+        <div role="group" aria-label="Umfang der Routing-Grafik">
+          <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Fokus</button>
+          <button type="button" className={topologyFilter === "infrastructure" ? "is-active" : ""} onClick={() => setTopologyFilter("infrastructure")}>Infrastruktur</button>
+          <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle Geräte</button>
+        </div>
+        {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} unauffällige oder noch nicht bewertbare Knoten sind ausgeblendet.</small>}
+      </div>
+
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
           <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
-            <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
-            <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
-            <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
-            <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
-            <text className="routing-zone-label excellent" x="608" y="123">sehr gut</text>
-            <text className="routing-zone-label good" x="640" y="96">gut</text>
-            <text className="routing-zone-label medium" x="671" y="69">beobachten</text>
-            <text className="routing-zone-label weak" x="699" y="42">schwach</text>
+            {measuredNodes.length > 0 && (
+              <>
+                <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
+                <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
+                <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
+                <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
+                <text className="routing-zone-label excellent" x="608" y="123">sehr gut</text>
+                <text className="routing-zone-label good" x="640" y="96">gut</text>
+                <text className="routing-zone-label medium" x="671" y="69">beobachten</text>
+                <text className="routing-zone-label weak" x="699" y="42">schwach</text>
+              </>
+            )}
 
-            {visibleNodes.filter((node) => node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id)).map((node) => {
+            {graphNodes.filter((node) => node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id) && nodeRssi(node) !== undefined).map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
-            {routers.map((node) => {
+            {graphRouters.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
-            {gateways.map((node) => {
+            {graphGateways.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               return <line className="routing-edge is-gateway" key={`gateway-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
-            {visibleEdges.map((edge) => {
+            {graphEdges.map((edge) => {
               const source = positions.get(edge.source);
               const target = positions.get(edge.target);
               if (!source || !target) return null;
@@ -1235,7 +1298,7 @@ function RoutingTopologyView({
               );
             })}
 
-            {visibleNodes.map((node) => {
+            {graphNodes.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               const isSelected = selectedNode?.id === node.id;

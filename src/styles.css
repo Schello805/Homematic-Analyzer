@@ -4687,6 +4687,11 @@ pre {
   background: #fff9ec;
 }
 
+.routing-insight.is-unavailable {
+  border-color: #bfd4fa;
+  background: #f2f7ff;
+}
+
 .routing-insight > div {
   display: flex;
   align-items: flex-start;
@@ -4707,6 +4712,10 @@ pre {
 
 .routing-insight.has-warning .routing-insight-icon {
   background: #f59e0b;
+}
+
+.routing-insight.is-unavailable .routing-insight-icon {
+  background: #3478f6;
 }
 
 .routing-insight p,
@@ -4799,6 +4808,85 @@ pre {
 
 .routing-signal-summary small {
   color: #718096;
+}
+
+.routing-no-rssi {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr);
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+  border: 1px solid #d6e3f3;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.routing-no-rssi > div {
+  display: grid;
+  gap: 3px;
+}
+
+.routing-no-rssi span,
+.routing-no-rssi p {
+  color: #66758c;
+  font-size: .82rem;
+}
+
+.routing-no-rssi p {
+  margin: 0;
+}
+
+.routing-display-filter {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px 14px;
+  align-items: center;
+  margin: 0 0 12px;
+  border: 1px solid #d9e4f2;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #f8fbff;
+}
+
+.routing-display-filter > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.routing-display-filter span,
+.routing-display-filter > small {
+  color: #68778d;
+  font-size: .76rem;
+}
+
+.routing-display-filter > div[role="group"] {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 11px;
+  background: #eaf1fa;
+}
+
+.routing-display-filter button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 11px;
+  color: #526178;
+  cursor: pointer;
+  background: transparent;
+  font-weight: 700;
+}
+
+.routing-display-filter button.is-active {
+  color: #1550aa;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(34, 74, 128, .12);
+}
+
+.routing-display-filter > small {
+  grid-column: 1 / -1;
 }
 
 .routing-weak-devices {
@@ -5486,6 +5574,20 @@ pre {
 
   .routing-rssi-source {
     grid-template-columns: 1fr;
+  }
+
+  .routing-no-rssi,
+  .routing-display-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .routing-display-filter > div[role="group"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .routing-display-filter button {
+    padding-inline: 6px;
   }
 
   .routing-scope-switch {
