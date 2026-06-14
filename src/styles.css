@@ -1020,6 +1020,18 @@ h2 {
   font-weight: 700;
 }
 
+.dc-chart-axis strong {
+  color: #1849a9;
+}
+
+.dc-chart-totals {
+  display: flex;
+  justify-content: space-between;
+  color: #667085;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
 .dc-mini-bar {
   overflow: hidden;
   border-radius: 999px;
@@ -4500,6 +4512,122 @@ pre {
   padding-left: 34px;
 }
 
+.routing-signal-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.routing-signal-summary > span {
+  display: grid;
+  gap: 1px;
+  border: 1px solid #dce6f3;
+  border-left: 4px solid #94a3b8;
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: #53627a;
+  background: #fff;
+  font-size: .78rem;
+}
+
+.routing-signal-summary > span.excellent {
+  border-left-color: #08764f;
+}
+
+.routing-signal-summary > span.good {
+  border-left-color: #20a878;
+}
+
+.routing-signal-summary > span.medium {
+  border-left-color: #f59e0b;
+}
+
+.routing-signal-summary > span.weak {
+  border-left-color: #e33a32;
+}
+
+.routing-signal-summary strong {
+  color: #172033;
+  font-size: 1rem;
+}
+
+.routing-signal-summary small {
+  color: #718096;
+}
+
+.routing-weak-devices {
+  margin-bottom: 14px;
+  border: 1px solid #dce6f3;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .86);
+}
+
+.routing-weak-devices summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.routing-weak-devices summary::-webkit-details-marker {
+  display: none;
+}
+
+.routing-weak-devices summary span {
+  display: grid;
+  gap: 2px;
+}
+
+.routing-weak-devices summary small,
+.routing-weak-devices summary b {
+  color: #68778d;
+  font-size: .75rem;
+}
+
+.routing-weak-devices > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  border-top: 1px solid #e6edf6;
+  padding: 9px;
+}
+
+.routing-weak-devices button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #e3eaf4;
+  border-radius: 11px;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+  background: #f8fbff;
+}
+
+.routing-weak-devices button > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.routing-weak-devices button strong,
+.routing-weak-devices button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.routing-weak-devices button small {
+  color: #6b7890;
+  font-size: .72rem;
+}
+
 .routing-topology-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4538,6 +4666,46 @@ pre {
 
 .routing-orbit-candidate {
   stroke: #f7d89d;
+}
+
+.routing-orbit-excellent {
+  stroke: rgba(8, 118, 79, .42);
+}
+
+.routing-orbit-good {
+  stroke: rgba(32, 168, 120, .38);
+}
+
+.routing-orbit-medium {
+  stroke: rgba(245, 158, 11, .42);
+}
+
+.routing-orbit-weak {
+  stroke: rgba(227, 58, 50, .35);
+}
+
+.routing-zone-label {
+  font-size: 9px;
+  font-weight: 750;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+}
+
+.routing-zone-label.excellent {
+  fill: #08764f;
+}
+
+.routing-zone-label.good {
+  fill: #14815d;
+}
+
+.routing-zone-label.medium {
+  fill: #a96600;
+}
+
+.routing-zone-label.weak {
+  fill: #bd2d27;
 }
 
 .routing-edge {
@@ -4592,6 +4760,10 @@ pre {
 
 .routing-node .routing-signal-ring.good {
   stroke: #20a878;
+}
+
+.routing-node .routing-signal-ring.excellent {
+  stroke: #08764f;
 }
 
 .routing-node .routing-signal-ring.medium {
@@ -4654,6 +4826,10 @@ pre {
 
 .routing-hover-label .routing-hover-signal.good {
   fill: #14815d;
+}
+
+.routing-hover-label .routing-hover-signal.excellent {
+  fill: #08764f;
 }
 
 .routing-hover-label .routing-hover-signal.medium {
@@ -4723,6 +4899,10 @@ pre {
 
 .legend-signal.good {
   background: #20a878;
+}
+
+.legend-signal.excellent {
+  background: #08764f;
 }
 
 .legend-signal.medium {
@@ -4831,6 +5011,11 @@ pre {
   color: #08764f;
 }
 
+.rssi-assessment.excellent {
+  background: #dff6eb;
+  color: #05603f;
+}
+
 .rssi-assessment.medium {
   background: #fff4d8;
   color: #8a5a00;
@@ -4854,6 +5039,22 @@ pre {
   border-radius: 12px;
   background: #fff8e7;
   color: #6f5012;
+}
+
+.routing-technology-note {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  border-left: 3px solid #64748b;
+  border-radius: 0 12px 12px 0;
+  padding: 10px 12px;
+  color: #59687e;
+  background: #f5f7fa;
+  font-size: .82rem;
+}
+
+.routing-technology-note strong {
+  color: #26344b;
 }
 
 .routing-topology-empty {
@@ -4904,6 +5105,11 @@ pre {
 
   .routing-insight small {
     padding-left: 0;
+  }
+
+  .routing-signal-summary,
+  .routing-weak-devices > div {
+    grid-template-columns: 1fr 1fr;
   }
 
   .routing-node-detail dl {

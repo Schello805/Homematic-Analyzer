@@ -758,14 +758,16 @@ function formatDataAge(value?: string) {
 
 function rssiClass(value?: number) {
   if (value === undefined) return "";
-  if (value >= -65) return "good";
+  if (value >= -60) return "excellent";
+  if (value >= -72) return "good";
   if (value >= -85) return "medium";
   return "weak";
 }
 
 function rssiAssessment(value?: number) {
   if (value === undefined) return { label: "Nicht gemessen", symbol: "○", className: "unknown" };
-  if (value >= -65) return { label: "Gut", symbol: "●", className: "good" };
+  if (value >= -60) return { label: "Sehr gut", symbol: "●", className: "excellent" };
+  if (value >= -72) return { label: "Gut", symbol: "●", className: "good" };
   if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium" };
   return { label: "Schwach", symbol: "●", className: "weak" };
 }
@@ -948,11 +950,11 @@ function RoutingTopologyView({
   positions.set("central", center);
 
   const signalRadius = (node: RoutingTopologyNode, fallback: number) => {
-    if (node.role === "router") return 125;
     if (node.avgRssi === undefined) return fallback;
-    if (node.avgRssi >= -65) return 158;
-    if (node.avgRssi >= -85) return 158 + ((-65 - node.avgRssi) / 20) * 55;
-    return Math.min(252, 213 + ((-85 - node.avgRssi) / 20) * 39);
+    if (node.avgRssi >= -60) return 145;
+    if (node.avgRssi >= -72) return 145 + ((-60 - node.avgRssi) / 12) * 35;
+    if (node.avgRssi >= -85) return 180 + ((-72 - node.avgRssi) / 13) * 35;
+    return Math.min(245, 215 + ((-85 - node.avgRssi) / 20) * 30);
   };
 
   const placeRing = (nodes: RoutingTopologyNode[], fallbackRadius: number, offset = -90) => {
@@ -982,6 +984,8 @@ function RoutingTopologyView({
     .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
   const weakNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "weak");
   const observedNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "medium");
+  const goodNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "good");
+  const excellentNodes = measuredNodes.filter((node) => rssiClass(node.avgRssi) === "excellent");
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
   const hoverLabelX = hoveredPosition ? Math.max(100, Math.min(800, hoveredPosition.x)) : 0;
   const hoverLabelY = hoveredPosition
@@ -994,7 +998,7 @@ function RoutingTopologyView({
         <div>
           <p className="eyebrow">Routing-Karte</p>
           <h4>HmIP-Geräte und belegte Routingpfade</h4>
-          <p>Durchgezogen = belegt oder als Router konfiguriert. Gestrichelt = Zuordnung noch nicht im Log nachgewiesen.</p>
+          <p>Nur Homematic IP. Durchgezogen = belegt oder als Router konfiguriert. Gestrichelt = Zuordnung noch nicht im Log nachgewiesen.</p>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
           {loading ? "Aktualisiert …" : "Karte aktualisieren"}
@@ -1023,16 +1027,51 @@ function RoutingTopologyView({
           </div>
         </div>
         <small>
-          Weiter außen bedeutet schwächer am Sniffer empfangen. Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
+          RSSI-Quelle ist der AskSin-Sniffer: Weiter außen bedeutet schwächer an dessen Standort empfangen. Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
         </small>
       </div>
+
+      <div className="routing-signal-summary" aria-label="Verteilung der HmIP-Signalqualität am Sniffer">
+        <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
+        <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
+        <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
+        <span className="weak"><strong>{weakNodes.length}</strong> schwach <small>unter −85 dBm</small></span>
+      </div>
+
+      {measuredNodes.length > 0 && (
+        <details className="routing-weak-devices" open={weakNodes.length > 0}>
+          <summary>
+            <span>
+              <strong>Schwächste HmIP-Geräte am Sniffer</strong>
+              <small>Nach RSSI sortiert · nicht automatisch die Verbindung zur Zentrale</small>
+            </span>
+            <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
+          </summary>
+          <div>
+            {measuredNodes.slice(0, 8).map((node) => (
+              <button type="button" key={node.id} onClick={() => onSelectNode(node.id)}>
+                <span>
+                  <strong>{node.name}</strong>
+                  <small>{node.type ?? "HmIP-Gerät"} · {node.rssiTelegrams ?? 0} Telegramme</small>
+                </span>
+                <RssiAssessment value={node.avgRssi} />
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
 
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
           <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
-            <circle className="routing-orbit routing-orbit-router" cx={center.x} cy={center.y} r="125" />
-            <circle className="routing-orbit routing-orbit-candidate" cx={center.x} cy={center.y} r="190" />
-            <circle className="routing-orbit routing-orbit-device" cx={center.x} cy={center.y} r="232" />
+            <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
+            <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
+            <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
+            <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
+            <text className="routing-zone-label excellent" x="608" y="123">sehr gut</text>
+            <text className="routing-zone-label good" x="640" y="96">gut</text>
+            <text className="routing-zone-label medium" x="671" y="69">beobachten</text>
+            <text className="routing-zone-label weak" x="699" y="42">schwach</text>
 
             {topology.nodes.filter((node) => node.role !== "central" && node.role !== "router" && !confirmedSourceIds.has(node.id)).map((node) => {
               const position = positions.get(node.id);
@@ -1110,6 +1149,7 @@ function RoutingTopologyView({
             <span><i className="legend-dot is-central" /> Zentrale</span>
             <span><i className="legend-dot is-router" /> bestätigter Router</span>
             <span><i className="legend-dot is-candidate" /> möglicher netzversorgter Router</span>
+            <span><i className="legend-signal excellent" /> Signal sehr gut</span>
             <span><i className="legend-signal good" /> Signal gut</span>
             <span><i className="legend-signal medium" /> beobachten</span>
             <span><i className="legend-signal weak" /> schwach</span>
@@ -1156,6 +1196,14 @@ function RoutingTopologyView({
           </span>
         </div>
       )}
+
+      <div className="routing-technology-note">
+        <strong>Warum klassische Homematic-Geräte hier fehlen</strong>
+        <span>
+          BidCos-RF-Geräte und Homematic LAN-Gateways bilden kein HmIP-Routingnetz. Sie sollten später in einer eigenen
+          „BidCos-Funkabdeckung“ mit Zentrale und vorhandenen LAN-Gateways als getrennten Empfangspunkten dargestellt werden.
+        </span>
+      </div>
     </section>
   );
 }
@@ -3289,8 +3337,12 @@ function App() {
                 })()}
               </div>
               <div className="dc-chart-axis">
-                <span>Telegramme in 60 Min.: {snifferSnapshot?.summary.telegrams ?? 0}</span>
-                <span>Rauschpegel-Messpunkte in 60 Min.: {snifferSnapshot?.summary.rssiSamples ?? 0}</span>
+                <span>← älter · vor bis zu 60 Minuten</span>
+                <strong>neue Werte erscheinen rechts →</strong>
+              </div>
+              <div className="dc-chart-totals">
+                <span>Telegramme: {snifferSnapshot?.summary.telegrams ?? 0}</span>
+                <span>Rauschpegel-Messpunkte: {snifferSnapshot?.summary.rssiSamples ?? 0}</span>
               </div>
               <div className="dc-chart-note">
                 Viele orange Messpunkte bedeuten nur, dass der Sniffer häufig gemessen hat. Entscheidend ist der dBm-Wert:

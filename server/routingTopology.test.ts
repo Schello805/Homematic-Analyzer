@@ -8,9 +8,17 @@ const masterdata: CcuMasterdataPayload = {
   devices: [
     { name: "Steckdose Trockner", serial: "0001D3C99C4EAA", type: "HmIP-PSM" },
     { name: "Bewegungsmelder", serial: "000A1B2C3D4E55", type: "HmIP-SMI" },
-    { name: "Fensterkontakt", serial: "000A1B2C3D4E66", type: "HmIP-SWDO" }
+    { name: "Fensterkontakt", serial: "000A1B2C3D4E66", type: "HmIP-SWDO" },
+    { name: "Klassischer Wandtaster", serial: "MEQ1234567", type: "HM-PB-2-WM55" }
   ]
 };
+
+test("hält klassische Homematic-Geräte aus der HmIP-Routingkarte heraus", () => {
+  const topology = buildRoutingTopology(masterdata);
+
+  assert.equal(topology.nodes.some((node) => node.serial === "MEQ1234567"), false);
+  assert.equal(topology.metrics.devices, 3);
+});
 
 test("erkennt belegte Router-Schalter aus HmIPServer-Zeilen", () => {
   const topology = buildRoutingTopology(masterdata, [
