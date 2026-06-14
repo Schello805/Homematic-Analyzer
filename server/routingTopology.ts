@@ -9,8 +9,10 @@ import type {
 
 type InventoryDevice = NonNullable<CcuMasterdataPayload["devices"]>[number];
 
-const routerCandidatePattern = /^HmIP-(HAP|WLAN-HAP|DRAP|PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|MIOB)/i;
+const routerCandidatePattern = /^HmIP-(PSM|PSM-2|FSM|FSM16|BSM|PCBS|DRSI|DRDI|DRBLI|FAL|MIOB)/i;
 const hmipPattern = /^HmIP-/i;
+const bidcosPattern = /^HM-(?!W)/i;
+const gatewayPattern = /^(HmIP-(HAP|WLAN-HAP)|HM-LGW)/i;
 const settingKeys = ["ROUTER_MODULE_ENABLED", "MULTICAST_ROUTER_MODULE_ENABLED", "ENABLE_ROUTING"] as const;
 const routingConfigPattern = /^ROUTING_CONFIG\|([^|]+)\|([^|]*)\|router=([^|]+)\|routing=([^|]+)\|multicast=([^|]+)$/i;
 
@@ -29,6 +31,14 @@ function deviceIdentifiers(device: InventoryDevice): string[] {
 
 function isHmIpDevice(device: InventoryDevice): boolean {
   return hmipPattern.test(device.type ?? "");
+}
+
+function isBidCosDevice(device: InventoryDevice): boolean {
+  return bidcosPattern.test(device.type ?? "");
+}
+
+function isRadioDevice(device: InventoryDevice): boolean {
+  return isHmIpDevice(device) || isBidCosDevice(device);
 }
 
 function nodeId(device: InventoryDevice, index: number): string {
@@ -83,14 +93,17 @@ export function buildRoutingTopology(
   snifferDevices: SnifferDeviceSummary[] = [],
   ccuDevices: CcuDevice[] = []
 ): RoutingTopology {
-  const devices = (masterdata?.devices ?? []).filter(isHmIpDevice);
+  const devices = (masterdata?.devices ?? []).filter(isRadioDevice);
   const nodes: RoutingTopologyNode[] = devices.map((device, index) => ({
     id: nodeId(device, index),
     name: device.name?.trim() || device.serial?.trim() || device.address?.trim() || `HmIP-Gerät ${index + 1}`,
     serial: device.serial?.trim(),
     address: device.address?.trim(),
     type: device.type?.trim(),
-    role: routerCandidatePattern.test(device.type ?? "") ? "candidate" : "device",
+    protocol: isHmIpDevice(device) ? "hmip" : "bidcos",
+    role: gatewayPattern.test(device.type ?? "")
+      ? "gateway"
+      : routerCandidatePattern.test(device.type ?? "") ? "candidate" : "device",
     routerEnabled: false,
     routingEnabled: false,
     multicastRouting: false,
@@ -100,6 +113,7 @@ export function buildRoutingTopology(
   const centralNode: RoutingTopologyNode = {
     id: "central",
     name: sourceHost || "Homematic Zentrale",
+    protocol: "central",
     role: "central",
     routerEnabled: true,
     routingEnabled: true,
@@ -210,11 +224,12 @@ export function buildRoutingTopology(
   });
 
   nodes.forEach((node) => {
-    if (node.routerEnabled) node.role = "router";
+    if (node.protocol === "hmip" && node.role !== "gateway" && node.routerEnabled) node.role = "router";
   });
 
   const confirmedRouters = nodes.filter((node) => node.role === "router").length;
   const routerCandidates = nodes.filter((node) => node.role === "candidate").length;
+  const gateways = nodes.filter((node) => node.role === "gateway").length;
   const assignedDevices = new Set(edges.map((edge) => edge.source));
   const unknownAssignments = nodes.filter((node) => node.role !== "router" && !assignedDevices.has(node.id)).length;
 
@@ -227,6 +242,9 @@ export function buildRoutingTopology(
     edges,
     metrics: {
       devices: nodes.length,
+      hmipDevices: nodes.filter((node) => node.protocol === "hmip" && node.role !== "gateway").length,
+      bidcosDevices: nodes.filter((node) => node.protocol === "bidcos" && node.role !== "gateway").length,
+      gateways,
       confirmedRouters,
       routerCandidates,
       routingEnabled: nodes.filter((node) => node.routingEnabled).length,
@@ -240,8 +258,8 @@ export function buildRoutingTopology(
     },
     diagnostics: [
       devices.length > 0
-        ? `${devices.length} HmIP-Geräte aus den CCU-Stammdaten übernommen.`
-        : "Keine HmIP-Geräte in den CCU-Stammdaten gefunden.",
+        ? `${nodes.filter((node) => node.protocol === "hmip").length} HmIP- und ${nodes.filter((node) => node.protocol === "bidcos").length} klassische Homematic-Funkknoten aus den CCU-Stammdaten übernommen.`
+        : "Keine HmIP- oder klassischen Homematic-Funkgeräte in den CCU-Stammdaten gefunden.",
       hmipLogs.length > 0
         ? `${hmipLogs.length} HmIP-Routingbelege und Geräteparameter ausgewertet.`
         : "Keine aktuellen HmIPServer-Logzeilen vorhanden.",

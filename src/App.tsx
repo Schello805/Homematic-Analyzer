@@ -312,7 +312,8 @@ type RoutingTopologyNode = {
   serial?: string;
   address?: string;
   type?: string;
-  role: "central" | "router" | "candidate" | "device";
+  protocol: "central" | "hmip" | "bidcos";
+  role: "central" | "gateway" | "router" | "candidate" | "device";
   routerEnabled: boolean;
   routingEnabled: boolean;
   multicastRouting: boolean;
@@ -339,6 +340,9 @@ type RoutingTopology = {
   }>;
   metrics: {
     devices: number;
+    hmipDevices: number;
+    bidcosDevices: number;
+    gateways: number;
     confirmedRouters: number;
     routerCandidates: number;
     routingEnabled: number;
@@ -930,6 +934,7 @@ function RoutingTopologyView({
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [requestedRssiSource, setRequestedRssiSource] = useState<"ccu" | "sniffer">("ccu");
+  const [topologyScope, setTopologyScope] = useState<"hmip" | "bidcos" | "combined">("hmip");
 
   if (!topology) {
     return (
@@ -945,15 +950,23 @@ function RoutingTopologyView({
   }
 
   const central = topology.nodes.find((node) => node.role === "central");
-  const routers = topology.nodes.filter((node) => node.role === "router");
-  const candidates = topology.nodes.filter((node) => node.role === "candidate");
-  const devices = topology.nodes.filter((node) => node.role === "device");
-  const selectedNode = topology.nodes.find((node) => node.id === selectedNodeId) ?? central;
-  const hoveredNode = topology.nodes.find((node) => node.id === hoveredNodeId);
-  const selectedRoute = selectedNode ? topology.edges.find((edge) => edge.source === selectedNode.id) : undefined;
-  const selectedReceiver = selectedRoute ? topology.nodes.find((node) => node.id === selectedRoute.target) : undefined;
-  const ccuRssiAvailable = (topology.rssiSources?.ccu ?? 0) > 0;
-  const snifferRssiAvailable = (topology.rssiSources?.sniffer ?? 0) > 0;
+  const visibleNodes = topology.nodes.filter((node) => (
+    node.role === "central"
+    || topologyScope === "combined"
+    || node.protocol === topologyScope
+  ));
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = topology.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
+  const gateways = visibleNodes.filter((node) => node.role === "gateway");
+  const routers = visibleNodes.filter((node) => node.role === "router");
+  const candidates = visibleNodes.filter((node) => node.role === "candidate");
+  const devices = visibleNodes.filter((node) => node.role === "device");
+  const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? central;
+  const hoveredNode = visibleNodes.find((node) => node.id === hoveredNodeId);
+  const selectedRoute = selectedNode ? visibleEdges.find((edge) => edge.source === selectedNode.id) : undefined;
+  const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
+  const ccuRssiAvailable = visibleNodes.some((node) => node.ccuRssi !== undefined);
+  const snifferRssiAvailable = visibleNodes.some((node) => node.snifferRssi !== undefined);
   const rssiSource = requestedRssiSource === "ccu" && !ccuRssiAvailable && snifferRssiAvailable
     ? "sniffer"
     : requestedRssiSource === "sniffer" && !snifferRssiAvailable && ccuRssiAvailable
@@ -963,7 +976,7 @@ function RoutingTopologyView({
     ? rssiSource === "ccu" ? node.ccuRssi : node.snifferRssi
     : undefined;
   const rssiSourceLabel = rssiSource === "ccu" ? "Zentrale / XML-API" : "AskSin-Sniffer";
-  const confirmedSourceIds = new Set(topology.edges.map((edge) => edge.source));
+  const confirmedSourceIds = new Set(visibleEdges.map((edge) => edge.source));
   const center = { x: 450, y: 260 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
@@ -988,18 +1001,20 @@ function RoutingTopologyView({
     });
   };
 
+  placeRing(gateways, 100, -90);
   placeRing(routers, 125);
   placeRing(candidates, 190, -82);
   placeRing(devices, 232, -88);
 
   const nodeClass = (node: RoutingTopologyNode) => {
     if (node.role === "central") return "is-central";
+    if (node.role === "gateway") return "is-gateway";
     if (node.role === "router") return "is-router";
     if (node.role === "candidate") return "is-candidate";
     return "is-device";
   };
   const hasRoutingConfig = topology.diagnostics.some((item) => item.includes("direkt aus den HmIP-RF-Geräteparametern"));
-  const measuredNodes = topology.nodes
+  const measuredNodes = visibleNodes
     .filter((node) => node.role !== "central" && nodeRssi(node) !== undefined)
     .sort((left, right) => (nodeRssi(left) ?? 0) - (nodeRssi(right) ?? 0));
   const weakNodes = measuredNodes.filter((node) => rssiClass(nodeRssi(node)) === "weak");
@@ -1011,25 +1026,35 @@ function RoutingTopologyView({
   const hoverLabelY = hoveredPosition
     ? hoveredPosition.y < 70 ? hoveredPosition.y + 30 : hoveredPosition.y - 42
     : 0;
+  const scopeLabel = topologyScope === "hmip"
+    ? "Homematic IP"
+    : topologyScope === "bidcos" ? "Klassisches Homematic" : "Gesamte Funkinstallation";
+  const visibleDeviceCount = visibleNodes.filter((node) => node.role !== "central" && node.role !== "gateway").length;
 
   return (
     <section className="routing-topology-card">
       <div className="routing-topology-header">
         <div>
           <p className="eyebrow">Routing-Karte</p>
-          <h4>HmIP-Geräte und belegte Routingpfade</h4>
-          <p>Nur Homematic IP. Durchgezogen = belegt oder als Router konfiguriert. Gestrichelt = Zuordnung noch nicht im Log nachgewiesen.</p>
+          <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
+          <p>Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen = belegt. Gestrichelt = nächster Empfänger noch nicht nachgewiesen.</p>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
           {loading ? "Aktualisiert …" : "Karte aktualisieren"}
         </button>
       </div>
 
+      <div className="routing-scope-switch" role="group" aria-label="Funktechnologie auswählen">
+        <button type="button" className={topologyScope === "hmip" ? "is-active" : ""} onClick={() => setTopologyScope("hmip")}>HmIP</button>
+        <button type="button" className={topologyScope === "bidcos" ? "is-active" : ""} onClick={() => setTopologyScope("bidcos")}>Homematic</button>
+        <button type="button" className={topologyScope === "combined" ? "is-active" : ""} onClick={() => setTopologyScope("combined")}>Beides</button>
+      </div>
+
       <div className="routing-metrics">
-        <span><strong>{topology.metrics.devices}</strong> HmIP-Geräte</span>
-        <span><strong>{topology.metrics.confirmedRouters}</strong> bestätigte Router</span>
-        <span><strong>{topology.metrics.confirmedRoutes}</strong> belegte Pfade</span>
-        <span><strong>{topology.metrics.multicastRouters}</strong> Multicast-Router</span>
+        <span><strong>{visibleDeviceCount}</strong> Geräte</span>
+        <span><strong>{gateways.length}</strong> Funk-Gateways</span>
+        <span><strong>{routers.length}</strong> bestätigte HmIP-Router</span>
+        <span><strong>{visibleEdges.length}</strong> belegte Wege</span>
       </div>
 
       <div className="routing-rssi-source">
@@ -1045,10 +1070,10 @@ function RoutingTopologyView({
           RSSI anzeigen von
           <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
             <option value="ccu" disabled={!ccuRssiAvailable}>
-              Zentrale / XML-API ({topology.rssiSources?.ccu ?? 0} Geräte)
+              Zentrale / XML-API ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Geräte)
             </option>
             <option value="sniffer" disabled={!snifferRssiAvailable}>
-              AskSin-Sniffer ({topology.rssiSources?.sniffer ?? 0} Geräte)
+              AskSin-Sniffer ({visibleNodes.filter((node) => node.snifferRssi !== undefined).length} Geräte)
             </option>
           </select>
         </label>
@@ -1121,7 +1146,7 @@ function RoutingTopologyView({
             <text className="routing-zone-label medium" x="671" y="69">beobachten</text>
             <text className="routing-zone-label weak" x="699" y="42">schwach</text>
 
-            {topology.nodes.filter((node) => node.role !== "central" && node.role !== "router" && !confirmedSourceIds.has(node.id)).map((node) => {
+            {visibleNodes.filter((node) => node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id)).map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
@@ -1133,7 +1158,13 @@ function RoutingTopologyView({
               return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
             })}
 
-            {topology.edges.map((edge) => {
+            {gateways.map((node) => {
+              const position = positions.get(node.id);
+              if (!position) return null;
+              return <line className="routing-edge is-gateway" key={`gateway-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
+            })}
+
+            {visibleEdges.map((edge) => {
               const source = positions.get(edge.source);
               const target = positions.get(edge.target);
               if (!source || !target) return null;
@@ -1144,7 +1175,7 @@ function RoutingTopologyView({
               );
             })}
 
-            {topology.nodes.map((node) => {
+            {visibleNodes.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               const isSelected = selectedNode?.id === node.id;
@@ -1171,11 +1202,12 @@ function RoutingTopologyView({
                       r={node.role === "router" ? 23 : 17}
                     />
                   )}
-                  <circle r={node.role === "central" ? 31 : node.role === "router" ? 18 : 12} />
+                  <circle r={node.role === "central" ? 31 : node.role === "gateway" ? 20 : node.role === "router" ? 18 : 12} />
                   <title>{`${node.name}${node.type ? ` · ${node.type}` : ""}${rssi !== undefined ? ` · ${rssiAssessment(rssi).label} (${rssi} dBm, ${rssiSourceLabel})` : ""}`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
+                  {node.role === "gateway" && <text className="routing-node-icon" y="5" textAnchor="middle">G</text>}
                   {node.role === "router" && <text className="routing-node-icon" y="5" textAnchor="middle">R</text>}
                 </g>
               );
@@ -1196,6 +1228,7 @@ function RoutingTopologyView({
 
           <div className="routing-legend">
             <span><i className="legend-dot is-central" /> Zentrale</span>
+            <span><i className="legend-dot is-gateway" /> Funk-Gateway / Access Point</span>
             <span><i className="legend-dot is-router" /> bestätigter Router</span>
             <span><i className="legend-dot is-candidate" /> möglicher netzversorgter Router</span>
             <span><i className="legend-signal excellent" /> Signal sehr gut</span>
@@ -1214,9 +1247,15 @@ function RoutingTopologyView({
           {selectedNode?.serial && <p>Seriennummer: {selectedNode.serial}</p>}
           {selectedNode?.role !== "central" && (
             <dl>
-              <div><dt>Dient als Router</dt><dd>{selectedNode?.routerEnabled ? "Ja, belegt" : "Nicht belegt"}</dd></div>
-              <div><dt>Routing aktiv</dt><dd>{selectedNode?.routingEnabled ? "Ja" : "Nicht belegt"}</dd></div>
-              <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
+              <div><dt>Technologie</dt><dd>{selectedNode?.protocol === "hmip" ? "Homematic IP" : "Klassisches Homematic"}</dd></div>
+              <div><dt>Rolle</dt><dd>{selectedNode?.role === "gateway" ? "Funk-Gateway / Access Point" : selectedNode?.role === "router" ? "HmIP-Router" : "Funkgerät"}</dd></div>
+              {selectedNode?.protocol === "hmip" && selectedNode?.role !== "gateway" && (
+                <>
+                  <div><dt>Dient als Router</dt><dd>{selectedNode?.routerEnabled ? "Ja, belegt" : "Nicht belegt"}</dd></div>
+                  <div><dt>Routing aktiv</dt><dd>{selectedNode?.routingEnabled ? "Ja" : "Nicht belegt"}</dd></div>
+                  <div><dt>Multicast-Routing</dt><dd>{selectedNode?.multicastRouting ? "Ja" : "Nicht belegt"}</dd></div>
+                </>
+              )}
               <div><dt>Nächster Empfänger</dt><dd>{selectedReceiver?.name ?? "Noch nicht belegt"}</dd></div>
               <div>
                 <dt>Signal · {rssiSourceLabel}</dt>
@@ -1248,10 +1287,13 @@ function RoutingTopologyView({
       )}
 
       <div className="routing-technology-note">
-        <strong>Warum klassische Homematic-Geräte hier fehlen</strong>
+        <strong>{topologyScope === "hmip" ? "HmIP-Routing" : topologyScope === "bidcos" ? "Klassische Homematic-Funkabdeckung" : "Gemeinsame Übersicht, getrennte Funktechnik"}</strong>
         <span>
-          BidCos-RF-Geräte und Homematic LAN-Gateways bilden kein HmIP-Routingnetz. Sie sollten später in einer eigenen
-          „BidCos-Funkabdeckung“ mit Zentrale und vorhandenen LAN-Gateways als getrennten Empfangspunkten dargestellt werden.
+          {topologyScope === "hmip"
+            ? "HmIP-Geräte können – sofern unterstützt und ausdrücklich konfiguriert – als Router arbeiten. HmIP-Access-Points werden dagegen als Gateways dargestellt."
+            : topologyScope === "bidcos"
+              ? "Homematic LAN-Gateways erweitern den BidCos-RF-Empfang, sind aber keine HmIP-Router. Solange kein konkreter Empfänger belegt ist, erfindet die Karte keine Gateway-Zuordnung."
+              : "Die Gesamtansicht zeigt beide Funkwelten zusammen. HmIP-Routingpfade und klassische Homematic-Gateways bleiben fachlich getrennt."}
         </span>
       </div>
     </section>
@@ -1575,7 +1617,7 @@ function App() {
           title: result.state === "ready" ? "Routing-Topologie aktualisiert" : "Routing-Daten aktualisiert",
           message: result.metrics.confirmedRoutes > 0
             ? `${result.metrics.confirmedRoutes} belegte Pfade und ${result.metrics.confirmedRouters} bestätigte Router gefunden.`
-            : `${result.metrics.devices} HmIP-Geräte gefunden; aktive Pfade sind im aktuellen Log noch nicht belegt.`
+            : `${result.metrics.hmipDevices} HmIP- und ${result.metrics.bidcosDevices} klassische Homematic-Geräte gefunden; aktive Pfade sind im aktuellen Log noch nicht belegt.`
         });
       }
     } catch (caughtError) {
@@ -3028,7 +3070,15 @@ function App() {
 
             <fieldset className="setup-card setup-card-optional">
               <legend>Optionale Erweiterungen</legend>
-              <p>Nur nötig, wenn ein AskSin Analyzer XS Sniffer am Analyzer-System steckt.</p>
+              <p>Ein Sniffer ist nicht für die Basisanalyse nötig. Die Zentrale liefert Geräte-RSSI; der Sniffer ergänzt Funkverkehr, Sendezeit, Carrier Sense und Messwerte an seinem eigenen Standort.</p>
+              <details className="inline-help">
+                <summary>Brauche ich den AskSin-Sniffer überhaupt?</summary>
+                <ul>
+                  <li><strong>Ohne Sniffer:</strong> RSSI der Zentrale, Geräteprobleme und Funk-Topologie aus CCU-Daten.</li>
+                  <li><strong>Mit Sniffer:</strong> einzelne Telegramme, Funklast pro Gerät, Carrier Sense und Empfang am Sniffer-Standort.</li>
+                  <li>Gateways und Access Points sind zusätzliche Funkempfänger. Sie werden nicht pauschal als Router behandelt.</li>
+                </ul>
+              </details>
               <div className="usb-port-picker">
                 <label>
                   AskSin Analyzer XS USB-Port
@@ -3191,6 +3241,25 @@ function App() {
             <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true)} disabled={snifferLoading}>
               {snifferLoading ? "Prüfe ..." : "Sniffer prüfen"}
             </button>
+          </div>
+
+          <div className="sniffer-decision-card">
+            <div>
+              <p className="eyebrow">Vor dem Aufbau</p>
+              <h3>Brauchst du den Sniffer?</h3>
+              <p>Für Geräte-RSSI und eine grundlegende Funkbewertung reicht die CCU/XML-API. Ein vorhandenes Gateway ersetzt den Sniffer nicht, macht ihn aber auch nicht zwingend erforderlich.</p>
+            </div>
+            <div className="sniffer-decision-grid">
+              <article>
+                <strong>Zentrale und Gateways</strong>
+                <span>Liefern CCU-RSSI, Gerätezustände und bekannte Empfänger. Gut für die Funkabdeckung aus Sicht der Installation.</span>
+              </article>
+              <article>
+                <strong>AskSin-Sniffer</strong>
+                <span>Zeigt Telegramme, Funkzeit pro Gerät, Carrier Sense und RSSI genau am Standort des Sniffers.</span>
+              </article>
+            </div>
+            <small>Wichtig: Ein klassisches Homematic LAN-Gateway oder HmIP-Access-Point ist Empfangsinfrastruktur. Nur ausdrücklich konfigurierte HmIP-Geräte werden als Router bezeichnet.</small>
           </div>
 
           <div className="dc-overview-strip">

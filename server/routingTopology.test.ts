@@ -13,11 +13,27 @@ const masterdata: CcuMasterdataPayload = {
   ]
 };
 
-test("hält klassische Homematic-Geräte aus der HmIP-Routingkarte heraus", () => {
+test("ordnet HmIP und klassisches Homematic getrennten Funktechnologien zu", () => {
   const topology = buildRoutingTopology(masterdata);
 
-  assert.equal(topology.nodes.some((node) => node.serial === "MEQ1234567"), false);
-  assert.equal(topology.metrics.devices, 3);
+  assert.equal(topology.nodes.find((node) => node.serial === "MEQ1234567")?.protocol, "bidcos");
+  assert.equal(topology.metrics.hmipDevices, 3);
+  assert.equal(topology.metrics.bidcosDevices, 1);
+  assert.equal(topology.metrics.devices, 4);
+});
+
+test("behandelt Access Points und LAN-Gateways nicht als Geräte-Router", () => {
+  const topology = buildRoutingTopology({
+    devices: [
+      { name: "HmIP Access Point", serial: "3014F711A000000000000001", type: "HmIP-HAP" },
+      { name: "LAN Gateway", serial: "JEQ0123456", type: "HM-LGW-O-TW-W-EU" }
+    ]
+  });
+
+  assert.equal(topology.nodes.find((node) => node.serial === "3014F711A000000000000001")?.role, "gateway");
+  assert.equal(topology.nodes.find((node) => node.serial === "JEQ0123456")?.role, "gateway");
+  assert.equal(topology.metrics.gateways, 2);
+  assert.equal(topology.metrics.confirmedRouters, 0);
 });
 
 test("erkennt belegte Router-Schalter aus HmIPServer-Zeilen", () => {

@@ -164,17 +164,21 @@ Der Entfernen-Modus löscht nur den Analyzer-Cronjob sowie `/tmp/homematic-analy
 
 Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
 
-## HmIP-Routing-Analyse
+## Funk-Topologie und HmIP-Routing
 
 Die HmIP-Routing-Analyse ist standardmäßig ausgeschaltet. Wird sie unter **Einstellungen → HmIP-Routing-Analyse** aktiviert, führt die App durch Log-Einstellung, Neustart und Collector-Test. Der Collector liest zusätzlich die HmIP-RF-Geräteparameter `ROUTER_MODULE_ENABLED`, `ENABLE_ROUTING` und `MULTICAST_ROUTER_MODULE_ENABLED` lokal und ausschließlich lesend aus.
 
-Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → HmIP Routing**. Orange Punkte sind nur technisch geeignete, meist netzversorgte Kandidaten. Erst grüne Punkte sind durch CCU-Geräteparameter oder einen Routingbeleg als Router bestätigt.
+Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → Funk-Topologie**. Dort kann zwischen **HmIP**, **klassischem Homematic** und **Beides** gewechselt werden. Orange Punkte sind bei HmIP nur technisch geeignete, meist netzversorgte Kandidaten. Erst grüne Punkte sind durch CCU-Geräteparameter oder einen Routingbeleg als Router bestätigt.
+
+Gateways werden nicht pauschal als Router behandelt: HmIP-Access-Points und klassische Homematic LAN-Gateways sind zusätzliche Funkempfänger. Ein klassisches LAN-Gateway bildet kein HmIP-Routingnetz. Wenn der konkret verwendete Empfänger eines Geräts nicht belegt ist, bleibt die Zuordnung in der Karte bewusst offen.
 
 Ausführliche bebilderte Anleitung: [`docs/HMIP_ROUTING.md`](docs/HMIP_ROUTING.md)
 
 ## DC-Analyzer und Gerätenamen
 
 Der DC-Analyzer orientiert sich am AskSinAnalyzerXS: echte Sniffer-Telegramme werden vom seriellen Port gelesen, Duty-Cycle-Anteile werden aus Telegrammlänge und Flags berechnet und pro Funkadresse gruppiert.
+
+Ein Sniffer ist optional. Ohne Sniffer liefert die CCU bereits Geräte-RSSI und Zustände aus Sicht der Zentrale. Der Sniffer ergänzt Informationen, die die CCU so nicht liefert: einzelne Telegramme, gemessene Sendezeit/Funklast pro Gerät, Carrier Sense beziehungsweise Rauschpegel und RSSI am Standort des Sniffers.
 
 Für verständliche Gerätenamen braucht der Analyzer die kompatible CCU-Systemvariable `AskSinAnalyzerDevList`. Wer AskSinAnalyzerXS bereits nutzt, hat diese Variable oft schon. Dann sendet das normale CCU-Stammdaten-Script sie automatisch mit. Falls sie fehlt, zeigt der DC-Analyzer einen Hinweis und bietet ein Copy-Paste-WebUI-Script an, das `AskSinAnalyzerDevList` erstellt oder aktualisiert.
 

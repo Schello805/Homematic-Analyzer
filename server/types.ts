@@ -144,7 +144,8 @@ export type RoutingTopologyNode = {
   serial?: string;
   address?: string;
   type?: string;
-  role: "central" | "router" | "candidate" | "device";
+  protocol: "central" | "hmip" | "bidcos";
+  role: "central" | "gateway" | "router" | "candidate" | "device";
   routerEnabled: boolean;
   routingEnabled: boolean;
   multicastRouting: boolean;
@@ -173,6 +174,9 @@ export type RoutingTopology = {
   edges: RoutingTopologyEdge[];
   metrics: {
     devices: number;
+    hmipDevices: number;
+    bidcosDevices: number;
+    gateways: number;
     confirmedRouters: number;
     routerCandidates: number;
     routingEnabled: number;

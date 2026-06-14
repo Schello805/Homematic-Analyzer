@@ -321,6 +321,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const weakSignalDevices = weakSnifferDevices(reliableSnifferDevicesWithRssi);
   const hmipSnifferDevicesWithRssi = snifferDevicesWithRssi.filter(isHmIpSnifferDevice);
   const weakHmipSnifferDevices = weakSnifferDevices(hmipSnifferDevicesWithRssi);
+  const topologyRadioNodes = routingTopology.nodes.filter((node) => node.role !== "central" && node.role !== "gateway");
+  const topologyMeasuredNodes = topologyRadioNodes.filter((node) => node.ccuRssi !== undefined || node.snifferRssi !== undefined);
+  const weakTopologyNodes = topologyMeasuredNodes.filter((node) => (node.ccuRssi ?? node.snifferRssi ?? 0) <= -85);
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
@@ -664,16 +667,16 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     },
     {
       id: "routing-topology",
-      title: "HmIP Routing",
+      title: "Funk-Topologie",
       category: "Topologie",
       status: routingTopology.metrics.confirmedRoutes > 0 || routingTopology.metrics.confirmedRouters > 0
         ? "ok"
-        : hmipDevices.length > 0
-        ? weakHmipSnifferDevices.some((device) => (device.avgRssi ?? 0) <= -95)
+        : routingTopology.metrics.devices > 0
+        ? weakTopologyNodes.some((device) => (device.ccuRssi ?? device.snifferRssi ?? 0) <= -95)
           ? "warning"
-          : weakHmipSnifferDevices.length > 0
+          : weakTopologyNodes.length > 0
             ? "improvement"
-            : hmipSnifferDevicesWithRssi.length > 0
+            : topologyMeasuredNodes.length > 0
               ? "ok"
               : "unavailable"
         : hasCcuData || masterdataDeviceCount > 0 ? "ok" : "unavailable",
@@ -681,12 +684,12 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? `${routingTopology.metrics.confirmedRouters} Router und ${routingTopology.metrics.confirmedRoutes} aktive Routingpfade sind durch HmIPServer-Daten belegt.`
         : routingTopology.metrics.confirmedRouters > 0
           ? `${routingTopology.metrics.confirmedRouters} Geräte sind als Router belegt. Aktive Gerätepfade sind im aktuellen Log noch nicht eindeutig zugeordnet.`
-        : hmipDevices.length > 0
-        ? hmipSnifferDevicesWithRssi.length > 0
-          ? weakHmipSnifferDevices.length > 0
-            ? `${hmipDevices.length} HmIP-Geräte bekannt, ${hmipSnifferDevicesWithRssi.length} per Sniffer-RSSI gesehen. Schwache HmIP-Geräte: ${weakHmipSnifferDevices.slice(0, 5).map((device) => device.name).join(", ")}.`
-            : `${hmipDevices.length} HmIP-Geräte bekannt, ${hmipSnifferDevicesWithRssi.length} per Sniffer-RSSI gesehen. Keine schwachen HmIP-RSSI-Werte im aktuellen Snapshot.`
-          : `${hmipDevices.length} HmIP-Geräte gefunden. ${hmipRouterCandidates.length} davon wirken grundsätzlich als mögliche Router-/Repeater-Kandidaten. Aktive Routing-Pfade sind noch nicht belegt.`
+        : routingTopology.metrics.devices > 0
+        ? topologyMeasuredNodes.length > 0
+          ? weakTopologyNodes.length > 0
+            ? `${routingTopology.metrics.hmipDevices} HmIP- und ${routingTopology.metrics.bidcosDevices} klassische Geräte bekannt. Schwache Signale: ${weakTopologyNodes.slice(0, 5).map((device) => device.name).join(", ")}.`
+            : `${routingTopology.metrics.hmipDevices} HmIP- und ${routingTopology.metrics.bidcosDevices} klassische Geräte bekannt. Keine schwachen RSSI-Werte im aktuellen Snapshot.`
+          : `${routingTopology.metrics.hmipDevices} HmIP- und ${routingTopology.metrics.bidcosDevices} klassische Geräte gefunden. Für die Funkbewertung fehlen noch RSSI-Werte.`
         : hasCcuData || masterdataDeviceCount > 0
           ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
           : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
@@ -694,17 +697,17 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? "Öffne die Routing-Karte, um belegte Wege und Geräte ohne nachgewiesene Zuordnung zu prüfen."
         : routingTopology.metrics.confirmedRouters > 0
           ? "Router sind erkannt. Betätige HmIP-Geräte und aktualisiere die Karte, um mögliche aktive Pfade im Log zu erfassen."
-        : hmipDevices.length > 0
-        ? weakHmipSnifferDevices.length > 0
-          ? "Bei schwachen HmIP-Geräten zuerst Standort, Entfernung und Stromversorgung prüfen. Danach einen HmIP-Router/Access Point näher am betroffenen Bereich testen."
-          : hmipSnifferDevicesWithRssi.length > 0
-            ? "Keine Routing-Maßnahme nötig. Für echte Routingpfade später HmIPServer-Daten/Logs ergänzen."
-            : "Router-Kandidaten helfen bei der Planung. Für Abdeckung den Sniffer laufen lassen und HmIP-Geräte auslösen."
+        : routingTopology.metrics.devices > 0
+        ? weakTopologyNodes.length > 0
+          ? "Öffne die Funk-Topologie und wähle HmIP, Homematic oder Beides. Prüfe schwache Geräte räumlich und berücksichtige passende Router beziehungsweise Gateways."
+          : topologyMeasuredNodes.length > 0
+            ? "Keine unmittelbare Funkmaßnahme nötig. Öffne die Topologie für die getrennte HmIP-, Homematic- oder Gesamtansicht."
+            : "CCU-RSSI liefert die Basisbewertung. Ein Sniffer ist nur für Telegramme, Funklast, Carrier Sense und eine zusätzliche Messposition nötig."
         : hasCcuData || masterdataDeviceCount > 0
           ? "Kein Handlungsbedarf."
           : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
       access: ["ccu"],
-      evidence: hmipDevices.length > 0
+      evidence: routingTopology.metrics.devices > 0
         ? [
           ...(routingTopology.metrics.confirmedRouters > 0 || routingTopology.metrics.confirmedRoutes > 0 ? [{
             source: "HmIPServer-Routing",
@@ -713,7 +716,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           }] : []),
           {
             source: masterdataDeviceCount > 0 ? "CCU-Stammdaten" : "CCU XML-API",
-            detail: `${hmipDevices.length} HmIP-Geräte erkannt. Mögliche Router-/Repeater-Kandidaten: ${hmipRouterCandidates.slice(0, 10).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine sicher erkannt"}.`,
+            detail: `${routingTopology.metrics.hmipDevices} HmIP-Geräte, ${routingTopology.metrics.bidcosDevices} klassische Homematic-Geräte und ${routingTopology.metrics.gateways} Funk-Gateways erkannt. Mögliche HmIP-Router: ${hmipRouterCandidates.slice(0, 10).map((device) => `${device.name ?? device.address ?? "Unbenannt"} (${device.type})`).join(", ") || "keine sicher erkannt"}.`,
             timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
           },
           ...(hmipSnifferDevicesWithRssi.length > 0 ? [{
@@ -729,7 +732,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ]
         : [],
       details: [
-        "Router-Kandidaten sind Gerätetypen, die typischerweise netzversorgt sind und als HmIP-Router/Repeater infrage kommen.",
+        "Die Ansicht kann zwischen HmIP, klassischem Homematic und beiden Funktechnologien wechseln.",
+        "Gateways sind zusätzliche Funkempfänger. Nur ausdrücklich konfigurierte HmIP-Geräte werden als Router bezeichnet.",
         "Sniffer-RSSI bewertet die Abdeckung am Sniffer-Standort. Das ist ein guter Hinweis, aber noch kein beweisbarer aktiver Routingpfad.",
         "Die Grafik zeigt aktive Routing-Pfade nur durchgezogen, wenn HmIPServer-Daten oder passende Logs sie ausdrücklich belegen."
       ]

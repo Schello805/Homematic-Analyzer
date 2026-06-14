@@ -4450,6 +4450,33 @@ pre {
   margin: 16px 0;
 }
 
+.routing-scope-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 14px 0 0;
+  padding: 4px;
+  border: 1px solid #d8e4f2;
+  border-radius: 13px;
+  background: #eef4fb;
+}
+
+.routing-scope-switch button {
+  min-height: 34px;
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #506078;
+  font-weight: 700;
+}
+
+.routing-scope-switch button.is-active {
+  background: #fff;
+  color: #1550aa;
+  box-shadow: 0 3px 10px rgba(34, 74, 128, .12);
+}
+
 .routing-metrics span {
   padding: 10px 12px;
   border: 1px solid #dde7f3;
@@ -4766,6 +4793,14 @@ pre {
   animation: routing-flow 1.8s linear infinite;
 }
 
+.routing-edge.is-gateway {
+  stroke: #06a3a8;
+  stroke-width: 2.5;
+  opacity: .72;
+  stroke-dasharray: 7 7;
+  animation: routing-flow 1.65s linear infinite;
+}
+
 .routing-edge.is-confirmed {
   stroke: #3478f6;
   stroke-width: 3;
@@ -4886,6 +4921,10 @@ pre {
   fill: #20a878;
 }
 
+.routing-node.is-gateway circle {
+  fill: #06a3a8;
+}
+
 .routing-node.is-candidate circle {
   fill: #f59e0b;
 }
@@ -4925,6 +4964,44 @@ pre {
   background: #20a878;
 }
 
+.legend-dot.is-gateway {
+  background: #06a3a8;
+}
+
+.sniffer-decision-card {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #cfe0f4;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fbff, #eef7ff);
+}
+
+.sniffer-decision-card h3,
+.sniffer-decision-card p {
+  margin: 0;
+}
+
+.sniffer-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sniffer-decision-grid article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #dce8f5;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .82);
+}
+
+.sniffer-decision-grid span,
+.sniffer-decision-card small {
+  color: #5d6c83;
+}
 .legend-dot.is-candidate {
   background: #f59e0b;
 }
@@ -5116,6 +5193,10 @@ pre {
     grid-column: auto;
     grid-row: auto;
   }
+
+  .sniffer-decision-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -5152,6 +5233,15 @@ pre {
 
   .routing-rssi-source {
     grid-template-columns: 1fr;
+  }
+
+  .routing-scope-switch {
+    display: grid;
+    width: 100%;
+  }
+
+  .routing-scope-switch button {
+    padding-inline: 8px;
   }
 
   .routing-node-detail dl {

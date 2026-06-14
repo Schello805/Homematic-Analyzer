@@ -2,6 +2,19 @@
 
 Der DC-Analyzer ist optional. Die normale Homematic-Analyse funktioniert auch ohne Sniffer.
 
+## Entscheidung: CCU-RSSI oder Sniffer
+
+Ohne Sniffer kann der Analyzer die von der CCU/XML-API gemeldeten RSSI-Werte verwenden. Diese Werte beschreiben die Funkverbindung aus Sicht der Homematic-Installation und reichen für eine grundlegende Signalbewertung.
+
+Der Sniffer ergänzt:
+
+- einzelne empfangene Funktelegramme
+- gemessene Funkzeit und Funklast pro Gerät
+- Carrier Sense beziehungsweise Rauschpegel
+- RSSI am Standort des Sniffers
+
+Ein Homematic LAN-Gateway oder HmIP-Access-Point ist ein zusätzlicher Funkempfänger, aber nicht automatisch ein Geräte-Router. Nur ausdrücklich konfigurierte HmIP-Geräte werden in der Topologie als Router bezeichnet.
+
 Referenzprojekt:
 
 https://github.com/psi-4ward/AskSinAnalyzerXS
