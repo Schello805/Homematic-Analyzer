@@ -133,6 +133,7 @@ export type CollectorPayload = {
   hmipLogs?: string[];
   hmipRoutingLogs?: string[];
   hmipRoutingConfig?: string[];
+  deviceFirmware?: string[];
   radioGateways?: string[];
   network?: {
     connections?: string[];
@@ -353,6 +354,7 @@ export type CentralReleaseCheck = {
   installedVersion?: string;
   latestVersion?: string;
   product?: string;
+  source: "openccu" | "ccu3";
   url: string;
   checkedAt: string;
   error?: string;

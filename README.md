@@ -16,6 +16,7 @@ Der Analyzer arbeitet modular:
 - **AskSin Analyzer XS**: optionale Funk-Tiefenanalyse für User mit vorhandenem Sniffer.
 - **Telegram**: optionale Benachrichtigungen für kritische Events.
 - **Externe Zugriffe**: aktive Gegenstellen zu CCU-Diensten erkennen, ohne ioBroker/Home Assistant nur anhand eines Textfelds zu erraten.
+- **Firmware-Prüfung**: von der CCU gemeldete Geräte-Updates sowie neue OpenCCU-/RaspberryMatic- oder originale CCU3-Versionen erkennen.
 
 Wichtig: Die App soll keine Fehler raten. Jede kritische Aussage braucht einen Beleg, zum Beispiel Messwert, Servicemeldung, Logzeile oder Gerätestatus.
 
@@ -204,7 +205,8 @@ Bereits umgesetzt:
 - Lokale Datenbank unter `.data/homematic-analyzer-db.json`.
 - Telegram- und E-Mail-Benachrichtigungen inklusive auswählbarer Events.
 - KI-Logauswertung mit OpenAI oder Google Gemini.
-- Firmware-Hinweise innerhalb der eigenen Installation, wenn gleiche Gerätetypen unterschiedliche Firmwarestände melden.
+- Geräte-Firmwareupdates anhand der offiziellen CCU-Felder `AVAILABLE_FIRMWARE` und `FIRMWARE_UPDATE_STATE`; zusätzlich Hinweise bei unterschiedlichen Firmwareständen gleicher Gerätetypen.
+- Zentralen-Updates für OpenCCU/RaspberryMatic über das offizielle OpenCCU-Repository und für die originale CCU3 über den offiziellen eQ-3-Update-Dienst.
 - Grafische HmIP-Routing-Karte mit Kandidaten, direkt gelesenen Router-/Routing-/Multicast-Schaltern, belegten Pfaden und verständlicher RSSI-Ampel.
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
@@ -216,7 +218,7 @@ Bereits umgesetzt:
 Noch offen bzw. bewusst nur vorbereitet:
 
 - Weitere reale HmIP-Routingpfade aus unterschiedlichen HmIPServer-Versionen und Logformaten ableiten.
-- Online-Vergleich gegen neueste Geräte-, RaspberryMatic- oder CCU-Releases aus zuverlässigen Quellen.
+- Weitere Geräte-Firmwarequellen ergänzen, falls ein Gerät seinen verfügbaren Stand nicht über die CCU-Gerätebeschreibung meldet.
 - Externe Systeme wie ioBroker/Home Assistant nur dann konkret benennen, wenn Logs/API-Daten das belegen.
 - Ausführlichere Langzeitdiagramme und Filter für die bereits gespeicherten Sniffer-Messpunkte.
 - Hardwaretests auf weiteren CCU-/RaspberryMatic-/OpenCCU- und Proxmox-Versionen; die automatischen CI-Tests ersetzen keinen Test auf jeder realen Hardwarekombination.

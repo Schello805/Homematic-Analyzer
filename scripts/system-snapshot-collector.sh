@@ -26,6 +26,7 @@ LOG_LIST_FILE="$(make_tmp_file logs)"
 HMIP_LOG_LIST_FILE="$(make_tmp_file hmip-logs)"
 HMIP_ROUTING_LOG_LIST_FILE="$(make_tmp_file hmip-routing-logs)"
 HMIP_ROUTING_CONFIG_FILE="$(make_tmp_file hmip-routing-config)"
+DEVICE_FIRMWARE_FILE="$(make_tmp_file device-firmware)"
 RADIO_GATEWAY_FILE="$(make_tmp_file radio-gateways)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$TMP_FILE"
@@ -35,11 +36,12 @@ CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$HMIP_LOG_LIST_FILE"
 : > "$HMIP_ROUTING_LOG_LIST_FILE"
 : > "$HMIP_ROUTING_CONFIG_FILE"
+: > "$DEVICE_FIRMWARE_FILE"
 : > "$RADIO_GATEWAY_FILE"
 : > "$CONNECTION_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$RADIO_GATEWAY_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$DEVICE_FIRMWARE_FILE" "$RADIO_GATEWAY_FILE" "$CONNECTION_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -287,6 +289,52 @@ foreach descriptor $deviceList {
 }
 EOF_ROUTING_CONFIG
   ) > "$HMIP_ROUTING_CONFIG_FILE" 2>/dev/null || true
+
+  (
+    cd /www/config
+    tclsh <<'EOF_DEVICE_FIRMWARE'
+if {[catch {load tclrpc.so}]} {
+  exit 0
+}
+foreach interfaceSpec {
+  {BidCos-RF http://127.0.0.1:2001/}
+  {HmIP-RF http://127.0.0.1:2010/}
+} {
+  set interfaceName [lindex $interfaceSpec 0]
+  set url [lindex $interfaceSpec 1]
+  if {[catch {set deviceList [xmlrpc $url listDevices [list bool 0]]}]} {
+    continue
+  }
+  foreach descriptor $deviceList {
+    catch {unset device}
+    array set device $descriptor
+    if {![info exists device(ADDRESS)] || ![info exists device(TYPE)]} {
+      continue
+    }
+    if {[info exists device(PARENT)] && $device(PARENT) ne ""} {
+      continue
+    }
+    set firmware "-"
+    set available "-"
+    set state "-"
+    set updatable "-"
+    if {[info exists device(FIRMWARE)]} {
+      set firmware $device(FIRMWARE)
+    }
+    if {[info exists device(AVAILABLE_FIRMWARE)]} {
+      set available $device(AVAILABLE_FIRMWARE)
+    }
+    if {[info exists device(FIRMWARE_UPDATE_STATE)]} {
+      set state $device(FIRMWARE_UPDATE_STATE)
+    }
+    if {[info exists device(UPDATABLE)]} {
+      set updatable $device(UPDATABLE)
+    }
+    puts "DEVICE_FIRMWARE|interface=$interfaceName|address=$device(ADDRESS)|type=$device(TYPE)|installed=$firmware|available=$available|state=$state|updatable=$updatable"
+  }
+}
+EOF_DEVICE_FIRMWARE
+  ) > "$DEVICE_FIRMWARE_FILE" 2>/dev/null || true
 fi
 
 if [ -r /etc/config/rfd.conf ]; then
@@ -460,6 +508,20 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$encoded_line"
   done < "$HMIP_ROUTING_CONFIG_FILE"
+  printf '\n  ],\n'
+  printf '  "deviceFirmwareBase64": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$encoded_line"
+  done < "$DEVICE_FIRMWARE_FILE"
   printf '\n  ],\n'
   printf '  "radioGatewaysBase64": [\n'
   FIRST=1

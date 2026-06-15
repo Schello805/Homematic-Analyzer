@@ -2646,7 +2646,7 @@ function App() {
           lastNotifiedCentralUpdateDetail = centralStatus.detail;
           showToast({
             type: "warning",
-            title: "OpenCCU-Update verfügbar",
+            title: centralStatus.label,
             message: centralStatus.detail
           });
         } else if (centralStatus?.state !== "update") {

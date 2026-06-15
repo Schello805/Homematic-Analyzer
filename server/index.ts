@@ -14,7 +14,7 @@ import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase }
 import type { SetupDefaults } from "./localDatabase.js";
 import { resolveNetworkHostnames } from "./networkIdentity.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
-import { checkOpenCcuRelease, checkRepositoryRelease, isOpenCcuFamilyProduct } from "./releases.js";
+import { checkOfficialCcu3Release, checkOpenCcuRelease, checkRepositoryRelease, isOfficialCcu3Product, isOpenCcuFamilyProduct } from "./releases.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
@@ -151,6 +151,8 @@ const collectorSchema = z.object({
   hmipRoutingLogsBase64: z.array(z.string().max(8000)).max(500).optional(),
   hmipRoutingConfig: z.array(z.coerce.string().max(1000)).max(500).optional(),
   hmipRoutingConfigBase64: z.array(z.string().max(4000)).max(500).optional(),
+  deviceFirmware: z.array(z.coerce.string().max(1000)).max(500).optional(),
+  deviceFirmwareBase64: z.array(z.string().max(4000)).max(500).optional(),
   radioGateways: z.array(z.coerce.string().max(1000)).max(50).optional(),
   radioGatewaysBase64: z.array(z.string().max(4000)).max(50).optional(),
   network: z.object({
@@ -1164,9 +1166,11 @@ app.post("/api/analyze", async (request, response) => {
       ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
     const centralProduct = stringFromRecord(latestCollector?.system, "centralProduct")
       ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
-    const centralReleaseCheck = isOpenCcuFamilyProduct(centralProduct)
-      ? await checkOpenCcuRelease(installedCentralVersion, centralProduct)
-      : undefined;
+    const centralReleaseCheck = isOfficialCcu3Product(centralProduct)
+      ? await checkOfficialCcu3Release(installedCentralVersion, centralProduct)
+      : isOpenCcuFamilyProduct(centralProduct)
+        ? await checkOpenCcuRelease(installedCentralVersion, centralProduct)
+        : undefined;
     const snifferSnapshot = parsed.data.snifferEnabled === false
       ? undefined
       : parsed.data.snifferPort
@@ -1254,6 +1258,7 @@ app.post("/api/collector", async (request, response) => {
   const decodedHmipLogs = decodeBase64Lines(parsed.data.hmipLogsBase64);
   const decodedHmipRoutingLogs = decodeBase64Lines(parsed.data.hmipRoutingLogsBase64);
   const decodedHmipRoutingConfig = decodeBase64Lines(parsed.data.hmipRoutingConfigBase64);
+  const decodedDeviceFirmware = decodeBase64Lines(parsed.data.deviceFirmwareBase64);
   const decodedRadioGateways = decodeBase64Lines(parsed.data.radioGatewaysBase64);
   const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
   const {
@@ -1261,6 +1266,7 @@ app.post("/api/collector", async (request, response) => {
     hmipLogsBase64: _hmipLogsBase64,
     hmipRoutingLogsBase64: _hmipRoutingLogsBase64,
     hmipRoutingConfigBase64: _hmipRoutingConfigBase64,
+    deviceFirmwareBase64: _deviceFirmwareBase64,
     radioGatewaysBase64: _radioGatewaysBase64,
     network: encodedNetwork,
     ...collectorData
@@ -1273,6 +1279,7 @@ app.post("/api/collector", async (request, response) => {
     hmipLogs: parsed.data.hmipLogs ?? decodedHmipLogs,
     hmipRoutingLogs: parsed.data.hmipRoutingLogs ?? decodedHmipRoutingLogs,
     hmipRoutingConfig: parsed.data.hmipRoutingConfig ?? decodedHmipRoutingConfig,
+    deviceFirmware: parsed.data.deviceFirmware ?? decodedDeviceFirmware,
     radioGateways: parsed.data.radioGateways ?? decodedRadioGateways,
     network: encodedNetwork
       ? {
@@ -1461,31 +1468,39 @@ app.get("/api/system/central-update-status", async (_request, response) => {
   const product = stringFromRecord(latestCollector?.system, "centralProduct")
     ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
 
-  if (!isOpenCcuFamilyProduct(product)) {
+  if (!isOpenCcuFamilyProduct(product) && !isOfficialCcu3Product(product)) {
     response.json({
       state: "unknown",
       label: "Zentralen-Update nicht geprüft",
-      detail: `${product ?? "Die erkannte Zentralensoftware"} wird nicht mit OpenCCU-Releases verglichen.`,
-      url: "https://github.com/OpenCCU/OpenCCU/releases"
+      detail: `${product ?? "Die erkannte Zentralensoftware"} konnte keiner unterstützten Updatequelle zugeordnet werden.`,
+      url: "https://homematic-ip.com/de/downloads"
     });
     return;
   }
 
-  const releaseCheck = await checkOpenCcuRelease(installedVersion, product);
+  const releaseCheck = isOfficialCcu3Product(product)
+    ? await checkOfficialCcu3Release(installedVersion, product)
+    : await checkOpenCcuRelease(installedVersion, product);
   response.json({
     state: releaseCheck.error || !releaseCheck.installedVersion
       ? "unknown"
       : releaseCheck.available
         ? "update"
         : "current",
-    label: releaseCheck.available ? "OpenCCU-Update verfügbar" : releaseCheck.error ? "OpenCCU-Check nicht möglich" : !releaseCheck.installedVersion ? "OpenCCU-Version wird ermittelt" : "OpenCCU aktuell",
+    label: releaseCheck.available
+      ? `${releaseCheck.source === "ccu3" ? "CCU3" : "OpenCCU"}-Update verfügbar`
+      : releaseCheck.error
+        ? "Zentralen-Check nicht möglich"
+        : !releaseCheck.installedVersion
+          ? "Zentralenversion wird ermittelt"
+          : "Zentrale aktuell",
     detail: releaseCheck.error
       ? releaseCheck.error
       : !releaseCheck.installedVersion
         ? `Verfügbar: ${releaseCheck.latestVersion ?? "unbekannt"}. Der Collector liefert die installierte Version mit dem nächsten Lauf.`
         : releaseCheck.available
           ? `Installiert: ${releaseCheck.installedVersion}. Neu: ${releaseCheck.latestVersion}. Vor dem Update ein Backup erstellen.`
-          : `Installiert: ${releaseCheck.installedVersion}. Kein neuerer OpenCCU-Release gefunden.`,
+          : `Installiert: ${releaseCheck.installedVersion}. Kein neuerer ${releaseCheck.source === "ccu3" ? "CCU3" : "OpenCCU"}-Stand gefunden.`,
     url: releaseCheck.url
   });
 });

@@ -265,6 +265,7 @@ test("zeigt ein verfügbares OpenCCU-Update als Wartungshinweis", () => {
       installedVersion: "3.81.7.20250125",
       latestVersion: "3.87.6.20260614",
       product: "OpenCCU",
+      source: "openccu",
       url: "https://github.com/OpenCCU/OpenCCU/releases/tag/3.87.6.20260614",
       checkedAt: "2026-06-15T10:00:00.000Z"
     }
@@ -288,6 +289,7 @@ test("rät ohne installierte Zentralenversion kein Update", () => {
     {
       available: false,
       latestVersion: "3.87.6.20260614",
+      source: "openccu",
       url: "https://github.com/OpenCCU/OpenCCU/releases",
       checkedAt: "2026-06-15T10:00:00.000Z"
     }
@@ -296,6 +298,53 @@ test("rät ohne installierte Zentralenversion kein Update", () => {
   assert.equal(centralRelease?.status, "improvement");
   assert.match(centralRelease?.summary ?? "", /installierte Zentralenversion fehlt/);
   assert.match(centralRelease?.recommendation ?? "", /Collector/);
+});
+
+test("zeigt von der CCU gemeldete Geräte-Firmwareupdates mit Namen", () => {
+  const collector: CollectorPayload = {
+    collectedAt: new Date().toISOString(),
+    deviceFirmware: [
+      "DEVICE_FIRMWARE|interface=HmIP-RF|address=001ABC|type=HmIP-PSM|installed=2.6.2|available=2.8.6|state=READY_FOR_UPDATE|updatable=true"
+    ]
+  };
+  const masterdata = {
+    collectedAt: new Date().toISOString(),
+    deviceCount: 1,
+    devices: [{ name: "Steckdose Küche", address: "001ABC", type: "HmIP-PSM", firmware: "2.6.2" }]
+  };
+
+  const firmware = createAnalysis({}, collector, undefined, masterdata)
+    .find((check) => check.id === "firmware-overview");
+
+  assert.equal(firmware?.status, "warning");
+  assert.match(firmware?.summary ?? "", /1 Gerät/);
+  assert.match(firmware?.evidence[0]?.detail ?? "", /Steckdose Küche/);
+  assert.match(firmware?.evidence[0]?.detail ?? "", /installiert 2\.6\.2, verfügbar 2\.8\.6/);
+});
+
+test("zeigt den originalen CCU3-Release getrennt von OpenCCU", () => {
+  const centralRelease = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    {
+      available: true,
+      installedVersion: "3.81.7",
+      latestVersion: "3.87.6",
+      product: "HM-CCU3",
+      source: "ccu3",
+      url: "https://homematic-ip.com/de/downloads",
+      checkedAt: "2026-06-15T10:00:00.000Z"
+    }
+  ).find((check) => check.id === "central-release");
+
+  assert.equal(centralRelease?.title, "CCU3 Update");
+  assert.match(centralRelease?.evidence[0]?.source ?? "", /CCU3/);
+  assert.doesNotMatch(centralRelease?.summary ?? "", /OpenCCU/);
 });
 
 test("blendet die HmIP-Routing-Prüfung nur bei aktivierter Funktion ein", () => {

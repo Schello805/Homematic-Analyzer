@@ -7,6 +7,8 @@ const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const openCcuLatestReleaseApiUrl = "https://api.github.com/repos/OpenCCU/OpenCCU/releases/latest";
 const openCcuLatestReleaseUrl = "https://github.com/OpenCCU/OpenCCU/releases/latest";
 const openCcuReleasesUrl = "https://github.com/OpenCCU/OpenCCU/releases";
+const officialCcu3UpdateUrl = "https://ccu3-update.homematic.com/firmware/download";
+const officialCcu3DownloadsUrl = "https://homematic-ip.com/de/downloads";
 const releaseCacheDurationMs = 10 * 60 * 1000;
 
 type ReleaseCandidate = {
@@ -19,6 +21,8 @@ let cachedCandidate: ReleaseCandidate | undefined;
 let cachedAt = 0;
 let cachedOpenCcuCandidate: { version: string; url: string } | undefined;
 let cachedOpenCcuAt = 0;
+let cachedCcu3Candidate: { version: string; url: string } | undefined;
+let cachedCcu3At = 0;
 
 function normalizeVersion(version: string | undefined) {
   return version?.replace(/^v/i, "").trim();
@@ -43,13 +47,17 @@ export function compareVersions(left: string | undefined, right: string | undefi
 }
 
 export function normalizeCentralVersion(version: string | undefined): string | undefined {
-  const match = version?.match(/\d+\.\d+\.\d+\.\d+/);
+  const match = version?.match(/\d+\.\d+\.\d+(?:\.\d+)?/);
   return match?.[0];
 }
 
 export function isOpenCcuFamilyProduct(product: string | undefined): boolean {
   if (!product?.trim()) return true;
   return /\b(openccu|raspmatic|raspberrymatic)\b/i.test(product);
+}
+
+export function isOfficialCcu3Product(product: string | undefined): boolean {
+  return /\b(hm-ccu3|ccu3)\b/i.test(product ?? "");
 }
 
 async function fetchJson(url: string, accept: string): Promise<unknown> {
@@ -197,6 +205,7 @@ export async function checkOpenCcuRelease(installedVersion?: string, product?: s
         available: false,
         installedVersion: normalizedInstalledVersion,
         product,
+        source: "openccu",
         url: openCcuReleasesUrl,
         checkedAt,
         error: "OpenCCU lieferte keine Versionsinformation."
@@ -208,6 +217,7 @@ export async function checkOpenCcuRelease(installedVersion?: string, product?: s
       installedVersion: normalizedInstalledVersion,
       latestVersion: candidate.version,
       product,
+      source: "openccu",
       url: candidate.url,
       checkedAt
     };
@@ -216,9 +226,77 @@ export async function checkOpenCcuRelease(installedVersion?: string, product?: s
       available: false,
       installedVersion: normalizedInstalledVersion,
       product,
+      source: "openccu",
       url: openCcuReleasesUrl,
       checkedAt,
       error: error instanceof Error ? `OpenCCU konnte nicht geprüft werden (${error.message}).` : "OpenCCU konnte nicht geprüft werden."
+    };
+  }
+}
+
+async function readOfficialCcu3Candidate(installedVersion?: string) {
+  const url = new URL(officialCcu3UpdateUrl);
+  url.searchParams.set("cmd", "check_version");
+  url.searchParams.set("version", normalizeCentralVersion(installedVersion) ?? "0.0.0");
+  url.searchParams.set("serial", "0000000000");
+  url.searchParams.set("lang", "de");
+  url.searchParams.set("product", "HM-CCU3");
+
+  const response = await fetch(url, {
+    headers: { "User-Agent": "Homematic-Analyzer-CCU3-Release-Check" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const version = normalizeCentralVersion(await response.text());
+  return version ? { version, url: officialCcu3DownloadsUrl } : undefined;
+}
+
+export async function checkOfficialCcu3Release(installedVersion?: string, product?: string): Promise<CentralReleaseCheck> {
+  const checkedAt = new Date().toISOString();
+  const normalizedInstalledVersion = normalizeCentralVersion(installedVersion);
+
+  try {
+    let candidate = cachedCcu3Candidate;
+    if (!candidate || Date.now() - cachedCcu3At >= releaseCacheDurationMs) {
+      candidate = await readOfficialCcu3Candidate(normalizedInstalledVersion);
+      if (candidate) {
+        cachedCcu3Candidate = candidate;
+        cachedCcu3At = Date.now();
+      }
+    }
+
+    if (!candidate) {
+      return {
+        available: false,
+        installedVersion: normalizedInstalledVersion,
+        product,
+        source: "ccu3",
+        url: officialCcu3DownloadsUrl,
+        checkedAt,
+        error: "Der offizielle CCU3-Dienst lieferte keine Versionsinformation."
+      };
+    }
+
+    return {
+      available: Boolean(normalizedInstalledVersion && compareVersions(candidate.version, normalizedInstalledVersion) > 0),
+      installedVersion: normalizedInstalledVersion,
+      latestVersion: candidate.version,
+      product,
+      source: "ccu3",
+      url: candidate.url,
+      checkedAt
+    };
+  } catch (error) {
+    return {
+      available: false,
+      installedVersion: normalizedInstalledVersion,
+      product,
+      source: "ccu3",
+      url: officialCcu3DownloadsUrl,
+      checkedAt,
+      error: error instanceof Error ? `CCU3 konnte nicht geprüft werden (${error.message}).` : "CCU3 konnte nicht geprüft werden."
     };
   }
 }

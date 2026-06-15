@@ -158,6 +158,15 @@ type FirmwareDifference = {
   devices: string[];
 };
 
+type AvailableFirmwareUpdate = {
+  name: string;
+  address: string;
+  type: string;
+  installed: string;
+  available: string;
+  state?: string;
+};
+
 type LogAnalysis = {
   relevantLines: string[];
   noisyLines: string[];
@@ -243,6 +252,50 @@ function findFirmwareDifferences(masterdata: CcuMasterdataPayload | undefined, c
     }))
     .filter((entry) => entry.versions.length > 1)
     .slice(0, 8);
+}
+
+function parseAvailableFirmwareUpdates(collector: CollectorPayload | undefined, masterdata: CcuMasterdataPayload | undefined, ccu: CcuSnapshot | undefined): AvailableFirmwareUpdate[] {
+  const namesByAddress = new Map<string, string>();
+  for (const device of masterdata?.devices ?? ccu?.devices ?? []) {
+    if (device.address && device.name) namesByAddress.set(device.address.toUpperCase(), device.name);
+  }
+
+  return (collector?.deviceFirmware ?? []).flatMap((line) => {
+    if (!line.startsWith("DEVICE_FIRMWARE|")) return [];
+    const values = Object.fromEntries(line.split("|").slice(1).map((part) => {
+      const separator = part.indexOf("=");
+      return separator > 0 ? [part.slice(0, separator), part.slice(separator + 1)] : [part, ""];
+    }));
+    const address = values.address?.trim();
+    const type = values.type?.trim();
+    const installed = values.installed?.trim();
+    const available = values.available?.trim();
+    const state = values.state?.trim();
+    const unavailableValues = new Set(["", "-", "0.0", "0.0.0"]);
+
+    if (!address || !type || unavailableValues.has(installed) || unavailableValues.has(available)) return [];
+    if (compareFirmwareVersions(available, installed) <= 0 && !/NEW_FIRMWARE_AVAILABLE|READY_FOR_UPDATE|DO_UPDATE_PENDING/i.test(state ?? "")) return [];
+
+    return [{
+      name: namesByAddress.get(address.toUpperCase()) ?? address,
+      address,
+      type,
+      installed,
+      available,
+      state: unavailableValues.has(state) ? undefined : state
+    }];
+  }).sort((left, right) => left.name.localeCompare(right.name, "de"));
+}
+
+function compareFirmwareVersions(left: string, right: string): number {
+  const leftParts = left.split(".").map((part) => Number(part.replace(/\D.*$/, "")));
+  const rightParts = right.split(".").map((part) => Number(part.replace(/\D.*$/, "")));
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 function isReachabilityEvidence(evidence: Evidence): boolean {
@@ -335,6 +388,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     [node.ccuRssi, node.snifferRssi].some((value) => value !== undefined && value <= -85)
   ));
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
+  const availableFirmwareUpdates = parseAvailableFirmwareUpdates(currentCollector, masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
   const unreachableServiceMessages = ccu?.serviceMessages.filter(isReachabilityEvidence) ?? [];
@@ -749,29 +803,43 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       title: "Geräte-Firmware",
       category: "Wartung",
       status: masterdataDeviceCount > 0 || hasCcuData
-        ? firmwareDifferences.length > 0
+        ? availableFirmwareUpdates.length > 0 || firmwareDifferences.length > 0
           ? "warning"
           : "ok"
         : "unavailable",
       summary: masterdataDeviceCount > 0 || hasCcuData
-        ? firmwareDifferences.length > 0
+        ? availableFirmwareUpdates.length > 0
+          ? availableFirmwareUpdates.length === 1
+            ? `Für 1 Gerät meldet die CCU eine neuere Firmware.`
+            : `Für ${availableFirmwareUpdates.length} Geräte meldet die CCU eine neuere Firmware.`
+          : firmwareDifferences.length > 0
           ? `${firmwareDifferences.length} Gerätetypen laufen mit unterschiedlichen Firmwareständen.`
-          : "Keine unterschiedlichen Firmwarestände innerhalb gleicher Gerätetypen gefunden."
+          : "Keine verfügbaren Geräte-Updates oder unterschiedlichen Firmwarestände gefunden."
         : "Firmware kann ohne CCU-Daten oder Stammdaten-Script nicht verglichen werden.",
       recommendation: masterdataDeviceCount > 0 || hasCcuData
-        ? firmwareDifferences.length > 0
+        ? availableFirmwareUpdates.length > 0
+          ? "Öffne in der CCU-WebUI „Einstellungen → Geräte-Firmware – Übersicht“. Prüfe die Hinweise je Gerät und starte Updates bewusst nacheinander."
+          : firmwareDifferences.length > 0
           ? "Prüfe die genannten Gerätetypen in der WebUI. Unterschiedliche Stände sind nicht immer falsch, aber ein guter Wartungshinweis."
-          : "Kein Handlungsbedarf. Später ergänzt der Analyzer zusätzlich den Vergleich gegen verfügbare Hersteller-/Zentralen-Releases."
+          : "Kein Handlungsbedarf."
         : "CCU-Zugang oder tägliches Stammdaten-Script einrichten.",
       access: ["ccu"],
-      evidence: firmwareDifferences.map((difference) => ({
-        source: "Firmware-Vergleich",
-        detail: `${difference.type}: Versionen ${difference.versions.join(", ")}; Beispiele: ${difference.devices.join(", ")}.`,
-        timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
-      })),
+      evidence: [
+        ...availableFirmwareUpdates.slice(0, 20).map((update) => ({
+          source: "CCU Firmwarestatus",
+          detail: `${update.name} (${update.type}): installiert ${update.installed}, verfügbar ${update.available}${update.state ? ` · Status ${update.state}` : ""}.`,
+          timestamp: currentCollector?.collectedAt ?? now()
+        })),
+        ...firmwareDifferences.map((difference) => ({
+          source: "Firmware-Vergleich",
+          detail: `${difference.type}: Versionen ${difference.versions.join(", ")}; Beispiele: ${difference.devices.join(", ")}.`,
+          timestamp: masterdata?.collectedAt ?? ccu?.collectedAt ?? now()
+        }))
+      ].slice(0, 24),
       details: [
-        "Dieser Check vergleicht nur Geräte gleichen Typs innerhalb deiner Installation.",
-        "Ein Online-Vergleich gegen neueste Hersteller-Firmware folgt separat, damit nichts geraten wird.",
+        "Verfügbare Geräte-Firmware stammt aus den offiziellen CCU-Gerätebeschreibungen `AVAILABLE_FIRMWARE` und `FIRMWARE_UPDATE_STATE`.",
+        "Zusätzlich vergleicht der Analyzer Geräte gleichen Typs innerhalb deiner Installation.",
+        "Die CCU entscheidet, ob eine Firmware für das konkrete Gerät angeboten und aktualisiert werden kann.",
         "Unterschiedliche Versionen sind ein Hinweis, aber nicht automatisch ein Fehler."
       ]
     },
@@ -962,7 +1030,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       }],
       details: [
         "Dieser Check bezieht sich nur auf den Homematic Analyzer selbst.",
-        "Die Zentralensoftware wird im separaten Prüfpunkt „OpenCCU Update“ verglichen."
+        "Die Zentralensoftware wird separat mit der passenden Quelle für OpenCCU/RaspberryMatic oder die originale CCU3 verglichen."
       ]
     });
   }
@@ -971,15 +1039,15 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     const hasInstalledVersion = Boolean(centralRelease.installedVersion);
     checks.push({
       id: "central-release",
-      title: "OpenCCU Update",
+      title: centralRelease.source === "ccu3" ? "CCU3 Update" : "OpenCCU Update",
       category: "Wartung",
       status: centralRelease.available ? "warning" : centralRelease.error || !hasInstalledVersion ? "improvement" : "ok",
       summary: centralRelease.available
-        ? `Neue OpenCCU-Version verfügbar: ${centralRelease.latestVersion}.`
+        ? `Neue ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"}-Version verfügbar: ${centralRelease.latestVersion}.`
         : centralRelease.error
-          ? "Der OpenCCU-Release konnte gerade nicht geprüft werden."
+          ? `Der ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"}-Stand konnte gerade nicht geprüft werden.`
           : !hasInstalledVersion
-            ? `Aktuell verfügbar: OpenCCU ${centralRelease.latestVersion}. Die installierte Zentralenversion fehlt noch.`
+            ? `Aktuell verfügbar: ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"} ${centralRelease.latestVersion}. Die installierte Zentralenversion fehlt noch.`
             : `Die Zentrale ist aktuell (${centralRelease.installedVersion}).`,
       recommendation: centralRelease.available
         ? "Release-Hinweise öffnen, Backup erstellen und das Zentralen-Update anschließend bewusst über die CCU-WebUI installieren."
@@ -990,7 +1058,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             : "Kein Handlungsbedarf.",
       access: ["ccu", "ssh"],
       evidence: [{
-        source: "OpenCCU Release",
+        source: centralRelease.source === "ccu3" ? "Offizieller CCU3-Update-Dienst" : "OpenCCU Release",
         detail: hasInstalledVersion
           ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
           : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde vom Collector noch nicht geliefert.`,
@@ -999,7 +1067,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       }],
       details: [
         "Die installierte Version wird direkt auf der CCU aus `/VERSION` gelesen.",
-        "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",
+        centralRelease.source === "ccu3"
+          ? "Der verfügbare Stand kommt aus dem offiziellen eQ-3-Update-Dienst, den auch die CCU3-WebUI verwendet."
+          : "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",
         "Der Analyzer installiert Zentralen-Updates niemals automatisch."
       ]
     });
