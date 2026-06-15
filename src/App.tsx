@@ -384,16 +384,22 @@ const statusOrder: CheckStatus[] = ["critical", "warning", "improvement", "ok", 
 
 const checkThemes = [
   {
-    id: "central",
-    title: "Zentrale & System",
-    description: "Verbindung, Datenbasis, Systemzustand und Wartung",
-    checkIds: ["ccu-connection", "xml-api", "ccu-masterdata", "system-health", "app-release"]
+    id: "foundation",
+    title: "Verbindung & Datenbasis",
+    description: "CCU-Erreichbarkeit, XML-API und vorbereitete Stammdaten",
+    checkIds: ["ccu-connection", "xml-api", "ccu-masterdata"]
+  },
+  {
+    id: "system",
+    title: "Zentrale & Backups",
+    description: "Systemzustand, Speicher, Laufzeit und Datensicherung",
+    checkIds: ["system-health"]
   },
   {
     id: "devices",
     title: "Geräte",
-    description: "Meldungen, Batterien, Erreichbarkeit und Firmware",
-    checkIds: ["alarm-messages", "service-messages", "reachability", "config-pending", "firmware-overview", "batteries"]
+    description: "Meldungen, Batterien, Erreichbarkeit und Konfiguration",
+    checkIds: ["alarm-messages", "service-messages", "reachability", "config-pending", "batteries"]
   },
   {
     id: "radio",
@@ -406,6 +412,12 @@ const checkThemes = [
     title: "Sicherheit & Zugriffe",
     description: "Erreichbarkeit von außen und externe Verbindungen",
     checkIds: ["remote-exposure", "external-access"]
+  },
+  {
+    id: "maintenance",
+    title: "Wartung & Updates",
+    description: "Geräte-Firmware und neue Analyzer-Versionen",
+    checkIds: ["firmware-overview", "app-release"]
   },
   {
     id: "operations",
@@ -2389,6 +2401,7 @@ function App() {
     const reachabilityCheck = findCheck("reachability");
     const dutyCheck = findCheck("duty-cycle");
     const signalCheck = findCheck("signal-strength");
+    const routingCheck = findCheck("routing-topology");
     const logCheck = findCheck("logs");
 
     if (alarmCheck && alarmCheck.status !== "ok" && alarmCheck.status !== "unavailable") {
@@ -2403,54 +2416,42 @@ function App() {
         checkId: alarmCheck.id
       });
     }
-    if (serviceCheck && serviceCheck.status === "warning") {
+    const deviceAttentionChecks = [serviceCheck, reachabilityCheck]
+      .filter((check): check is AnalysisCheck => Boolean(check && check.status !== "ok" && check.status !== "unavailable"));
+    if (deviceAttentionChecks.length > 0) {
+      const primaryDeviceCheck = deviceAttentionChecks.find((check) => check.status === "critical")
+        ?? deviceAttentionChecks.find((check) => check.status === "warning")
+        ?? deviceAttentionChecks[0];
       actions.push({
-        id: "services",
+        id: "device-state",
         priority: 90,
         eyebrow: "Danach",
-        title: "Servicemeldungen prüfen",
-        detail: serviceCheck.summary,
-        button: "Meldungen öffnen",
+        title: deviceAttentionChecks.length > 1 ? "Gerätemeldungen gemeinsam prüfen" : primaryDeviceCheck.title,
+        detail: deviceAttentionChecks.map((check) => check.summary).join(" "),
+        button: deviceAttentionChecks.length > 1 ? "Gerätezustand öffnen" : "Details öffnen",
         modal: "check",
-        checkId: serviceCheck.id
+        checkId: primaryDeviceCheck.id
       });
     }
-    if (reachabilityCheck && reachabilityCheck.status === "warning") {
+    const radioAttentionChecks = [dutyCheck, signalCheck, routingCheck]
+      .filter((check): check is AnalysisCheck => Boolean(check && check.status !== "ok" && check.status !== "unavailable"));
+    if (radioAttentionChecks.length > 0) {
+      const primaryRadioCheck = radioAttentionChecks.find((check) => check.id === "duty-cycle")
+        ?? radioAttentionChecks.find((check) => check.id === "signal-strength")
+        ?? radioAttentionChecks[0];
       actions.push({
-        id: "reachability",
-        priority: 85,
-        eyebrow: "Geräte",
-        title: "Erreichbarkeit einordnen",
-        detail: reachabilityCheck.summary,
-        button: "Betroffene Geräte",
-        modal: "check",
-        checkId: reachabilityCheck.id
-      });
-    }
-    if (dutyCheck && dutyCheck.status !== "ok" && dutyCheck.status !== "unavailable") {
-      actions.push({
-        id: "duty",
+        id: "radio-state",
         priority: 75,
         eyebrow: "Funk",
-        title: "Duty Cycle beobachten",
-        detail: form.snifferEnabled
-          ? `${dutyCheck.summary} Der Sniffer kann mögliche Hauptverursacher ergänzen.`
-          : `${dutyCheck.summary} Dieser CCU-Wert funktioniert ohne Sniffer.`,
-        button: form.snifferEnabled ? "Funklast aufteilen" : "Duty Cycle einordnen",
-        modal: form.snifferEnabled ? "duty" : "check",
-        checkId: dutyCheck.id
-      });
-    }
-    if (signalCheck && signalCheck.status !== "ok" && signalCheck.status !== "unavailable") {
-      actions.push({
-        id: "signal",
-        priority: 65,
-        eyebrow: "Messqualität",
-        title: "Signalwerte absichern",
-        detail: signalCheck.summary,
-        button: "Geräteliste ansehen",
-        modal: "signal",
-        checkId: signalCheck.id
+        title: radioAttentionChecks.length > 1 ? "Funkzustand gemeinsam einordnen" : primaryRadioCheck.title,
+        detail: `${radioAttentionChecks.map((check) => check.summary).join(" ")}${form.snifferEnabled ? " Snifferdaten ergänzen bei Bedarf die Verursacheranalyse." : ""}`,
+        button: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled
+          ? "Funklast aufteilen"
+          : primaryRadioCheck.id === "signal-strength" ? "Signalwerte öffnen" : "Funkdetails öffnen",
+        modal: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled
+          ? "duty"
+          : primaryRadioCheck.id === "signal-strength" ? "signal" : "check",
+        checkId: primaryRadioCheck.id
       });
     }
     if (logCheck?.status === "unavailable") {
@@ -4311,36 +4312,24 @@ function App() {
 
       {currentPage === "analysis" && (
         <>
-      <form className="analysis-start panel" onSubmit={runAnalysis}>
+      {!analysis && <form className="analysis-start panel" onSubmit={runAnalysis}>
         <div>
           <p className="eyebrow">Analyse</p>
-          <h2>{analysis ? "Ergebnisse prüfen" : "Analyse starten"}</h2>
+          <h2>Analyse starten</h2>
           <p>
-            {analysis
-              ? "Die letzte Analyse bleibt sichtbar. Starte neu, wenn du frische CCU- oder Collector-Daten prüfen möchtest."
-              : "Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse."}
+            Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse.
           </p>
           {!setupProgress.complete && (
             <p className="setup-note">Setup {setupProgress.percent}% eingerichtet · fehlende Punkte bei Bedarf ergänzen.</p>
           )}
         </div>
         <div className="analysis-start__actions">
-          {form.hmipRoutingEnabled && analysis?.checks.some((check) => check.id === "routing-topology") && (
-            <button
-              type="button"
-              className="routing-entry-button"
-              onClick={() => void openRoutingGraphic(false)}
-              disabled={loading || routingTopologyLoading}
-            >
-              Routing-Grafik öffnen
-            </button>
-          )}
           <button className="analyze-button analyze-button-compact" disabled={loading}>
-            {loading ? "Analyse läuft ..." : analysis ? "Neu analysieren" : "Analyse starten"}
+            {loading ? "Analyse läuft ..." : "Analyse starten"}
           </button>
         </div>
         {error && <p className="error">{error}</p>}
-      </form>
+      </form>}
 
       {loading && (
         <section className="analysis-loader panel" aria-live="polite" aria-label="Analyse läuft">
@@ -4374,16 +4363,34 @@ function App() {
         </section>
       )}
 
-      {analysis && summary && (
+      {analysis && summary && !loading && (
         <section className="results">
           <div className="results__header">
             <div>
               <p className="eyebrow">Ergebnis</p>
               <h2>Analyse vom {new Date(analysis.generatedAt).toLocaleString("de-DE")}</h2>
+              <span className={`data-age data-age-${formatDataAge(analysis.generatedAt).state}`}>
+                {formatDataAge(analysis.generatedAt).label}
+              </span>
             </div>
-            <div className="score">
-              <strong>{analysis.checks.length}</strong>
-              <span>Prüfpunkte</span>
+            <div className="results__header-actions">
+              {form.hmipRoutingEnabled && analysis.checks.some((check) => check.id === "routing-topology") && (
+                <button
+                  type="button"
+                  className="routing-entry-button"
+                  onClick={() => void openRoutingGraphic(false)}
+                  disabled={loading || routingTopologyLoading}
+                >
+                  Routing-Grafik
+                </button>
+              )}
+              <button type="button" className="analyze-button analyze-button-compact" onClick={() => void runAnalysis()} disabled={loading}>
+                Neu analysieren
+              </button>
+              <div className="score">
+                <strong>{analysis.checks.length}</strong>
+                <span>Prüfpunkte</span>
+              </div>
             </div>
           </div>
 
@@ -4453,7 +4460,7 @@ function App() {
                   </details>
                 </div>
               ) : (
-                <div className="metric-grid">
+                <div className="system-metric-groups">
                   {(() => {
                   const history = analysis.systemDashboard.history ?? [];
                   const timeLabels = historyTimeLabels(history);
@@ -4461,8 +4468,9 @@ function App() {
                   const temperatureMin = temperatureValues.length ? Math.floor(Math.min(...temperatureValues) - 2) : 0;
                   const temperatureMax = temperatureValues.length ? Math.ceil(Math.max(...temperatureValues) + 2) : 100;
 
-                  return [
+                  const metrics = [
                   {
+                    group: "performance",
                     label: "CPU",
                     value: formatCpu(analysis.systemDashboard.cpu),
                     hint: "Systemlast der CCU/RaspberryMatic.",
@@ -4474,6 +4482,7 @@ function App() {
                     timeLabels
                   },
                   {
+                    group: "performance",
                     label: "RAM",
                     value: formatMemory(analysis.systemDashboard.memory),
                     hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
@@ -4485,6 +4494,7 @@ function App() {
                     timeLabels
                   },
                   {
+                    group: "performance",
                     label: "Temperatur",
                     value: formatTemperature(analysis.systemDashboard.temperature),
                     hint: analysis.systemDashboard.temperature ? "CPU-/Systemtemperatur der Zentrale." : "Auf der CCU das aktualisierte WebUI-Script einmal ausführen.",
@@ -4496,6 +4506,7 @@ function App() {
                     timeLabels
                   },
                   {
+                    group: "storage",
                     label: "Lokaler Speicher",
                     value: formatDisk(analysis.systemDashboard.disk),
                     hint: "Interner Speicherbereich der CCU/RaspberryMatic.",
@@ -4510,6 +4521,7 @@ function App() {
                     })()
                   },
                   {
+                    group: "storage",
                     label: "USB/Backup-Speicher",
                     value: formatDisk(analysis.systemDashboard.backupDisk),
                     hint: "Speicherplatz des Backup-Mediums, falls ein USB-Stick erkannt wurde.",
@@ -4524,6 +4536,7 @@ function App() {
                     })()
                   },
                   {
+                    group: "storage",
                     label: "Backups",
                     value: formatBackups(
                       analysis.systemDashboard.backups,
@@ -4540,13 +4553,27 @@ function App() {
                     } : undefined
                   },
                   {
+                    group: "operation",
                     label: "Uptime",
                     value: formatUptime(analysis.systemDashboard.uptime),
                     hint: "Laufzeit seit dem letzten Neustart.",
                     help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
                   }
                 ];
-                  })().map((metric) => (
+                  const groups = [
+                    { id: "performance", title: "Leistung", description: "CPU, Arbeitsspeicher und Temperatur" },
+                    { id: "storage", title: "Speicher & Backups", description: "Interner Speicher, Backup-Medium und Datensicherungen" },
+                    { id: "operation", title: "Betrieb", description: "Laufzeit und Neustarts der Zentrale" }
+                  ];
+
+                  return groups.map((group) => (
+                    <section className={`system-metric-group system-metric-group-${group.id}`} key={group.id}>
+                      <header>
+                        <strong>{group.title}</strong>
+                        <span>{group.description}</span>
+                      </header>
+                      <div className="metric-grid">
+                        {metrics.filter((metric) => metric.group === group.id).map((metric) => (
                   <div
                     className={`metric-card ${metric.usageStatus ? `metric-card-${metric.usageStatus}` : ""} ${metric.onClick ? "metric-card-clickable" : ""}`}
                     key={metric.label}
@@ -4602,7 +4629,11 @@ function App() {
                       </div>
                     )}
                   </div>
-                  ))}
+                        ))}
+                      </div>
+                    </section>
+                  ));
+                  })()}
                 </div>
               )}
             </div>
@@ -4760,7 +4791,15 @@ function App() {
             <div className="check-detail">
               {analysis.checks
                 .filter((check) => check.id === activeCheck)
-                .map((check) => (
+                .map((check) => {
+                  const relatedTheme = checkThemes.find((theme) => (theme.checkIds as readonly string[]).includes(check.id));
+                  const relatedChecks = relatedTheme
+                    ? relatedTheme.checkIds
+                      .filter((checkId) => checkId !== check.id)
+                      .map((checkId) => analysis.checks.find((item) => item.id === checkId))
+                      .filter((item): item is AnalysisCheck => Boolean(item))
+                    : [];
+                  return (
                   <article key={check.id}>
                     <div className="detail-title">
                       <span className={`pill status-${check.status}`}>
@@ -4770,6 +4809,63 @@ function App() {
                       <h3>{check.title}</h3>
                     </div>
                     <p className="lead">{check.summary}</p>
+                    {relatedTheme?.id === "foundation" && (
+                      <div className="foundation-chain" aria-label="Prüfkette der CCU-Datenbasis">
+                        {relatedTheme.checkIds.map((checkId, index) => {
+                          const foundationCheck = analysis.checks.find((item) => item.id === checkId);
+                          if (!foundationCheck) return null;
+                          return (
+                            <button
+                              type="button"
+                              className={`status-${foundationCheck.status} ${foundationCheck.id === check.id ? "is-active" : ""}`}
+                              key={foundationCheck.id}
+                              onClick={() => setActiveCheck(foundationCheck.id)}
+                            >
+                              <span>{index + 1}</span>
+                              <div>
+                                <strong>{foundationCheck.title}</strong>
+                                <small>{statusLabel[foundationCheck.status]}</small>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {relatedChecks.length > 0 && (
+                      <nav className="related-checks" aria-label={`Verwandte Prüfpunkte zu ${check.title}`}>
+                        <span>Gehört zusammen mit</span>
+                        <div>
+                          {relatedChecks.map((relatedCheck) => (
+                            <button
+                              type="button"
+                              className={`status-${relatedCheck.status}`}
+                              key={relatedCheck.id}
+                              onClick={() => setActiveCheck(relatedCheck.id)}
+                            >
+                              {getStatusIcon(relatedCheck.status, "related-check-icon")}
+                              {relatedCheck.title}
+                            </button>
+                          ))}
+                        </div>
+                      </nav>
+                    )}
+                    <div className="check-context-actions">
+                      {["ccu-connection", "xml-api", "ccu-masterdata", "system-health"].includes(check.id) && (
+                        <button type="button" onClick={() => setCurrentPage("setup")}>Setup öffnen</button>
+                      )}
+                      {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && (
+                        <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
+                      )}
+                      {check.id === "routing-topology" && (
+                        <button type="button" onClick={() => void openRoutingGraphic(false)}>Routing-Grafik öffnen</button>
+                      )}
+                      {check.id === "logs" && (
+                        <button type="button" onClick={() => setCurrentPage("logs")}>Logs und KI-Auswertung öffnen</button>
+                      )}
+                      {check.id === "notifications" && (
+                        <button type="button" onClick={() => setCurrentPage("settings")}>Benachrichtigungen einstellen</button>
+                      )}
+                    </div>
 
                     {check.id === "routing-topology" && (
                       <RoutingTopologyView
@@ -4821,7 +4917,8 @@ function App() {
                       ))}
                     </ul>
                   </article>
-                ))}
+                  );
+                })}
             </div>
           </div>
         </section>
