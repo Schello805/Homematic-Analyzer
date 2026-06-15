@@ -14,7 +14,7 @@ import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase }
 import type { SetupDefaults } from "./localDatabase.js";
 import { resolveNetworkHostnames } from "./networkIdentity.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
-import { checkRepositoryRelease } from "./releases.js";
+import { checkOpenCcuRelease, checkRepositoryRelease, isOpenCcuFamilyProduct } from "./releases.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
@@ -1159,7 +1159,14 @@ app.post("/api/analyze", async (request, response) => {
       telegram: { enabled: parsed.data.telegramEnabled },
       events: { critical: true }
     });
-    const releaseCheck = notificationSettings.events?.releases ? await checkRepositoryRelease(appVersion) : undefined;
+    const releaseCheck = await checkRepositoryRelease(appVersion);
+    const installedCentralVersion = stringFromRecord(latestCollector?.system, "centralVersion")
+      ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
+    const centralProduct = stringFromRecord(latestCollector?.system, "centralProduct")
+      ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
+    const centralReleaseCheck = isOpenCcuFamilyProduct(centralProduct)
+      ? await checkOpenCcuRelease(installedCentralVersion, centralProduct)
+      : undefined;
     const snifferSnapshot = parsed.data.snifferEnabled === false
       ? undefined
       : parsed.data.snifferPort
@@ -1174,7 +1181,7 @@ app.post("/api/analyze", async (request, response) => {
         return remoteAddress ? [remoteAddress] : [];
       }) ?? [];
     const networkHostnames = await resolveNetworkHostnames(remoteAddresses);
-    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames);
+    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames, centralReleaseCheck);
     const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
     const notificationResult = parsed.data.notify === false
       ? {
@@ -1445,6 +1452,41 @@ app.get("/api/system/update-status", async (_request, response) => {
           : `Installierte Version ${releaseCheck.currentVersion}. Keine neuere Version auf GitHub gefunden.`,
     url: releaseCheck.url ?? "https://github.com/Schello805/Homematic-Analyzer",
     checkedAt: releaseCheck.checkedAt
+  });
+});
+
+app.get("/api/system/central-update-status", async (_request, response) => {
+  const installedVersion = stringFromRecord(latestCollector?.system, "centralVersion")
+    ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
+  const product = stringFromRecord(latestCollector?.system, "centralProduct")
+    ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
+
+  if (!isOpenCcuFamilyProduct(product)) {
+    response.json({
+      state: "unknown",
+      label: "Zentralen-Update nicht geprüft",
+      detail: `${product ?? "Die erkannte Zentralensoftware"} wird nicht mit OpenCCU-Releases verglichen.`,
+      url: "https://github.com/OpenCCU/OpenCCU/releases"
+    });
+    return;
+  }
+
+  const releaseCheck = await checkOpenCcuRelease(installedVersion, product);
+  response.json({
+    state: releaseCheck.error || !releaseCheck.installedVersion
+      ? "unknown"
+      : releaseCheck.available
+        ? "update"
+        : "current",
+    label: releaseCheck.available ? "OpenCCU-Update verfügbar" : releaseCheck.error ? "OpenCCU-Check nicht möglich" : !releaseCheck.installedVersion ? "OpenCCU-Version wird ermittelt" : "OpenCCU aktuell",
+    detail: releaseCheck.error
+      ? releaseCheck.error
+      : !releaseCheck.installedVersion
+        ? `Verfügbar: ${releaseCheck.latestVersion ?? "unbekannt"}. Der Collector liefert die installierte Version mit dem nächsten Lauf.`
+        : releaseCheck.available
+          ? `Installiert: ${releaseCheck.installedVersion}. Neu: ${releaseCheck.latestVersion}. Vor dem Update ein Backup erstellen.`
+          : `Installiert: ${releaseCheck.installedVersion}. Kein neuerer OpenCCU-Release gefunden.`,
+    url: releaseCheck.url
   });
 });
 

@@ -251,6 +251,53 @@ test("kennzeichnet eine nicht auflösbare lokale IP ohne Vermutung", () => {
   assert.doesNotMatch(externalAccess?.evidence[0]?.detail ?? "", /ioBroker|Home Assistant/);
 });
 
+test("zeigt ein verfügbares OpenCCU-Update als Wartungshinweis", () => {
+  const centralRelease = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    {
+      available: true,
+      installedVersion: "3.81.7.20250125",
+      latestVersion: "3.87.6.20260614",
+      product: "OpenCCU",
+      url: "https://github.com/OpenCCU/OpenCCU/releases/tag/3.87.6.20260614",
+      checkedAt: "2026-06-15T10:00:00.000Z"
+    }
+  ).find((check) => check.id === "central-release");
+
+  assert.equal(centralRelease?.status, "warning");
+  assert.match(centralRelease?.summary ?? "", /3\.87\.6\.20260614/);
+  assert.match(centralRelease?.evidence[0]?.detail ?? "", /3\.81\.7\.20250125/);
+  assert.match(centralRelease?.recommendation ?? "", /Backup/);
+});
+
+test("rät ohne installierte Zentralenversion kein Update", () => {
+  const centralRelease = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    {
+      available: false,
+      latestVersion: "3.87.6.20260614",
+      url: "https://github.com/OpenCCU/OpenCCU/releases",
+      checkedAt: "2026-06-15T10:00:00.000Z"
+    }
+  ).find((check) => check.id === "central-release");
+
+  assert.equal(centralRelease?.status, "improvement");
+  assert.match(centralRelease?.summary ?? "", /installierte Zentralenversion fehlt/);
+  assert.match(centralRelease?.recommendation ?? "", /Collector/);
+});
+
 test("blendet die HmIP-Routing-Prüfung nur bei aktivierter Funktion ein", () => {
   const disabledChecks = createAnalysis({});
   const enabledChecks = createAnalysis({ hmipRoutingEnabled: true });

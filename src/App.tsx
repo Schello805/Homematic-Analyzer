@@ -417,7 +417,7 @@ const checkThemes = [
     id: "maintenance",
     title: "Wartung & Updates",
     description: "Geräte-Firmware und neue Analyzer-Versionen",
-    checkIds: ["firmware-overview", "app-release"]
+    checkIds: ["firmware-overview", "central-release", "app-release"]
   },
   {
     id: "operations",
@@ -1526,6 +1526,7 @@ function App() {
     detail: "GitHub wird nach der neuesten Version gefragt.",
     url: repositoryUrl
   });
+  const [centralUpdateStatus, setCentralUpdateStatus] = useState<UpdateStatus | null>(null);
 
   const pageLabels = {
     analysis: "Analyse",
@@ -2553,6 +2554,7 @@ function App() {
     let updateCheckInFlight = false;
     let lastUpdateCheckAt = 0;
     let lastNotifiedUpdateDetail = "";
+    let lastNotifiedCentralUpdateDetail = "";
     const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
     const updateCheckCooldownMs = 30 * 1000;
 
@@ -2618,13 +2620,18 @@ function App() {
       lastUpdateCheckAt = now;
 
       try {
-        const response = await fetch(`/api/system/update-status?checkedAt=${now}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("Lokale API nicht erreichbar");
-        const status = (await response.json()) as UpdateStatus;
+        const [appResponse, centralResponse] = await Promise.all([
+          fetch(`/api/system/update-status?checkedAt=${now}`, { cache: "no-store" }),
+          fetch(`/api/system/central-update-status?checkedAt=${now}`, { cache: "no-store" })
+        ]);
+        if (!appResponse.ok) throw new Error("Lokale API nicht erreichbar");
+        const status = (await appResponse.json()) as UpdateStatus;
+        const centralStatus = centralResponse.ok ? await centralResponse.json() as UpdateStatus : null;
 
         if (!isActive) return;
 
         setUpdateStatus(status);
+        setCentralUpdateStatus(centralStatus);
         if (status.state === "update" && status.detail !== lastNotifiedUpdateDetail) {
           lastNotifiedUpdateDetail = status.detail;
           showToast({
@@ -2635,6 +2642,16 @@ function App() {
         } else if (status.state !== "update") {
           lastNotifiedUpdateDetail = "";
         }
+        if (centralStatus?.state === "update" && centralStatus.detail !== lastNotifiedCentralUpdateDetail) {
+          lastNotifiedCentralUpdateDetail = centralStatus.detail;
+          showToast({
+            type: "warning",
+            title: "OpenCCU-Update verfügbar",
+            message: centralStatus.detail
+          });
+        } else if (centralStatus?.state !== "update") {
+          lastNotifiedCentralUpdateDetail = "";
+        }
       } catch {
         if (!isActive) return;
 
@@ -2644,6 +2661,7 @@ function App() {
           detail: "Der lokale Analyzer konnte den Update-Status gerade nicht laden. Die App funktioniert trotzdem.",
           url: repositoryUrl
         });
+        setCentralUpdateStatus(null);
         showToast({
           type: "warning",
           title: "Update-Check nicht möglich",
@@ -2701,12 +2719,14 @@ function App() {
     void loadPreviousUpdateRun();
     void loadUsbPorts(false);
     const updateCheckInterval = window.setInterval(() => void checkForUpdates(), updateCheckIntervalMs);
+    const centralVersionRetry = window.setTimeout(() => void checkForUpdates(), 90 * 1000);
     document.addEventListener("visibilitychange", checkForUpdatesWhenVisible);
     window.addEventListener("focus", checkForUpdatesWhenVisible);
 
     return () => {
       isActive = false;
       window.clearInterval(updateCheckInterval);
+      window.clearTimeout(centralVersionRetry);
       document.removeEventListener("visibilitychange", checkForUpdatesWhenVisible);
       window.removeEventListener("focus", checkForUpdatesWhenVisible);
     };
@@ -5736,6 +5756,12 @@ function App() {
           <span>{updateStatus.label}</span>
           <small>{updateStatus.detail}</small>
         </a>
+        {centralUpdateStatus?.state === "update" && (
+          <a className="update-badge update-update" href={centralUpdateStatus.url} target="_blank" rel="noreferrer">
+            <span>{centralUpdateStatus.label}</span>
+            <small>{centralUpdateStatus.detail}</small>
+          </a>
+        )}
         {updateStatus.state === "update" && (
           <button type="button" className="footer-update-button" onClick={requestAppUpdate} disabled={isUpdateRunning}>
             {isUpdateRunning ? "Update läuft …" : "Update starten"}

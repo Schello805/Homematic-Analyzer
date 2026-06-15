@@ -347,3 +347,13 @@ export type ReleaseCheck = {
   checkedAt: string;
   error?: string;
 };
+
+export type CentralReleaseCheck = {
+  available: boolean;
+  installedVersion?: string;
+  latestVersion?: string;
+  product?: string;
+  url: string;
+  checkedAt: string;
+  error?: string;
+};

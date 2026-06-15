@@ -1,9 +1,12 @@
-import type { ReleaseCheck } from "./types.js";
+import type { CentralReleaseCheck, ReleaseCheck } from "./types.js";
 
 const repositoryReleasesUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/releases?per_page=1";
 const repositoryTagsUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/tags?per_page=1";
 const repositoryPackageUrl = "https://raw.githubusercontent.com/Schello805/Homematic-Analyzer/main/package.json";
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
+const openCcuLatestReleaseApiUrl = "https://api.github.com/repos/OpenCCU/OpenCCU/releases/latest";
+const openCcuLatestReleaseUrl = "https://github.com/OpenCCU/OpenCCU/releases/latest";
+const openCcuReleasesUrl = "https://github.com/OpenCCU/OpenCCU/releases";
 const releaseCacheDurationMs = 10 * 60 * 1000;
 
 type ReleaseCandidate = {
@@ -14,6 +17,8 @@ type ReleaseCandidate = {
 
 let cachedCandidate: ReleaseCandidate | undefined;
 let cachedAt = 0;
+let cachedOpenCcuCandidate: { version: string; url: string } | undefined;
+let cachedOpenCcuAt = 0;
 
 function normalizeVersion(version: string | undefined) {
   return version?.replace(/^v/i, "").trim();
@@ -23,7 +28,7 @@ function versionParts(version: string | undefined) {
   return normalizeVersion(version)?.split(".").map((part) => Number(part.replace(/\D.*$/, ""))) ?? [];
 }
 
-function compareVersions(left: string | undefined, right: string | undefined) {
+export function compareVersions(left: string | undefined, right: string | undefined) {
   const leftParts = versionParts(left);
   const rightParts = versionParts(right);
   const length = Math.max(leftParts.length, rightParts.length);
@@ -35,6 +40,16 @@ function compareVersions(left: string | undefined, right: string | undefined) {
   }
 
   return 0;
+}
+
+export function normalizeCentralVersion(version: string | undefined): string | undefined {
+  const match = version?.match(/\d+\.\d+\.\d+\.\d+/);
+  return match?.[0];
+}
+
+export function isOpenCcuFamilyProduct(product: string | undefined): boolean {
+  if (!product?.trim()) return true;
+  return /\b(openccu|raspmatic|raspberrymatic)\b/i.test(product);
 }
 
 async function fetchJson(url: string, accept: string): Promise<unknown> {
@@ -142,4 +157,68 @@ export async function checkRepositoryRelease(currentVersion: string): Promise<Re
       ? `GitHub konnte nicht geprüft werden (${errors[0]}).`
       : "GitHub lieferte keine Versionsinformation."
   };
+}
+
+async function readOpenCcuCandidate() {
+  try {
+    const release = await fetchJson(openCcuLatestReleaseApiUrl, "application/vnd.github+json") as { tag_name?: string; html_url?: string };
+    const version = normalizeCentralVersion(release.tag_name);
+    if (version) return { version, url: release.html_url ?? openCcuReleasesUrl };
+  } catch {
+  }
+
+  const response = await fetch(openCcuLatestReleaseUrl, {
+    headers: { "User-Agent": "Homematic-Analyzer-OpenCCU-Release-Check" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const version = normalizeCentralVersion(response.url);
+  return version ? { version, url: response.url } : undefined;
+}
+
+export async function checkOpenCcuRelease(installedVersion?: string, product?: string): Promise<CentralReleaseCheck> {
+  const checkedAt = new Date().toISOString();
+  const normalizedInstalledVersion = normalizeCentralVersion(installedVersion);
+
+  try {
+    let candidate = cachedOpenCcuCandidate;
+    if (!candidate || Date.now() - cachedOpenCcuAt >= releaseCacheDurationMs) {
+      candidate = await readOpenCcuCandidate();
+      if (candidate) {
+        cachedOpenCcuCandidate = candidate;
+        cachedOpenCcuAt = Date.now();
+      }
+    }
+
+    if (!candidate) {
+      return {
+        available: false,
+        installedVersion: normalizedInstalledVersion,
+        product,
+        url: openCcuReleasesUrl,
+        checkedAt,
+        error: "OpenCCU lieferte keine Versionsinformation."
+      };
+    }
+
+    return {
+      available: Boolean(normalizedInstalledVersion && compareVersions(candidate.version, normalizedInstalledVersion) > 0),
+      installedVersion: normalizedInstalledVersion,
+      latestVersion: candidate.version,
+      product,
+      url: candidate.url,
+      checkedAt
+    };
+  } catch (error) {
+    return {
+      available: false,
+      installedVersion: normalizedInstalledVersion,
+      product,
+      url: openCcuReleasesUrl,
+      checkedAt,
+      error: error instanceof Error ? `OpenCCU konnte nicht geprüft werden (${error.message}).` : "OpenCCU konnte nicht geprüft werden."
+    };
+  }
 }

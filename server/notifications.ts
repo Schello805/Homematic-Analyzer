@@ -25,6 +25,7 @@ export function shouldNotifyCheck(check: AnalysisCheck, settings: NotificationSe
   if (check.id === "external-access" && events.externalAccess && check.status !== "ok" && check.status !== "unavailable") return true;
   if (check.id === "signal-strength" && events.sniffer && check.status === "critical") return true;
   if (check.id === "app-release" && events.releases && check.status === "warning") return true;
+  if (check.id === "central-release" && events.releases && check.status === "warning") return true;
 
   return false;
 }

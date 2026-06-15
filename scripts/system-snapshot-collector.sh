@@ -185,6 +185,18 @@ MEMORY_VALUE="$(value_or_empty "free -m || top -bn1 | grep '^Mem:' | head -n 1")
 DISK_VALUE="$(value_or_empty "df -h /usr/local 2>/dev/null || df -h / 2>/dev/null || df -h | head -n 2")"
 TEMP_VALUE="$(value_or_empty "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'")"
 CPU_VALUE="$(read_cpu_percent)"
+CENTRAL_VERSION_VALUE=""
+CENTRAL_PRODUCT_VALUE=""
+if [ -r /VERSION ]; then
+  CENTRAL_VERSION_VALUE="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]*=[[:space:]]*[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /VERSION 2>/dev/null | head -n 1 || true)"
+  CENTRAL_PRODUCT_VALUE="$(sed -n 's/^[[:space:]]*PRODUCT[[:space:]]*=[[:space:]]*[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /VERSION 2>/dev/null | head -n 1 || true)"
+  if [ -z "$CENTRAL_VERSION_VALUE" ]; then
+    CENTRAL_VERSION_VALUE="$(grep -Eo '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' /VERSION 2>/dev/null | head -n 1 || true)"
+  fi
+fi
+if [ -z "$CENTRAL_PRODUCT_VALUE" ] && [ -r /etc/os-release ]; then
+  CENTRAL_PRODUCT_VALUE="$(sed -n 's/^PRETTY_NAME=[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /etc/os-release 2>/dev/null | head -n 1 || true)"
+fi
 for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
   if [ -d "$backup_dir" ]; then
     find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
@@ -351,7 +363,9 @@ fi
   printf '    "memory": "%s",\n' "$MEMORY_VALUE"
   printf '    "disk": "%s",\n' "$DISK_VALUE"
   printf '    "temperatureRaw": "%s",\n' "$TEMP_VALUE"
-  printf '    "cpu": "%s"\n' "$CPU_VALUE"
+  printf '    "cpu": "%s",\n' "$CPU_VALUE"
+  printf '    "centralVersion": "%s",\n' "$(printf '%s' "$CENTRAL_VERSION_VALUE" | json_escape)"
+  printf '    "centralProduct": "%s"\n' "$(printf '%s' "$CENTRAL_PRODUCT_VALUE" | json_escape)"
   printf '  },\n'
   printf '  "backups": { "count": "%s", "latestPath": "%s", "latestDirectory": "%s", "latestAt": "%s", "disk": "%s", "paths": [\n' \
     "$BACKUP_COUNT" \

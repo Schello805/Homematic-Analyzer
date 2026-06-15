@@ -1,4 +1,4 @@
-import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
+import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CentralReleaseCheck, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
 import { describeKnownService } from "./networkIdentity.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 
@@ -291,7 +291,7 @@ function weakSnifferDevices(devices: SnifferDeviceSummary[], limit = -85): Sniff
     .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
 }
 
-export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot, networkHostnames: Record<string, string> = {}): AnalysisCheck[] {
+export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot, networkHostnames: Record<string, string> = {}, centralRelease?: CentralReleaseCheck): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
@@ -961,8 +961,46 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         url: release.url
       }],
       details: [
-        "Dieser Check bezieht sich auf den Homematic Analyzer selbst.",
-        "Zentralen-Releases für RaspberryMatic/CCU werden separat ergänzt, sobald eine zuverlässige Quelle angebunden ist."
+        "Dieser Check bezieht sich nur auf den Homematic Analyzer selbst.",
+        "Die Zentralensoftware wird im separaten Prüfpunkt „OpenCCU Update“ verglichen."
+      ]
+    });
+  }
+
+  if (centralRelease) {
+    const hasInstalledVersion = Boolean(centralRelease.installedVersion);
+    checks.push({
+      id: "central-release",
+      title: "OpenCCU Update",
+      category: "Wartung",
+      status: centralRelease.available ? "warning" : centralRelease.error || !hasInstalledVersion ? "improvement" : "ok",
+      summary: centralRelease.available
+        ? `Neue OpenCCU-Version verfügbar: ${centralRelease.latestVersion}.`
+        : centralRelease.error
+          ? "Der OpenCCU-Release konnte gerade nicht geprüft werden."
+          : !hasInstalledVersion
+            ? `Aktuell verfügbar: OpenCCU ${centralRelease.latestVersion}. Die installierte Zentralenversion fehlt noch.`
+            : `Die Zentrale ist aktuell (${centralRelease.installedVersion}).`,
+      recommendation: centralRelease.available
+        ? "Release-Hinweise öffnen, Backup erstellen und das Zentralen-Update anschließend bewusst über die CCU-WebUI installieren."
+        : centralRelease.error
+          ? "Internetverbindung des Analyzer-Systems prüfen und die Analyse später erneut starten."
+          : !hasInstalledVersion
+            ? "Den aktuellen Shell-Collector einmal abwarten oder erneut ausführen. Er liest die installierte Version belegbar aus `/VERSION` der Zentrale."
+            : "Kein Handlungsbedarf.",
+      access: ["ccu", "ssh"],
+      evidence: [{
+        source: "OpenCCU Release",
+        detail: hasInstalledVersion
+          ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
+          : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde vom Collector noch nicht geliefert.`,
+        timestamp: centralRelease.checkedAt,
+        url: centralRelease.url
+      }],
+      details: [
+        "Die installierte Version wird direkt auf der CCU aus `/VERSION` gelesen.",
+        "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",
+        "Der Analyzer installiert Zentralen-Updates niemals automatisch."
       ]
     });
   }
