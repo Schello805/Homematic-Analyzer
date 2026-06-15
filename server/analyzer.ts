@@ -1,4 +1,5 @@
 import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
+import { describeKnownService } from "./networkIdentity.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 
 const now = () => new Date().toISOString();
@@ -143,9 +144,11 @@ const ccuServiceLabels: Record<string, string> = {
 
 type ExternalAccessCandidate = {
   host: string;
+  hostname?: string;
   count: number;
   ports: string[];
   isPublic: boolean;
+  states: string[];
   lines: string[];
 };
 
@@ -178,10 +181,10 @@ function analyzeLogLines(logs: string[] | undefined): LogAnalysis {
   };
 }
 
-function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?: string): ExternalAccessCandidate[] {
+function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?: string, hostnames: Record<string, string> = {}): ExternalAccessCandidate[] {
   const lines = collector?.network?.connections ?? [];
   const ownHost = normalizeHostForSecurity(ccuHost);
-  const grouped = new Map<string, { ports: Set<string>; lines: string[] }>();
+  const grouped = new Map<string, { ports: Set<string>; states: Set<string>; lines: string[] }>();
 
   for (const line of lines) {
     const endpointMatches = [...line.matchAll(/((?:\d{1,3}\.){3}\d{1,3}|localhost):(\d{1,5})/g)];
@@ -192,8 +195,10 @@ function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?
     if (!localPort || !remoteHost || !ccuServicePorts.has(localPort)) continue;
     if (remoteHost === "0.0.0.0" || remoteHost === "127.0.0.1" || remoteHost === "localhost" || remoteHost === ownHost) continue;
 
-    const current = grouped.get(remoteHost) ?? { ports: new Set<string>(), lines: [] };
+    const current = grouped.get(remoteHost) ?? { ports: new Set<string>(), states: new Set<string>(), lines: [] };
     current.ports.add(localPort);
+    const rawState = line.match(/\b(ESTAB|ESTABLISHED|TIME_WAIT|CLOSE_WAIT|SYN_SENT|SYN_RECV|FIN_WAIT1|FIN_WAIT2|LAST_ACK)\b/i)?.[1]?.toUpperCase();
+    if (rawState) current.states.add(rawState === "ESTAB" ? "ESTABLISHED" : rawState);
     current.lines.push(line);
     grouped.set(remoteHost, current);
   }
@@ -201,9 +206,11 @@ function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?
   return [...grouped.entries()]
     .map(([host, value]) => ({
       host,
+      hostname: hostnames[host],
       count: value.lines.length,
       ports: [...value.ports].sort((firstPort, secondPort) => Number(firstPort) - Number(secondPort)),
       isPublic: !isLocalOrPrivateHost(host),
+      states: [...value.states],
       lines: value.lines.slice(0, 4)
     }))
     .sort((firstCandidate, secondCandidate) => secondCandidate.count - firstCandidate.count);
@@ -284,7 +291,7 @@ function weakSnifferDevices(devices: SnifferDeviceSummary[], limit = -85): Sniff
     .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
 }
 
-export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot): AnalysisCheck[] {
+export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot, networkHostnames: Record<string, string> = {}): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
@@ -296,7 +303,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     : undefined;
   const collectorIsFresh = collectorAgeMinutes !== undefined && Number.isFinite(collectorAgeMinutes) && collectorAgeMinutes <= 3;
   const currentCollector = collectorIsFresh ? collector : undefined;
-  const externalAccesses = parseExternalAccesses(currentCollector, config.ccuHost);
+  const externalAccesses = parseExternalAccesses(currentCollector, config.ccuHost, networkHostnames);
   const publicExternalAccesses = externalAccesses.filter((access) => access.isPublic);
   const busyExternalAccesses = externalAccesses.filter((access) => access.count >= 8);
   const masterdataDeviceCount = masterdata?.deviceCount ?? masterdata?.devices?.length ?? 0;
@@ -844,7 +851,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
     },
     {
       id: "external-access",
-      title: "Externe Zugriffe auf die CCU",
+      title: "Zugriffe anderer Systeme auf die CCU",
       category: "Anbindungen",
       status: currentCollector
         ? publicExternalAccesses.length > 0
@@ -866,7 +873,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
               ? externalAccesses.length === 1
                 ? "1 lokales System greift aktuell auf CCU-Dienste zu."
                 : `${externalAccesses.length} lokale Systeme greifen aktuell auf CCU-Dienste zu.`
-              : "Keine aktiven externen Zugriffe auf typische CCU-Dienste gefunden."
+              : "Keine aktiven Zugriffe anderer Systeme auf typische CCU-Dienste gefunden."
         : hasSsh
           ? "Der Check ist vorbereitet; es liegen aber noch keine Verbindungsdaten vom Collector vor."
           : "Ohne SSH oder Collector können externe Zugriffe nicht belegbar erkannt werden.",
@@ -882,16 +889,25 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           ? "Collector-Verbindung erneuern. Veraltete Verbindungsdaten werden bewusst nicht bewertet."
           : "Collector-Script ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
       access: ["ssh", "external"],
-      evidence: externalAccesses.flatMap((access) => [
-        {
-          source: "Aktive Verbindung",
-          detail: `${access.host}: ${access.count} Verbindung(en) zu ${access.ports.map((port) => ccuServiceLabels[port] ?? `Port ${port}`).join(", ")}.`,
+      evidence: externalAccesses.map((access) => {
+        const serviceHint = describeKnownService(access.hostname);
+        const displayName = access.hostname ? `${access.hostname} (${access.host})` : access.host;
+        const networkType = access.isPublic ? "öffentliche Adresse" : "Gerät im Heimnetz";
+        const stateText = access.states.includes("ESTABLISHED")
+          ? "mindestens eine Verbindung ist gerade aktiv"
+          : access.states.length > 0
+            ? `Status: ${access.states.join(", ")}`
+            : "Verbindungsstatus nicht eindeutig";
+
+        return {
+          source: access.isPublic ? "Öffentliche Gegenstelle" : "Gerät im Heimnetz",
+          detail: `${displayName}: ${access.count} Verbindung(en) zu ${access.ports.map((port) => ccuServiceLabels[port] ?? `Port ${port}`).join(", ")} · ${networkType} · ${stateText}.${serviceHint ? ` ${serviceHint}` : access.hostname ? " Der Gerätename wurde per lokaler Namensauflösung ermittelt." : " Ein Gerätename konnte im lokalen Netz nicht aufgelöst werden."}`,
           timestamp: collector?.collectedAt ?? now()
-        },
-        ...access.lines.map((line) => ({ source: "Verbindungszeile", detail: line, timestamp: collector?.collectedAt ?? now() }))
-      ]).slice(0, 10),
+        };
+      }).slice(0, 10),
       details: [
-        "Dieser Check rät nicht, ob eine IP ioBroker oder Home Assistant ist.",
+        "Die App versucht den Gerätenamen über die lokale Namensauflösung des Analyzer-Systems zu ermitteln. Das funktioniert nur, wenn Router oder DNS-Server einen Namen kennen.",
+        "Nur wenn ein aufgelöster Gerätename eindeutig Begriffe wie ioBroker oder Home Assistant enthält, wird dies als vorsichtiger Hinweis genannt.",
         "Er zeigt aktive Gegenstellen zu typischen CCU-Ports wie WebUI, XML-API, BidCos-RPC und HmIP-RPC.",
         "Viele gleichzeitige Verbindungen sind ein Hinweis, aber erst zusammen mit Logs oder hoher Last ein belastbarer Fehler.",
         "Öffentliche Gegenstellen sind kritisch: Die CCU sollte nicht per Portforwarding erreichbar sein."

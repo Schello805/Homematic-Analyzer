@@ -12,6 +12,7 @@ import { decodeBase64Lines } from "./collectorPayload.js";
 import { createConfigurationBackup, restoreConfigurationBackup } from "./configurationBackup.js";
 import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import type { SetupDefaults } from "./localDatabase.js";
+import { resolveNetworkHostnames } from "./networkIdentity.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { checkRepositoryRelease } from "./releases.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
@@ -1166,7 +1167,14 @@ app.post("/api/analyze", async (request, response) => {
         : latestSnifferSnapshot;
     latestSnifferSnapshot = snifferSnapshot;
 
-    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot);
+    const remoteAddresses = latestCollector?.network?.connections
+      ?.flatMap((line) => {
+        const endpoints = [...line.matchAll(/((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})/g)];
+        const remoteAddress = endpoints[1]?.[1];
+        return remoteAddress ? [remoteAddress] : [];
+      }) ?? [];
+    const networkHostnames = await resolveNetworkHostnames(remoteAddresses);
+    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames);
     const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
     const notificationResult = parsed.data.notify === false
       ? {

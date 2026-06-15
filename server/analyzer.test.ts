@@ -202,6 +202,55 @@ test("bewertet Wochen alte Collector-Logs nicht als aktuellen Zustand", () => {
   assert.equal(externalAccess?.status, "unavailable");
 });
 
+test("erklärt aktive CCU-Verbindungen mit lokal aufgelöstem Gerätenamen", () => {
+  const collector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date().toISOString(),
+    network: {
+      connections: [
+        "tcp 0 0 192.168.1.22:2010 192.168.1.78:55964 ESTABLISHED 1541/lighttpd",
+        "tcp 0 0 192.168.1.22:8181 192.168.1.78:55965 ESTABLISHED 1541/lighttpd"
+      ]
+    }
+  };
+
+  const externalAccess = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    collector,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    { "192.168.1.78": "iobroker.fritz.box" }
+  ).find((check) => check.id === "external-access");
+
+  assert.equal(externalAccess?.title, "Zugriffe anderer Systeme auf die CCU");
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /iobroker\.fritz\.box \(192\.168\.1\.78\)/);
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerätename deutet auf ioBroker hin/);
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /HmIP-RPC/);
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /XML-API\/ReGa/);
+  assert.equal(externalAccess?.evidence.some((evidence) => evidence.source === "Verbindungszeile"), false);
+});
+
+test("kennzeichnet eine nicht auflösbare lokale IP ohne Vermutung", () => {
+  const collector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date().toISOString(),
+    network: {
+      connections: ["tcp 0 0 192.168.1.22:80 192.168.1.90:40000 ESTABLISHED 1541/lighttpd"]
+    }
+  };
+
+  const externalAccess = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    collector
+  ).find((check) => check.id === "external-access");
+
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerät im Heimnetz/);
+  assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerätename konnte im lokalen Netz nicht aufgelöst werden/);
+  assert.doesNotMatch(externalAccess?.evidence[0]?.detail ?? "", /ioBroker|Home Assistant/);
+});
+
 test("blendet die HmIP-Routing-Prüfung nur bei aktivierter Funktion ein", () => {
   const disabledChecks = createAnalysis({});
   const enabledChecks = createAnalysis({ hmipRoutingEnabled: true });
