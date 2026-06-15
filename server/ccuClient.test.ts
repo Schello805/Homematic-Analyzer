@@ -75,3 +75,25 @@ test("verwirft XML-API-Platzhalter statt sie als dBm anzuzeigen", () => {
   assert.equal(devices[0].rssiDevice, undefined);
   assert.equal(devices[0].rssiPeer, undefined);
 });
+
+test("verwirft 0 dBm als ungültigen RSSI-Platzhalter", () => {
+  const devices = collectDevices({
+    stateList: {
+      device: {
+        name: "HmIP Gerät mit Nullwert",
+        address: "000A1B2C3D4E88",
+        type: "HmIP-SWDO",
+        channel: {
+          address: "000A1B2C3D4E88:0",
+          datapoint: [
+            { name: "HmIP-RF.000A1B2C3D4E88:0.RSSI_DEVICE", type: "RSSI_DEVICE", value: "0" },
+            { name: "HmIP-RF.000A1B2C3D4E88:0.RSSI_PEER", type: "RSSI_PEER", value: "0" }
+          ]
+        }
+      }
+    }
+  });
+
+  assert.equal(devices[0].rssiDevice, undefined);
+  assert.equal(devices[0].rssiPeer, undefined);
+});

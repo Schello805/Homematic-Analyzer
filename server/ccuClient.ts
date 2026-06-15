@@ -409,7 +409,7 @@ export function collectDevices(parsedStateList: UnknownRecord): CcuDevice[] {
       return numberValue(datapoint?.value);
     };
     const normalizeRssi = (value?: number) => (
-      value !== undefined && value >= -150 && value <= 0 ? value : undefined
+      value !== undefined && value >= -150 && value < 0 ? value : undefined
     );
     const rssiDevice = normalizeRssi(findNumericDatapoint("RSSI_DEVICE"));
     const rssiPeer = normalizeRssi(findNumericDatapoint("RSSI_PEER"));

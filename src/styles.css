@@ -4077,6 +4077,19 @@ pre {
   font-weight: 700;
 }
 
+.evidence-rssi-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.evidence-rssi-comparison > span {
+  min-width: 0;
+  color: #24324a;
+  font-weight: 680;
+}
+
 .evidence a {
   width: fit-content;
   color: #3478f6;
@@ -5660,6 +5673,9 @@ pre {
 }
 
 .rssi-assessment i {
+  display: inline-grid;
+  min-width: 16px;
+  place-items: center;
   font-style: normal;
   line-height: 1;
 }
@@ -5722,6 +5738,11 @@ pre {
 }
 
 @media (max-width: 640px) {
+  .evidence-rssi-comparison {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .dual-rssi {
     grid-template-columns: 1fr;
   }

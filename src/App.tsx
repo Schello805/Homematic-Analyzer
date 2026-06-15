@@ -807,7 +807,7 @@ function formatDataAge(value?: string) {
 }
 
 function rssiClass(value?: number) {
-  if (value === undefined) return "";
+  if (value === undefined || value >= 0 || value < -150) return "";
   if (value >= -60) return "excellent";
   if (value >= -72) return "good";
   if (value >= -85) return "medium";
@@ -815,11 +815,11 @@ function rssiClass(value?: number) {
 }
 
 function rssiAssessment(value?: number) {
-  if (value === undefined) return { label: "Nicht gemessen", symbol: "○", className: "unknown" };
-  if (value >= -60) return { label: "Sehr gut", symbol: "●", className: "excellent" };
-  if (value >= -72) return { label: "Gut", symbol: "●", className: "good" };
-  if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium" };
-  return { label: "Schwach", symbol: "●", className: "weak" };
+  if (value === undefined || value >= 0 || value < -150) return { label: "Nicht gemessen", symbol: "?", className: "unknown", value: undefined };
+  if (value >= -60) return { label: "Sehr gut", symbol: "👍", className: "excellent", value };
+  if (value >= -72) return { label: "Gut", symbol: "👍", className: "good", value };
+  if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium", value };
+  return { label: "Schwach", symbol: "👎", className: "weak", value };
 }
 
 function RssiAssessment({ value }: { value?: number }) {
@@ -828,8 +828,31 @@ function RssiAssessment({ value }: { value?: number }) {
     <span className={`rssi-assessment ${assessment.className}`}>
       <i aria-hidden="true">{assessment.symbol}</i>
       <strong>{assessment.label}</strong>
-      {value !== undefined && <span>{value} dBm</span>}
+      {assessment.value !== undefined && <span>{assessment.value} dBm</span>}
     </span>
+  );
+}
+
+function parseRssiComparison(detail: string) {
+  const match = detail.match(/^(.+?): Zentrale (-?\d+|nicht verfügbar) dBm, Sniffer (-?\d+|nicht verfügbar) dBm\.$/i);
+  if (!match) return null;
+  const parseValue = (value: string) => value === "nicht verfügbar" ? undefined : Number(value);
+  return {
+    name: match[1],
+    ccu: parseValue(match[2]),
+    sniffer: parseValue(match[3])
+  };
+}
+
+function EvidenceDetail({ item }: { item: Evidence }) {
+  const rssiComparison = item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null;
+  if (!rssiComparison) return <span>{item.detail}</span>;
+
+  return (
+    <div className="evidence-rssi-comparison">
+      <span>{rssiComparison.name}</span>
+      <DualRssiAssessment ccu={rssiComparison.ccu} sniffer={rssiComparison.sniffer} />
+    </div>
   );
 }
 
@@ -4892,7 +4915,7 @@ function App() {
                         {check.evidence.map((item, index) => (
                           <li key={`${item.source}-${index}`}>
                             <strong>{item.source}</strong>
-                            <span>{item.detail}</span>
+                            <EvidenceDetail item={item} />
                             {item.url && (
                               <a href={item.url} target="_blank" rel="noreferrer">
                                 Anleitung öffnen
@@ -5644,7 +5667,7 @@ function App() {
                   {actionModalCheck.evidence.map((item, index) => (
                     <article key={`${item.source}-${index}`}>
                       <strong>{item.source}</strong>
-                      <span>{item.detail}</span>
+                      <EvidenceDetail item={item} />
                     </article>
                   ))}
                   {actionModalCheck.evidence.length === 0 && <p className="muted">Noch keine einzelnen Belege vorhanden.</p>}
