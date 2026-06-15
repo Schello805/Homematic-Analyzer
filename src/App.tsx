@@ -329,6 +329,7 @@ type RoutingTopologyNode = {
   avgRssi?: number;
   snifferRssi?: number;
   ccuRssi?: number;
+  ccuRssiSource?: "RSSI_PEER" | "RSSI_DEVICE";
   ccuPeerRssi?: number;
   rssiTelegrams?: number;
   evidence: string[];
@@ -1118,7 +1119,7 @@ function RoutingTopologyView({
         <div>
           <p className="eyebrow">Routing-Karte</p>
           <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
-          <p>Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen = belegt. Gestrichelt = nächster Empfänger noch nicht nachgewiesen.</p>
+          <p>Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen = Funkweg belegt. Gestrichelt = reine Darstellungshilfe, der tatsächlich verwendete Empfänger ist noch unbekannt.</p>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
           {loading ? "Aktualisiert …" : "Karte aktualisieren"}
@@ -1150,7 +1151,7 @@ function RoutingTopologyView({
           <strong>Signalquelle</strong>
           <span>
             {rssiSource === "ccu"
-              ? "Live-Werte aus dem CCU/XML-API-Datenpunkt RSSI_DEVICE."
+              ? "Von der CCU gemeldete Signalwerte. Für den Empfang an der Zentrale wird RSSI_PEER bevorzugt; RSSI_DEVICE dient nur als Rückfallwert."
               : "Empfangsstärke der Telegramme am Standort des AskSin-Sniffers."}
           </span>
         </div>
@@ -1187,9 +1188,9 @@ function RoutingTopologyView({
         </div>
         <small>
           {rssiSource === "ccu"
-            ? "Weiter außen bedeutet einen schwächeren von der CCU/XML-API gemeldeten RSSI_DEVICE-Wert. Dieser Wert stammt von der Zentrale, nicht vom Sniffer."
+            ? "Weiter außen bedeutet einen schwächeren von der CCU/XML-API gemeldeten Signalwert. Bevorzugt wird RSSI_PEER als Empfangswert der Zentralenseite; fehlt er, wird RSSI_DEVICE transparent als Ersatz verwendet."
             : "Weiter außen bedeutet schwächer am Standort des Sniffers empfangen. Das ist nicht automatisch die Funkstrecke zur Zentrale."}
-          {" "}Erst eine durchgezogene Linie belegt den tatsächlich verwendeten nächsten Empfänger.
+          {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Sie zeigt nur, dass der tatsächlich verwendete nächste Empfänger nicht aus den vorhandenen Daten abgeleitet werden konnte.
         </small>
       </div>
 
@@ -1326,7 +1327,7 @@ function RoutingTopologyView({
                     />
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "gateway" ? 20 : node.role === "router" ? 18 : 12} />
-                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · Zentrale: ${node.ccuRssi ?? "nicht verfügbar"} dBm · Sniffer: ${node.snifferRssi ?? "nicht verfügbar"} dBm`}</title>
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · Zentrale: ${node.ccuRssi ?? "nicht verfügbar"} dBm${node.ccuRssiSource ? ` (${node.ccuRssiSource})` : ""} · Sniffer: ${node.snifferRssi ?? "nicht verfügbar"} dBm`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
@@ -1341,7 +1342,7 @@ function RoutingTopologyView({
                 <rect width="210" height="38" rx="9" />
                 <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
                 <text className="routing-hover-signal" x="105" y="31" textAnchor="middle">
-                  CCU {hoveredNode.ccuRssi ?? "–"} · Sniffer {hoveredNode.snifferRssi ?? "–"} dBm
+                  CCU {hoveredNode.ccuRssi ?? "–"}{hoveredNode.ccuRssiSource ? ` ${hoveredNode.ccuRssiSource}` : ""} · Sniffer {hoveredNode.snifferRssi ?? "–"} dBm
                 </text>
               </g>
             )}
@@ -1357,7 +1358,7 @@ function RoutingTopologyView({
             <span><i className="legend-signal medium" /> beobachten</span>
             <span><i className="legend-signal weak" /> schwach</span>
             <span><i className="legend-line is-confirmed" /> Datenfluss zum Empfänger</span>
-            <span><i className="legend-line is-unknown" /> Empfänger noch unbekannt</span>
+            <span><i className="legend-line is-unknown" /> Darstellungshilfe · Funkweg unbekannt</span>
           </div>
         </div>
 
@@ -1383,7 +1384,7 @@ function RoutingTopologyView({
                 <dd>
                   <DualRssiAssessment ccu={selectedNode?.ccuRssi} sniffer={selectedNode?.snifferRssi} />
                   {selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Sniffer-Telegramme</small>}
-                  {selectedNode?.ccuPeerRssi !== undefined && <small>CCU RSSI_PEER zusätzlich: {selectedNode.ccuPeerRssi} dBm</small>}
+                  {selectedNode?.ccuRssiSource && <small>CCU-Wert verwendet: {selectedNode.ccuRssiSource}</small>}
                 </dd>
               </div>
             </dl>

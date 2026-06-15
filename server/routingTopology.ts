@@ -207,7 +207,8 @@ export function buildRoutingTopology(
       .map((identifier) => ccuByIdentifier.get(identifier))
       .find(Boolean);
     if (!ccuDevice) return;
-    deviceNodes[index].ccuRssi = ccuDevice.rssiDevice;
+    deviceNodes[index].ccuRssi = ccuDevice.rssiPeer ?? ccuDevice.rssiDevice;
+    deviceNodes[index].ccuRssiSource = ccuDevice.rssiPeer !== undefined ? "RSSI_PEER" : ccuDevice.rssiDevice !== undefined ? "RSSI_DEVICE" : undefined;
     deviceNodes[index].ccuPeerRssi = ccuDevice.rssiPeer;
   });
 

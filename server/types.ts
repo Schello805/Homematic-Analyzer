@@ -162,6 +162,7 @@ export type RoutingTopologyNode = {
   avgRssi?: number;
   snifferRssi?: number;
   ccuRssi?: number;
+  ccuRssiSource?: "RSSI_PEER" | "RSSI_DEVICE";
   ccuPeerRssi?: number;
   rssiTelegrams?: number;
   evidence: string[];

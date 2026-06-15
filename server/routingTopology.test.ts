@@ -126,9 +126,27 @@ test("ordnet XML-API-RSSI der HmIP-Routingkarte zu", () => {
   }]);
 
   const device = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
-  assert.equal(device?.ccuRssi, -68);
+  assert.equal(device?.ccuRssi, -72);
+  assert.equal(device?.ccuRssiSource, "RSSI_PEER");
   assert.equal(device?.ccuPeerRssi, -72);
   assert.equal(topology.rssiSources.ccu, 1);
+});
+
+test("nutzt RSSI_DEVICE nur als Rückfallwert, wenn RSSI_PEER fehlt", () => {
+  const topology = buildRoutingTopology(masterdata, [], undefined, undefined, [], [{
+    name: "Steckdose Trockner",
+    address: "0001D3C99C4EAA",
+    type: "HmIP-PSM",
+    rssiDevice: -68,
+    lowBattery: false,
+    unreachable: false,
+    configPending: false,
+    evidence: []
+  }]);
+
+  const device = topology.nodes.find((node) => node.serial === "0001D3C99C4EAA");
+  assert.equal(device?.ccuRssi, -68);
+  assert.equal(device?.ccuRssiSource, "RSSI_DEVICE");
 });
 
 test("übernimmt nur ausdrücklich geloggte Routingpfade", () => {
