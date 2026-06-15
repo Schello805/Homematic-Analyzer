@@ -4387,34 +4387,6 @@ function App() {
             </div>
           </div>
 
-          <div className={`summary-grid ${selectedStatusFilter ? "has-filter" : ""}`}>
-            {statusOrder.map((status) => {
-              const isActive = selectedStatusFilter === status;
-              return (
-                <button
-                  type="button"
-                  className={`summary-card status-${status} ${isActive ? "is-active" : ""}`}
-                  key={status}
-                  onClick={() => {
-                    setSelectedStatusFilter((current) => current === status ? null : status);
-                    if (status === "ok") setShowHealthyChecks(true);
-                    const firstMatchingCheck = analysis.checks.find((check) => check.status === status);
-                    if (firstMatchingCheck) {
-                      setActiveCheck(firstMatchingCheck.id);
-                    }
-                  }}
-                  aria-pressed={isActive}
-                >
-                  <div className="summary-card-header">
-                    <strong>{summary[status]}</strong>
-                    {getStatusIcon(status, "summary-icon")}
-                  </div>
-                  <span>{statusLabel[status]}</span>
-                </button>
-              );
-            })}
-          </div>
-
           {analysis.systemDashboard?.available && (
             <div className="system-dashboard">
               <div className="system-dashboard__header">
@@ -4663,6 +4635,44 @@ function App() {
               </div>
             </section>
           )}
+
+          <section className="result-filters" aria-labelledby="result-filter-title">
+            <div className="result-filters__header">
+              <div>
+                <p className="eyebrow">Prüfergebnisse</p>
+                <h3 id="result-filter-title">Nach Status filtern</h3>
+              </div>
+              <span>{selectedStatusFilter ? `${statusLabel[selectedStatusFilter]} ausgewählt` : "Alle Status sichtbar"}</span>
+            </div>
+            <div className={`summary-grid ${selectedStatusFilter ? "has-filter" : ""}`}>
+              {statusOrder.map((status) => {
+                const isActive = selectedStatusFilter === status;
+                return (
+                  <button
+                    type="button"
+                    className={`summary-card status-${status} ${isActive ? "is-active" : ""}`}
+                    key={status}
+                    onClick={() => {
+                      setSelectedStatusFilter((current) => current === status ? null : status);
+                      if (status === "ok") setShowHealthyChecks(true);
+                      const firstMatchingCheck = analysis.checks.find((check) => check.status === status);
+                      if (firstMatchingCheck) {
+                        setActiveCheck(firstMatchingCheck.id);
+                      }
+                    }}
+                    aria-pressed={isActive}
+                    title={`${summary[status]} Prüfpunkte mit Status „${statusLabel[status]}“ anzeigen`}
+                  >
+                    <div className="summary-card-header">
+                      <strong>{summary[status]}</strong>
+                      {getStatusIcon(status, "summary-icon")}
+                    </div>
+                    <span>{statusLabel[status]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           <div className="analysis-detail-toggle">
             <div>

@@ -2762,7 +2762,29 @@ pre {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+}
+
+.result-filters {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.result-filters__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.result-filters__header h3 {
+  margin: 2px 0 0;
+}
+
+.result-filters__header > span {
+  color: #66728a;
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .summary-card {
@@ -4400,7 +4422,6 @@ pre {
 
   .form-grid,
     .event-grid,
-    .summary-grid,
     .setup-roadmap,
     .dc-metric-grid,
     .loader-steps,
@@ -4408,6 +4429,21 @@ pre {
     .usb-port-picker,
     .analysis-start {
     grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .summary-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .result-filters__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .dc-page__header,
