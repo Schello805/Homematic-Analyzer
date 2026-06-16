@@ -387,6 +387,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const weakTopologyNodes = topologyMeasuredNodes.filter((node) => (
     [node.ccuRssi, node.snifferRssi].some((value) => value !== undefined && value <= -85)
   ));
+  const weakTopologyNames = weakTopologyNodes.slice(0, 4).map((device) => device.name).join(", ");
+  const knownReceiversText = `${routingTopology.metrics.gateways} Gateway${routingTopology.metrics.gateways === 1 ? "" : "s"} und ${routingTopology.metrics.confirmedRouters} bestätigte HmIP-Router`;
   const firmwareDifferences = findFirmwareDifferences(masterdata, ccu);
   const availableFirmwareUpdates = parseAvailableFirmwareUpdates(currentCollector, masterdata, ccu);
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
@@ -756,14 +758,14 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           ? "Keine HmIP-Geräte in den verfügbaren Gerätedaten gefunden."
           : "HmIP-Routing kann ohne CCU-Daten oder Stammdaten nicht geprüft werden.",
       recommendation: routingTopology.metrics.confirmedRoutes > 0
-        ? "Öffne die Routing-Karte, um belegte Wege und Geräte ohne nachgewiesene Zuordnung zu prüfen."
+        ? `Öffne die Routing-Karte. Sie zeigt belegte Wege, ${knownReceiversText} und Geräte mit schwachen Signalwerten.`
         : routingTopology.metrics.confirmedRouters > 0
-          ? "Router sind erkannt. Betätige HmIP-Geräte und aktualisiere die Karte, um mögliche aktive Pfade im Log zu erfassen."
+          ? `Router sind erkannt (${knownReceiversText}). Betätige HmIP-Geräte und aktualisiere die Karte, um echte Wege im Log zu belegen.`
         : routingTopology.metrics.devices > 0
         ? weakTopologyNodes.length > 0
-          ? "Öffne die Funk-Topologie und wähle HmIP, Homematic oder Beides. Prüfe schwache Geräte räumlich und berücksichtige passende Router beziehungsweise Gateways."
+          ? `Öffne die Funk-Topologie und prüfe zuerst: ${weakTopologyNames}. Vergleiche Zentrale- und Sniffer-RSSI; passende Router oder Gateways sind nur dann naheliegend, wenn der Zentralenwert schwach ist.`
           : topologyMeasuredNodes.length > 0
-            ? "Keine unmittelbare Funkmaßnahme nötig. Öffne die Topologie für die getrennte HmIP-, Homematic- oder Gesamtansicht."
+            ? `Keine unmittelbare Funkmaßnahme nötig. Die Topologie zeigt ${knownReceiversText} getrennt für HmIP, Homematic oder gemeinsam.`
             : "CCU-RSSI liefert die Basisbewertung. Ein Sniffer ist nur für Telegramme, Funklast, Carrier Sense und eine zusätzliche Messposition nötig."
         : hasCcuData || masterdataDeviceCount > 0
           ? "Kein Handlungsbedarf."

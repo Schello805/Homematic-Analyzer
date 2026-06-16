@@ -618,6 +618,73 @@ h2 {
   line-height: 1.25;
 }
 
+.setup-group-status {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.setup-group-status article {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(106, 123, 154, 0.18);
+  border-radius: 18px;
+  padding: 12px;
+  background: #f8fbff;
+}
+
+.setup-group-status article > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #92400e;
+  background: #fff7ed;
+  font-weight: 800;
+}
+
+.setup-group-status article.is-done {
+  border-color: rgba(34, 197, 94, 0.34);
+  background: #f0fdf4;
+}
+
+.setup-group-status article.is-done > span {
+  color: #047857;
+  background: #dcfce7;
+}
+
+.setup-group-status strong,
+.setup-group-status small,
+.setup-group-status em {
+  display: block;
+}
+
+.setup-group-status small {
+  color: #56647a;
+  font-size: 0.84rem;
+}
+
+.setup-group-status em {
+  margin-top: 3px;
+  color: #657086;
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.setup-group-status b {
+  align-self: start;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #516078;
+  background: #eef2f7;
+  font-size: 0.72rem;
+}
+
 .settings-page {
   margin-top: 0;
 }
@@ -4114,6 +4181,9 @@ pre {
 }
 
 .evidence li strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.74rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -4123,6 +4193,48 @@ pre {
   padding: 3px 8px;
   border-radius: 8px;
   font-weight: 700;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: #1849a9;
+  background: #dbeafe;
+}
+
+.source-ccu {
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.source-sniffer {
+  color: #7c2d12;
+  background: #ffedd5;
+}
+
+.source-collector {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.source-ai {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.source-online {
+  color: #1e40af;
+  background: #dbeafe;
+}
+
+.source-setup,
+.source-default {
+  color: #475569;
+  background: #eef2f7;
 }
 
 .evidence-rssi-comparison {

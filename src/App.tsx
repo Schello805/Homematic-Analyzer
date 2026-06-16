@@ -844,6 +844,22 @@ function parseRssiComparison(detail: string) {
   };
 }
 
+function sourceBadge(source: string) {
+  const normalized = source.toLowerCase();
+  if (normalized.includes("sniffer") || normalized.includes("asksin")) return { label: "Sniffer", className: "source-sniffer" };
+  if (normalized.includes("collector") || normalized.includes("shell") || normalized.includes("logzeile") || normalized.includes("hmipserver")) return { label: "Collector", className: "source-collector" };
+  if (normalized.includes("ki") || normalized.includes("openai") || normalized.includes("gemini")) return { label: "KI", className: "source-ai" };
+  if (normalized.includes("github") || normalized.includes("release") || normalized.includes("openccu") || normalized.includes("eq-3")) return { label: "Online", className: "source-online" };
+  if (normalized.includes("setup") || normalized.includes("konfiguration")) return { label: "Setup", className: "source-setup" };
+  if (normalized.includes("ccu") || normalized.includes("xml-api") || normalized.includes("zentrale") || normalized.includes("webui") || normalized.includes("rega")) return { label: "CCU", className: "source-ccu" };
+  return { label: "Quelle", className: "source-default" };
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const badge = sourceBadge(source);
+  return <span className={`source-badge ${badge.className}`}>{badge.label}</span>;
+}
+
 function EvidenceDetail({ item }: { item: Evidence }) {
   const rssiComparison = item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null;
   if (!rssiComparison) return <span>{item.detail}</span>;
@@ -1183,7 +1199,7 @@ function RoutingTopologyView({
 
       <div className="routing-rssi-source">
         <div>
-          <strong>Signalquelle</strong>
+          <strong><SourceBadge source={rssiSourceLabel} />Signalquelle</strong>
           <span>
             {rssiSource === "ccu"
               ? "Von der CCU gemeldete Signalwerte. Für den Empfang an der Zentrale wird RSSI_PEER bevorzugt; RSSI_DEVICE dient nur als Rückfallwert."
@@ -1223,7 +1239,7 @@ function RoutingTopologyView({
         </div>
         <small>
           {rssiSource === "ccu"
-            ? "Weiter außen bedeutet einen schwächeren von der CCU/XML-API gemeldeten Signalwert. Bevorzugt wird RSSI_PEER als Empfangswert der Zentralenseite; fehlt er, wird RSSI_DEVICE transparent als Ersatz verwendet."
+            ? "Weiter außen bedeutet: Die Zentrale sieht dieses Gerät schwächer. Das heißt nicht automatisch „keine Verbindung“, sondern zeigt zuerst Prüfbedarf für Standort, Abstand, Hindernisse oder passenden Empfänger."
             : "Weiter außen bedeutet schwächer am Standort des Sniffers empfangen. Das ist nicht automatisch die Funkstrecke zur Zentrale."}
           {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Sie zeigt nur, dass der tatsächlich verwendete nächste Empfänger nicht aus den vorhandenen Daten abgeleitet werden konnte.
         </small>
@@ -1655,9 +1671,7 @@ function App() {
     const steps = [
       Boolean(form.ccuHost.trim()),
       Boolean(form.ccuUser.trim() && form.ccuPassword),
-      Boolean((form.xmlApiToken ?? "").trim()),
-      Boolean(form.sshUser.trim() && form.sshPassword),
-      !form.snifferEnabled || Boolean(form.snifferPort.trim())
+      Boolean((form.xmlApiToken ?? "").trim())
     ];
     const completed = steps.filter(Boolean).length;
     return {
@@ -1667,6 +1681,47 @@ function App() {
       complete: completed === steps.length
     };
   }, [form]);
+  const setupGroups = useMemo(() => {
+    const basisDone = setupProgress.complete;
+    const systemDone = Boolean(
+      collectorStatus?.available
+      || collectorStatus?.collectedAt
+      || masterdataStatus?.available
+      || (form.sshUser.trim() && form.sshPassword)
+    );
+    const snifferDone = !form.snifferEnabled || Boolean(form.snifferPort.trim());
+    const notificationDone = notificationSettings.telegram.enabled || notificationSettings.email.enabled;
+    return [
+      {
+        label: "Basis",
+        text: "CCU, Login und XML-API Token",
+        done: basisDone,
+        optional: false,
+        hint: basisDone ? "Analyse kann echte CCU-Daten lesen." : "Erst diese Felder ausfüllen."
+      },
+      {
+        label: "System",
+        text: "Collector, Logs oder SSH",
+        done: systemDone,
+        optional: true,
+        hint: systemDone ? "Systemdaten können ergänzt werden." : "Optional für Logs, Backups und Systemwerte."
+      },
+      {
+        label: "Sniffer",
+        text: "AskSin-Funkdetails",
+        done: snifferDone,
+        optional: true,
+        hint: form.snifferEnabled ? "Port wählen, wenn der Sniffer genutzt wird." : "Ausgeschaltet – Basisanalyse bleibt sauber."
+      },
+      {
+        label: "Benachrichtigung",
+        text: "Telegram oder E-Mail",
+        done: notificationDone,
+        optional: true,
+        hint: notificationDone ? "Meldungen können versendet werden." : "Optional, wenn du aktiv erinnert werden willst."
+      }
+    ];
+  }, [collectorStatus, form, masterdataStatus, notificationSettings, setupProgress]);
 
   function removeToast(id: number) {
     setToasts((currentToasts) => currentToasts.filter((toast) => toast.id !== id));
@@ -3261,6 +3316,20 @@ function App() {
             ))}
           </div>
 
+          <div className="setup-group-status" aria-label="Setup-Status nach Bereichen">
+            {setupGroups.map((group) => (
+              <article className={`${group.done ? "is-done" : ""} ${group.optional ? "is-optional" : "is-required"}`} key={group.label}>
+                <span>{group.done ? "✓" : group.optional ? "○" : "!"}</span>
+                <div>
+                  <strong>{group.label}</strong>
+                  <small>{group.text}</small>
+                  <em>{group.hint}</em>
+                </div>
+                {group.optional && <b>optional</b>}
+              </article>
+            ))}
+          </div>
+
           <div className="setup-sections">
             <fieldset className="setup-card">
               <legend>CCU / RaspberryMatic Login</legend>
@@ -3682,7 +3751,7 @@ function App() {
 
           <div className="dc-metric-grid">
             {[
-              ["Sniffer-DC-Schätzung · 60 Min.", snifferSnapshot?.summary.telegrams ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Quelle: AskSin-Sniffer. Gleitende Funkzeit-Schätzung, nicht der CCU-WebUI-Wert."],
+              ["Sniffer-Funkzeit · 60 Min.", snifferSnapshot?.summary.telegrams ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Quelle: AskSin-Sniffer. Gleitende Funkzeit-Schätzung, nicht der CCU-WebUI-Wert."],
               [
                 "Top Funkzeit-Anteil · 60 Min.",
                 topDutyDevice ? `${topDutyDevice.dutyShare}%` : "keine Telegramme",
@@ -3692,7 +3761,7 @@ function App() {
               ],
               ["Rauschpegel / Carrier Sense", carrierSenseText, carrierSenseHint],
               ...gatewayDutyCycleCards.map((gateway, index) => [
-                `Gateway Sniffer-DC ${index + 1}`,
+                `Gateway-Funkzeit ${index + 1}`,
                 `${gateway.dutyCycle}%`,
                 `${gateway.name} · Quelle DC/RSSI: Sniffer · Zentralen-RSSI ${topologyNodeFor(gateway)?.ccuRssi ?? "–"} dBm`
               ]),
@@ -3937,7 +4006,7 @@ function App() {
                                 ? "noch verfügbar"
                                 : hoveredSegment.kind === "remaining"
                                   ? "weitere belegte Funkzeit"
-                                  : "absoluter DC-Anteil"}
+                                  : "belegte Sniffer-Funkzeit"}
                             </small>
                           </>
                         ) : (
@@ -3957,7 +4026,7 @@ function App() {
                             <strong>{segment.label}</strong>
                             <span>{segment.detail}</span>
                           </div>
-                          <b>{segment.kind === "free" ? `${segment.value}% frei` : `${segment.value}% DC`}</b>
+                          <b>{segment.kind === "free" ? `${segment.value}% frei` : `${segment.value}% Funkzeit`}</b>
                         </div>
                       ))}
                     </div>
@@ -3990,7 +4059,7 @@ function App() {
                       <th>Gerät</th>
                       <th>Funkadresse</th>
                       <th>Telegramme</th>
-                      <th>DC</th>
+                      <th>Sniffer-Funkzeit</th>
                       <th>Anteil</th>
                       <th>RSSI Zentrale</th>
                       <th>RSSI Sniffer Ø</th>
@@ -4060,7 +4129,7 @@ function App() {
                       <th>RSSI Sniffer</th>
                       <th>Len</th>
                       <th>Cnt</th>
-                      <th>DC</th>
+                      <th>Sniffer-Funkzeit</th>
                       <th>Typ</th>
                       <th>Flags</th>
                     </tr>
@@ -4321,7 +4390,7 @@ function App() {
                   <ul className="evidence ai-log-evidence">
                     {aiLogResult.evidence.map((item, index) => (
                       <li key={`${item.source}-${index}`}>
-                        <strong>{item.source}</strong>
+                        <strong><SourceBadge source={item.source} />{item.source}</strong>
                         <span>{item.detail}</span>
                       </li>
                     ))}
@@ -4961,7 +5030,7 @@ function App() {
                       <ul className="evidence">
                         {check.evidence.map((item, index) => (
                           <li key={`${item.source}-${index}`}>
-                            <strong>{item.source}</strong>
+                            <strong><SourceBadge source={item.source} />{item.source}</strong>
                             <EvidenceDetail item={item} />
                             {item.url && (
                               <a href={item.url} target="_blank" rel="noreferrer">
@@ -5713,7 +5782,7 @@ function App() {
                 <div className="action-evidence-list">
                   {actionModalCheck.evidence.map((item, index) => (
                     <article key={`${item.source}-${index}`}>
-                      <strong>{item.source}</strong>
+                      <strong><SourceBadge source={item.source} />{item.source}</strong>
                       <EvidenceDetail item={item} />
                     </article>
                   ))}
