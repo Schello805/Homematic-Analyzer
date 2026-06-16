@@ -1169,6 +1169,34 @@ function RoutingTopologyView({
     ? "Homematic IP"
     : topologyScope === "bidcos" ? "Klassisches Homematic" : "Gesamte Funkinstallation";
   const visibleDeviceCount = visibleNodes.filter((node) => node.role !== "central" && node.role !== "gateway").length;
+  const receiverCount = gateways.length + routers.length;
+  const focusCount = Math.max(0, focusNodeIds.size - 1);
+  const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
+  const allDeviceCount = Math.max(0, visibleNodes.length - 1);
+  const actionSummary = measuredNodes.length === 0
+    ? `${receiverCount} Empfänger oder Router erkannt. Für eine echte Schwächenbewertung fehlen noch RSSI-Werte.`
+    : weakNodes.length > 0
+      ? `${weakNodes.length} Geräte brauchen Aufmerksamkeit.`
+      : observedNodes.length > 0
+        ? `${observedNodes.length} Geräte beobachten, aber kein akuter Funk-Notfall.`
+        : "Funkabdeckung wirkt im aktuellen Snapshot unauffällig.";
+  const routeSummary = visibleEdges.length > 0
+    ? `${visibleEdges.length} belegte Funkwege aus Logs oder Parametern.`
+    : "Noch keine belegten Funkwege – gestrichelte Linien sind nur Orientierung.";
+  const selectedRssi = nodeRssi(selectedNode);
+  const selectedAdvice = (() => {
+    if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
+    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Geräte weiter außen werden schwächer empfangen oder haben noch keinen Messwert.";
+    if (selectedNode.role === "gateway") return "Dieses Gerät ist ein eigener Funkempfänger. Es erweitert den Empfang, ist aber kein HmIP-Router.";
+    if (selectedNode.role === "router") return "Dieses Gerät ist als HmIP-Router belegt. Es kann anderen HmIP-Geräten als Zwischenstation helfen.";
+    const ccuState = rssiClass(selectedNode.ccuRssi);
+    const snifferState = rssiClass(selectedNode.snifferRssi);
+    if (ccuState === "weak" && snifferState === "weak") return "Beide Quellen sehen das Gerät schwach. Standort, Batterie/Stromversorgung, Entfernung und mögliche Router/Gateways prüfen.";
+    if (ccuState === "weak") return "Die Zentrale sieht dieses Gerät schwach. Ein näherer Router/Gateway oder ein anderer Gerätestandort kann helfen.";
+    if (snifferState === "weak") return "Nur der Sniffer sieht dieses Gerät schwach. Das kann am Sniffer-Standort liegen und ist nicht automatisch ein CCU-Problem.";
+    if (selectedRssi !== undefined) return "Der aktuelle Signalwert ist unauffällig. Kein direkter Handlungsbedarf aus dieser Messquelle.";
+    return "Für dieses Gerät liegt noch kein RSSI-Wert vor. Ohne Messwert wird kein Funkproblem behauptet.";
+  })();
 
   return (
     <section className="routing-topology-card">
@@ -1251,6 +1279,20 @@ function RoutingTopologyView({
         </small>
       </div>
 
+      <div className={`routing-map-summary ${measuredNodes.length === 0 ? "is-muted" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
+        <div>
+          <strong>{actionSummary}</strong>
+          <span>{routeSummary} Signalquelle: {rssiSourceLabel}.</span>
+        </div>
+        <button
+          type="button"
+          className="light-button"
+          onClick={() => setTopologyFilter(weakNodes.length > 0 || observedNodes.length > 0 ? "focus" : "infrastructure")}
+        >
+          {weakNodes.length > 0 || observedNodes.length > 0 ? "Auffällige zeigen" : "Empfänger zeigen"}
+        </button>
+      </div>
+
       {measuredNodes.length > 0 ? (
         <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceLabel}`}>
           <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
@@ -1304,9 +1346,9 @@ function RoutingTopologyView({
           </span>
         </div>
         <div role="group" aria-label="Umfang der Routing-Grafik">
-          <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Fokus</button>
-          <button type="button" className={topologyFilter === "infrastructure" ? "is-active" : ""} onClick={() => setTopologyFilter("infrastructure")}>Infrastruktur</button>
-          <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle Geräte</button>
+          <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Fokus <small>{focusCount}</small></button>
+          <button type="button" className={topologyFilter === "infrastructure" ? "is-active" : ""} onClick={() => setTopologyFilter("infrastructure")}>Empfänger <small>{infrastructureCount}</small></button>
+          <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle <small>{allDeviceCount}</small></button>
         </div>
         {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} unauffällige oder noch nicht bewertbare Knoten sind ausgeblendet.</small>}
       </div>
@@ -1314,6 +1356,14 @@ function RoutingTopologyView({
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
           <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
+            <defs>
+              <marker id="routing-arrow-confirmed" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="#3478f6" />
+              </marker>
+              <marker id="routing-arrow-receiver" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#20a878" />
+              </marker>
+            </defs>
             {measuredNodes.length > 0 && (
               <>
                 <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
@@ -1336,13 +1386,13 @@ function RoutingTopologyView({
             {graphRouters.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
-              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
+              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} markerEnd="url(#routing-arrow-receiver)" />;
             })}
 
             {graphGateways.map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
-              return <line className="routing-edge is-gateway" key={`gateway-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
+              return <line className="routing-edge is-gateway" key={`gateway-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} markerEnd="url(#routing-arrow-receiver)" />;
             })}
 
             {graphEdges.map((edge) => {
@@ -1350,7 +1400,7 @@ function RoutingTopologyView({
               const target = positions.get(edge.target);
               if (!source || !target) return null;
               return (
-                <line className="routing-edge is-confirmed" key={edge.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y}>
+                <line className="routing-edge is-confirmed" key={edge.id} x1={source.x} y1={source.y} x2={target.x} y2={target.y} markerEnd="url(#routing-arrow-confirmed)">
                   <title>{edge.evidence}</title>
                 </line>
               );
@@ -1403,6 +1453,13 @@ function RoutingTopologyView({
                 </text>
               </g>
             )}
+
+            {selectedNode && selectedNode.role !== "central" && positions.get(selectedNode.id) && (
+              <g className="routing-selected-label" transform={`translate(${Math.max(110, Math.min(790, positions.get(selectedNode.id)!.x)) - 110} ${Math.max(18, Math.min(480, positions.get(selectedNode.id)!.y + 24))})`} pointerEvents="none">
+                <rect width="220" height="30" rx="9" />
+                <text x="110" y="19" textAnchor="middle">{selectedNode.name}</text>
+              </g>
+            )}
           </svg>
 
           <div className="routing-legend">
@@ -1446,6 +1503,10 @@ function RoutingTopologyView({
               </div>
             </dl>
           )}
+          <div className={`routing-node-advice ${rssiClass(selectedRssi) ?? "unknown"}`}>
+            <strong>Einordnung</strong>
+            <span>{selectedAdvice}</span>
+          </div>
           {selectedNode?.evidence.length ? (
             <ul>{selectedNode.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
           ) : (

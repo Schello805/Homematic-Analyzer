@@ -5229,6 +5229,47 @@ pre {
   padding-left: 34px;
 }
 
+.routing-map-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #bfd4fa;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f7fbff, #eff6ff);
+}
+
+.routing-map-summary.is-good {
+  border-color: #b8ead7;
+  background: linear-gradient(135deg, #f5fffb, #ecfbf5);
+}
+
+.routing-map-summary.has-warning {
+  border-color: #f5cf87;
+  background: linear-gradient(135deg, #fffaf0, #fff5dd);
+}
+
+.routing-map-summary > div {
+  display: grid;
+  gap: 2px;
+}
+
+.routing-map-summary strong {
+  color: #172238;
+}
+
+.routing-map-summary span {
+  color: #617087;
+  font-size: .82rem;
+}
+
+.routing-map-summary button {
+  flex: 0 0 auto;
+  min-height: 36px;
+}
+
 .routing-rssi-source {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, .45fr);
@@ -5370,6 +5411,10 @@ pre {
 }
 
 .routing-display-filter button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   min-height: 32px;
   border: 0;
   border-radius: 8px;
@@ -5378,6 +5423,16 @@ pre {
   cursor: pointer;
   background: transparent;
   font-weight: 700;
+}
+
+.routing-display-filter button small {
+  min-width: 21px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #526178;
+  background: rgba(255, 255, 255, .72);
+  font-size: .68rem;
+  font-weight: 800;
 }
 
 .routing-display-filter button.is-active {
@@ -5546,6 +5601,10 @@ pre {
   vector-effect: non-scaling-stroke;
 }
 
+.routing-map marker path {
+  fill: currentColor;
+}
+
 .routing-edge.is-unknown {
   stroke: #cbd5e1;
   stroke-width: 1;
@@ -5556,6 +5615,7 @@ pre {
 
 .routing-edge.is-router-config {
   stroke: #22a879;
+  color: #22a879;
   stroke-width: 2;
   opacity: .72;
   stroke-dasharray: 5 8;
@@ -5564,6 +5624,7 @@ pre {
 
 .routing-edge.is-gateway {
   stroke: #06a3a8;
+  color: #06a3a8;
   stroke-width: 2.5;
   opacity: .72;
   stroke-dasharray: 7 7;
@@ -5572,6 +5633,7 @@ pre {
 
 .routing-edge.is-confirmed {
   stroke: #3478f6;
+  color: #3478f6;
   stroke-width: 3;
   stroke-dasharray: 8 9;
   animation: routing-flow 1.25s linear infinite;
@@ -5680,6 +5742,25 @@ pre {
 
 .routing-hover-label .routing-hover-signal.weak {
   fill: #c72f29;
+}
+
+.routing-selected-label {
+  filter: drop-shadow(0 8px 14px rgba(27, 45, 75, .16));
+}
+
+.routing-selected-label rect {
+  fill: rgba(255, 255, 255, .94);
+  stroke: #bfd4fa;
+  stroke-width: 1;
+}
+
+.routing-selected-label text {
+  fill: #152238;
+  font-size: 10px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
 }
 
 .routing-node.is-central circle {
@@ -5866,6 +5947,46 @@ pre {
   margin-top: 4px;
   color: #6a7890;
   font-weight: 500;
+}
+
+.routing-node-advice {
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid #dbe6f4;
+  border-left: 4px solid #94a3b8;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.routing-node-advice.excellent,
+.routing-node-advice.good {
+  border-left-color: #20a878;
+  background: #f1fbf7;
+}
+
+.routing-node-advice.medium {
+  border-left-color: #f59e0b;
+  background: #fff8e8;
+}
+
+.routing-node-advice.weak {
+  border-left-color: #e33a32;
+  background: #fff1ef;
+}
+
+.routing-node-advice strong {
+  color: #26344b;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.routing-node-advice span {
+  color: #526177;
+  font-size: .86rem;
 }
 
 .rssi-assessment {
@@ -6061,6 +6182,11 @@ pre {
 
   .routing-topology-header button {
     width: 100%;
+  }
+
+  .routing-map-summary {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .routing-map {
