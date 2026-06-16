@@ -16,7 +16,7 @@ const allowedStatuses = new Set<CheckStatus>(["ok", "improvement", "warning", "c
 const maxAiLogLines = 500;
 const maxAiLogCharacters = 120000;
 const issuePattern = /\b(error|errors|warn|warning|fatal|critical|failed|failure|exception|timeout|unreach|unreachable|lowbat|low battery|not reachable|communication error|config pending|overheat|corrupt|denied)\b|fehler|warnung|kritisch|gestört|störung|nicht erreichbar|batterie schwach|konfiguration ausstehend/i;
-const clearingEventPattern = /Event="[^"]+"\."(?:UNREACH|STICKY_UNREACH|LOWBAT|LOW_BAT|BATTERY_LOW|CONFIG_PENDING|UPDATE_PENDING|SABOTAGE|ERROR|FAULT_[^"]+)"=false\b/i;
+const clearingEventPattern = /Event="[^"]+"\."(?:UNREACH|STICKY_UNREACH|LOWBAT|LOW_BAT|BATTERY_LOW|CONFIG_PENDING|UPDATE_PENDING|SABOTAGE|ERROR|FAULT_[^"]+|DUTY_CYCLE|OVERHEAT|MOTION|ACTIVITY_STATE|ERROR_[^"]+|[^"]*(?:ALARM|ERROR|FAULT|FAIL|LOW|UNREACH|PENDING|SABOTAGE)[^"]*)"=false\b/i;
 
 export function isClearingEventLine(line: string): boolean {
   return clearingEventPattern.test(line);

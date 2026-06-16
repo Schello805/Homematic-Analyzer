@@ -24,12 +24,27 @@ if [ -d "$ROOT_DIR/.data" ]; then
 fi
 
 printf '[INFO] Repository wird aktualisiert ...\n'
+previous_head="$(git rev-parse HEAD 2>/dev/null || true)"
 git fetch origin
 current_branch="$(git rev-parse --abbrev-ref HEAD)"
 git pull --ff-only origin "$current_branch"
+current_head="$(git rev-parse HEAD 2>/dev/null || true)"
 
-printf '[INFO] Abhängigkeiten inklusive Build-Werkzeuge werden installiert ...\n'
-npm ci --include=dev
+dependencies_changed="no"
+if [ ! -d "$ROOT_DIR/node_modules" ] || [ ! -x "$ROOT_DIR/node_modules/.bin/tsc" ]; then
+  dependencies_changed="yes"
+elif [ -n "$previous_head" ] && [ -n "$current_head" ] && [ "$previous_head" != "$current_head" ]; then
+  if git diff --name-only "$previous_head" "$current_head" -- package.json package-lock.json | grep -q .; then
+    dependencies_changed="yes"
+  fi
+fi
+
+if [ "$dependencies_changed" = "yes" ]; then
+  printf '[INFO] Abhängigkeiten inklusive Build-Werkzeuge werden installiert ...\n'
+  npm ci --include=dev
+else
+  printf '[INFO] Abhängigkeiten unverändert, npm ci wird übersprungen.\n'
+fi
 
 if ! [ -x ./node_modules/.bin/tsc ]; then
   printf '[ERROR] TypeScript Compiler wurde nicht gefunden: ./node_modules/.bin/tsc\n'

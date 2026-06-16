@@ -15,7 +15,7 @@ for script in "${scripts[@]}"; do
 done
 
 grep -q 'detect_existing_installation' scripts/install/install-linux.sh
-grep -q 'npm ci --include=dev' scripts/install/update-local.sh
+grep -q 'npm ci wird übersprungen' scripts/install/update-local.sh
 grep -q 'systemctl disable --now' scripts/install/uninstall-linux.sh
 grep -q 'api/health' scripts/install/verify-installation.sh
 grep -q 'Homematic Analyzer system snapshot' scripts/system-snapshot-collector.sh

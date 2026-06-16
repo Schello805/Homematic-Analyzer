@@ -23,6 +23,12 @@ type AnalysisCheck = {
 
 type AnalysisResponse = {
   generatedAt: string;
+  sources?: {
+    ccu?: string;
+    collector?: string;
+    masterdata?: string;
+    sniffer?: string;
+  };
   checks: AnalysisCheck[];
   systemDashboard?: SystemDashboard;
   notifications?: {
@@ -1579,6 +1585,15 @@ function App() {
     : snifferSnapshot?.events.slice(0, 10) ?? [];
   const ccuDutyCheck = analysis?.checks.find((check) => check.id === "duty-cycle");
   const ccuDutyEvidence = ccuDutyCheck?.evidence.find((item) => item.source.includes("CCU"));
+  const analysisSourceItems = useMemo(() => {
+    if (!analysis) return [];
+    return [
+      { id: "ccu", label: "CCU Live", time: analysis.sources?.ccu, required: true },
+      { id: "masterdata", label: "CCU Script", time: analysis.sources?.masterdata, required: false },
+      { id: "collector", label: "Shell-Collector", time: analysis.sources?.collector, required: false },
+      { id: "sniffer", label: "Sniffer", time: analysis.sources?.sniffer, required: false, hidden: !form.snifferEnabled }
+    ].filter((item) => !item.hidden);
+  }, [analysis, form.snifferEnabled]);
   const routingNodeByIdentifier = useMemo(() => {
     const map = new Map<string, RoutingTopologyNode>();
     for (const node of routingTopology?.nodes ?? []) {
@@ -4532,6 +4547,21 @@ function App() {
               </div>
             </div>
           </div>
+
+          <button type="button" className="analysis-source-strip" onClick={() => navigateTo("diagnostics")}>
+            <span>Datenquellen</span>
+            <div>
+              {analysisSourceItems.map((source) => {
+                const age = formatDataAge(source.time);
+                return (
+                  <small className={`data-age data-age-${age.state}`} key={source.id}>
+                    {source.label}: {source.time ? age.label : source.required ? "fehlt" : "optional"}
+                  </small>
+                );
+              })}
+            </div>
+            <b>Status öffnen</b>
+          </button>
 
           {analysis.systemDashboard?.available && (
             <div className="system-dashboard">

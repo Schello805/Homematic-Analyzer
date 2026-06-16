@@ -619,12 +619,17 @@ async function createUpdateRunStatus() {
   const logCompleted = /\[OK\] Update abgeschlossen\./.test(log);
   const logStarted = /Update per Footer gestartet|Homematic Analyzer Update gestartet/.test(log);
   const startedAtFromLog = log.match(/^\[([^\]]+)\] (?:Update per Footer|Homematic Analyzer Update) gestartet/m)?.[1];
+  const startedAtMs = startedAtFromLog ? Date.parse(startedAtFromLog) : Number.NaN;
+  const logLooksStuck = logStarted && !logCompleted && !logFailed && !updateRun.running
+    && Number.isFinite(startedAtMs) && Date.now() - startedAtMs > 30 * 60 * 1000;
   const status = updateRun.running
     ? "running"
     : updateRun.error || updateRun.exitCode
       ? "failed"
       : logFailed
         ? "failed"
+        : logLooksStuck
+          ? "failed"
         : logCompleted
           ? "completed"
           : logStarted
@@ -637,7 +642,7 @@ async function createUpdateRunStatus() {
     startedAt: updateRun.startedAt ?? startedAtFromLog,
     finishedAt: updateRun.finishedAt,
     exitCode: updateRun.exitCode,
-    error: updateRun.error,
+    error: updateRun.error ?? (logLooksStuck ? "Das letzte Update hat seit über 30 Minuten keinen Abschluss gemeldet. Bitte Update-Log prüfen oder Update erneut starten." : undefined),
     log
   };
 
@@ -1215,6 +1220,12 @@ app.post("/api/analyze", async (request, response) => {
 
     response.json({
       generatedAt,
+      sources: {
+        ccu: ccuSnapshot?.collectedAt,
+        collector: latestCollector?.collectedAt,
+        masterdata: latestCcuMasterdata?.collectedAt,
+        sniffer: snifferSnapshot?.checkedAt
+      },
       checks,
       systemDashboard,
       notifications: {
