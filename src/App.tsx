@@ -1561,6 +1561,8 @@ function App() {
   const visibleSnifferEvents = showAllSnifferEvents
     ? snifferSnapshot?.events ?? []
     : snifferSnapshot?.events.slice(0, 10) ?? [];
+  const ccuDutyCheck = analysis?.checks.find((check) => check.id === "duty-cycle");
+  const ccuDutyEvidence = ccuDutyCheck?.evidence.find((item) => item.source.includes("CCU"));
   const routingNodeByIdentifier = useMemo(() => {
     const map = new Map<string, RoutingTopologyNode>();
     for (const node of routingTopology?.nodes ?? []) {
@@ -3592,6 +3594,11 @@ function App() {
               <strong>Letzte 60 Minuten</strong>
               <small>{snifferSnapshot?.checkedAt ? `Aktualisiert ${formatSnifferTime(snifferSnapshot.checkedAt)}` : "Noch keine Messung"}</small>
             </div>
+            <div className={ccuDutyEvidence ? "is-ok" : "needs-action"}>
+              <span>CCU-Duty-Cycle</span>
+              <strong>{ccuDutyEvidence ? ccuDutyEvidence.detail.replace(/^Zentrale meldet /, "") : "Aus Analyse"}</strong>
+              <small>Quelle: CCU/XML-API, nicht Sniffer</small>
+            </div>
             <a href="https://github.com/psi-4ward/AskSinAnalyzerXS" target="_blank" rel="noreferrer">
               <span>Technische Grundlage</span>
               <strong>AskSinAnalyzerXS</strong>
@@ -3675,7 +3682,7 @@ function App() {
 
           <div className="dc-metric-grid">
             {[
-              ["Duty Cycle · 60 Min.", snifferSnapshot?.summary.telegrams ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Gleitender Wert der letzten 60 Minuten, berechnet wie AskSinAnalyzerXS."],
+              ["Sniffer-DC-Schätzung · 60 Min.", snifferSnapshot?.summary.telegrams ? `${snifferSnapshot.summary.dutyCycle}%` : "nicht gemessen", "Quelle: AskSin-Sniffer. Gleitende Funkzeit-Schätzung, nicht der CCU-WebUI-Wert."],
               [
                 "Top Funkzeit-Anteil · 60 Min.",
                 topDutyDevice ? `${topDutyDevice.dutyShare}%` : "keine Telegramme",
@@ -3685,9 +3692,9 @@ function App() {
               ],
               ["Rauschpegel / Carrier Sense", carrierSenseText, carrierSenseHint],
               ...gatewayDutyCycleCards.map((gateway, index) => [
-                `Gateway DC ${index + 1}`,
+                `Gateway Sniffer-DC ${index + 1}`,
                 `${gateway.dutyCycle}%`,
-                `${gateway.name} · Zentrale ${topologyNodeFor(gateway)?.ccuRssi ?? "–"} dBm · Sniffer ${gateway.avgRssi ?? "–"} dBm`
+                `${gateway.name} · Quelle DC/RSSI: Sniffer · Zentralen-RSSI ${topologyNodeFor(gateway)?.ccuRssi ?? "–"} dBm`
               ]),
               ["Telegramme", snifferSnapshot?.summary.telegrams ? String(snifferSnapshot.summary.telegrams) : "0", `${snifferSnapshot?.summary.rawLines ?? 0} Rohzeilen empfangen.`],
               ["Geräte", snifferSnapshot?.summary.devices ? String(snifferSnapshot.summary.devices) : "0", "Erkannte Funk-Absender aus Telegrammen."],
@@ -3824,11 +3831,11 @@ function App() {
             <div className="dc-duty-panel">
               <div>
                 <p className="eyebrow">Funklast</p>
-                <h3>Belegter Duty Cycle nach Verursacher</h3>
+                <h3>Sniffer-Funkzeit nach Verursacher</h3>
                 <p>
                   Gleitender Zeitraum: letzte 60 Minuten. Der Kreis entspricht 100% der verfügbaren Funkstunde:
                   farbige Segmente sind belegte Funkzeit, der hellgrüne Bereich ist noch verfügbar.
-                  Zusammengefasste weitere Geräte sind separat als „Weitere Geräte“ markiert.
+                  Zusammengefasste weitere Geräte sind separat als „Weitere Geräte“ markiert. Quelle ist der AskSin-Sniffer, nicht der CCU-WebUI-Duty-Cycle.
                 </p>
               </div>
               {(() => {
@@ -3854,7 +3861,7 @@ function App() {
                   ...(remainingDevices > 0 && remainingDutyCycle > 0.01 ? [{
                     key: "remaining",
                     label: `Weitere ${remainingDevices} Geräte`,
-                    detail: "Zusammengefasster belegter Duty Cycle",
+                    detail: "Zusammengefasste vom Sniffer berechnete Funkzeit",
                     value: remainingDutyCycle,
                     share: remainingDutyCycle * chartScale,
                     kind: "remaining" as const,
@@ -3888,7 +3895,7 @@ function App() {
                     <div
                       className="dc-duty-donut"
                       role="img"
-                      aria-label={`Duty Cycle ${measuredDutyCycle} Prozent. ${segments.map((segment) => `${segment.label}: ${segment.value} Prozentpunkte`).join(", ")}`}
+                      aria-label={`Sniffer-Funkzeit ${measuredDutyCycle} Prozent. ${segments.map((segment) => `${segment.label}: ${segment.value} Prozentpunkte`).join(", ")}`}
                     >
                       <svg viewBox="0 0 100 100" aria-hidden="true">
                         {chartSegments.map((segment) => {
@@ -3936,7 +3943,7 @@ function App() {
                         ) : (
                           <>
                             <strong>{measuredDutyCycle}%</strong>
-                            <span>Duty Cycle belegt</span>
+                            <span>Sniffer-Funkzeit</span>
                             <small>{measuredDutyCycle > 100 ? "Messwert über 100% – prüfen" : `${freeDutyCycle}% verfügbar`}</small>
                           </>
                         )}
@@ -3963,6 +3970,7 @@ function App() {
                   62% in der Mitte bedeutet beispielsweise: 62% der erlaubten Funkzeit waren in den letzten 60 Minuten belegt.
                   Die farbigen Gerätesegmente erklären, wer wie viele Prozentpunkte davon verursacht hat.
                   „Noch verfügbar“ zählt nicht als Verursacher, sondern ist die Restkapazität bis 100%.
+                  Der bekannte CCU-Duty-Cycle steht separat im Analysepunkt „Duty Cycle“.
                 </span>
               </div>
             </div>
@@ -5640,7 +5648,7 @@ function App() {
                         {devices.map((device, index) => (
                           <div key={device.address}>
                             <i style={{ background: colors[index] }} />
-                            <span><strong>{device.name}</strong><small>{device.telegrams} Telegramme · {device.dutyCycle}% eigener DC</small></span>
+                            <span><strong>{device.name}</strong><small>{device.telegrams} Telegramme · {device.dutyCycle}% Sniffer-Funkzeit</small></span>
                             <b>{device.dutyShare}%</b>
                           </div>
                         ))}

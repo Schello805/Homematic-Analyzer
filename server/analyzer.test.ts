@@ -106,6 +106,9 @@ test("ordnet erhöhten Duty Cycle auch ohne Sniffer verständlich ein", () => {
   assert.equal(dutyCycle?.status, "improvement");
   assert.match(dutyCycle?.recommendation ?? "", /CCU-Wert beobachten/);
   assert.doesNotMatch(dutyCycle?.recommendation ?? "", /DC-Analyzer/);
+  assert.match(dutyCycle?.summary ?? "", /CCU meldet/);
+  assert.equal(dutyCycle?.evidence[0]?.source, "CCU XML-API Duty Cycle");
+  assert.match(dutyCycle?.details.join(" "), /Sniffer.*zweite Quelle/);
 });
 
 test("verweist bei aktiviertem Sniffer auf die Verursacheranalyse", () => {
@@ -127,7 +130,9 @@ test("verweist bei aktiviertem Sniffer auf die Verursacheranalyse", () => {
     }
   );
 
-  assert.match(checks.find((check) => check.id === "duty-cycle")?.recommendation ?? "", /DC-Analyzer/);
+  const dutyCycle = checks.find((check) => check.id === "duty-cycle");
+  assert.match(dutyCycle?.recommendation ?? "", /DC-Analyzer/);
+  assert.match(dutyCycle?.recommendation ?? "", /CCU-Wert/);
 });
 
 test("bewertet ein einzelnes schwaches Sniffer-Telegramm noch nicht als belastbaren Beleg", () => {

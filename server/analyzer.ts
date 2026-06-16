@@ -578,7 +578,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       summary: hasCcuData
         ? ccu?.dutyCycle === undefined
           ? "Es wurde kein belegter Duty-Cycle-Wert in den CCU-Daten gefunden."
-          : `Der belegte Duty-Cycle-Wert liegt bei ${dutyCycleText(ccu.dutyCycle)}.`
+          : `Die CCU meldet einen belegten Duty-Cycle-Wert von ${dutyCycleText(ccu.dutyCycle)}.`
         : "Duty Cycle kann ohne CCU-Daten nicht belegt werden.",
       recommendation: hasCcuData
         ? ccu?.dutyCycle === undefined
@@ -589,15 +589,17 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
               ? "Beobachten: Wenn der Wert länger hoch bleibt, Funklast und externe Abfragen prüfen."
               : ccu.dutyCycle >= 50
                 ? hasSniffer
-                  ? "Erhöht: Den Wert beobachten und im DC-Analyzer prüfen, welche Geräte den größten Anteil an der gemessenen Funkzeit haben."
+                  ? "Erhöht: Den CCU-Wert beobachten und im DC-Analyzer zusätzlich prüfen, welche Geräte beim Sniffer den größten Anteil an der gemessenen Funkzeit haben."
                   : "Erhöht: Den CCU-Wert beobachten. Häufige Programme, Kommunikationsstörungen und stark abfragende externe Systeme prüfen."
                 : "Kein akuter Handlungsbedarf."
         : "CCU-Zugang einrichten, damit der echte Duty-Cycle-Wert gelesen werden kann.",
       access: ["ccu"],
       evidence: hasCcuData && ccu?.dutyCycle !== undefined
-        ? [{ source: "CCU XML-API", detail: `Duty Cycle: ${dutyCycleText(ccu.dutyCycle)}.`, timestamp: ccu.collectedAt }]
+        ? [{ source: "CCU XML-API Duty Cycle", detail: `Zentrale meldet Duty Cycle: ${dutyCycleText(ccu.dutyCycle)}.`, timestamp: ccu.collectedAt }]
         : [],
       details: [
+        "Quelle dieses Prüfpunkts ist der von der CCU/XML-API gemeldete Duty-Cycle-Wert der Zentrale.",
+        "Der AskSin-Sniffer misst zusätzlich Funktelegramme am Standort des Sniffers. Das ist eine zweite Quelle und keine 1:1-Aufteilung des CCU-Werts.",
         "Schwellwerte: ab 50% Optimierung, ab 70% Hinweis, ab 90% kritisch.",
         "Ein Problem wird nur markiert, wenn ein echter Wert oder eine aktive Servicemeldung vorliegt."
       ]

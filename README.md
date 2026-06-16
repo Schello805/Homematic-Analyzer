@@ -20,6 +20,16 @@ Der Analyzer arbeitet modular:
 
 Wichtig: Die App soll keine Fehler raten. Jede kritische Aussage braucht einen Beleg, zum Beispiel Messwert, Servicemeldung, Logzeile oder Gerätestatus.
 
+## Quellenprinzip
+
+Messwerte werden in der Oberfläche nach Quelle getrennt angezeigt:
+
+- **CCU/XML-API**: bekannte Zentralenwerte wie Duty Cycle, Servicemeldungen, Batterien, Gerätezustände und RSSI aus Sicht der CCU.
+- **AskSin-Sniffer**: optionale Zusatzmessung am Standort des Sniffers, z. B. einzelne Telegramme, geschätzte Funkzeit pro Gerät, Rauschpegel/Carrier Sense und Sniffer-RSSI.
+- **Collector-Script**: Systemzustand der Zentrale, Logs, Speicher, Backups und aktive Verbindungen.
+
+Der Sniffer erklärt mögliche Verursacher und Funkumgebung, ersetzt aber nicht den bekannten CCU-WebUI-Duty-Cycle.
+
 ## Installation auf Raspberry / Debian / Ubuntu / Proxmox LXC
 
 Auf einem leeren Debian- oder Ubuntu-System kann der Analyzer automatisch installiert werden:
