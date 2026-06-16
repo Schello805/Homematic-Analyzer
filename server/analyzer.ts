@@ -1,4 +1,5 @@
 import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CentralReleaseCheck, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
+import { isClearingEventLine } from "./aiLogAnalyzer.js";
 import { describeKnownService } from "./networkIdentity.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 
@@ -179,7 +180,7 @@ function analyzeLogLines(logs: string[] | undefined): LogAnalysis {
   const relevantLines = lines.filter((line) => {
     const isNoise = /\b(debug|verbose)\b/i.test(line);
     const isRelevant = /\b(error|err|fatal|panic|warn|warning|failed|failure|timeout|unreach|sticky_unreach|lowbat|service unavailable|segfault|restart|crash|critical)\b/i.test(line);
-    return isRelevant && !isNoise;
+    return isRelevant && !isNoise && !isClearingEventLine(line);
   });
   const criticalLines = relevantLines.filter((line) => /\b(fatal|panic|segfault|crash|critical|service unavailable)\b/i.test(line));
 

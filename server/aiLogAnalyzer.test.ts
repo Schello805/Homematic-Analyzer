@@ -29,6 +29,16 @@ test("meldet keine Treffer bei normalen Logzeilen", () => {
   assert.deepEqual(result.lines, []);
 });
 
+test("wertet UNREACH=false als Entwarnung und nicht als Fehler", () => {
+  const result = prepareLogLines([
+    'Jun 16 19:14:02 Homematic-raspi local0.info ReGaHss: Info: Event="0001D569A581EA:0"."UNREACH"=false [execute():iseXmlRpc.cpp:334]'
+  ], "issues");
+
+  assert.equal(result.totalLines, 1);
+  assert.equal(result.matchedLines, 0);
+  assert.deepEqual(result.lines, []);
+});
+
 test("begrenzt die vollständige Analyse auf die neuesten 500 Zeilen", () => {
   const logs = Array.from({ length: 520 }, (_, index) => `Logzeile ${index + 1}`);
   const result = prepareLogLines(logs, "full");
@@ -52,6 +62,14 @@ test("kennzeichnet unbekannte technische Events als Beleg statt Diagnose", () =>
 
   assert.match(result, /noch keine Ursache/);
   assert.match(result, /SOME_UNKNOWN_STATE/);
+});
+
+test("erklärt false-Events als Normalzustand", () => {
+  const result = explainAiEvidence('Event="0001D569A581EA:0"."UNREACH"=false');
+
+  assert.match(result, /nicht aktiv/);
+  assert.match(result, /Normalzustand/);
+  assert.match(result, /kein Fehler/);
 });
 
 test("setzt vorhandenen Gerätenamen in die Erklärung ein", () => {

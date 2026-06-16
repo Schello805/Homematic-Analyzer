@@ -207,6 +207,25 @@ test("bewertet Wochen alte Collector-Logs nicht als aktuellen Zustand", () => {
   assert.equal(externalAccess?.status, "unavailable");
 });
 
+test("wertet UNREACH=false im Collector-Log als unauffällige Entwarnung", () => {
+  const collector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date().toISOString(),
+    logs: [
+      'Jun 16 19:14:02 Homematic-raspi local0.info ReGaHss: Info: Event="0001D569A581EA:0"."UNREACH"=false [execute():iseXmlRpc.cpp:334]'
+    ]
+  };
+
+  const logs = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    collector
+  ).find((check) => check.id === "logs");
+
+  assert.equal(logs?.status, "ok");
+  assert.match(logs?.summary ?? "", /keine belegbaren Fehler/);
+  assert.equal(logs?.evidence.length, 0);
+});
+
 test("erklärt aktive CCU-Verbindungen mit lokal aufgelöstem Gerätenamen", () => {
   const collector: CollectorPayload = {
     host: "Homematic-raspi",

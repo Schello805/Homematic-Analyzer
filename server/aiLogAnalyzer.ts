@@ -16,6 +16,11 @@ const allowedStatuses = new Set<CheckStatus>(["ok", "improvement", "warning", "c
 const maxAiLogLines = 500;
 const maxAiLogCharacters = 120000;
 const issuePattern = /\b(error|errors|warn|warning|fatal|critical|failed|failure|exception|timeout|unreach|unreachable|lowbat|low battery|not reachable|communication error|config pending|overheat|corrupt|denied)\b|fehler|warnung|kritisch|gestört|störung|nicht erreichbar|batterie schwach|konfiguration ausstehend/i;
+const clearingEventPattern = /Event="[^"]+"\."(?:UNREACH|STICKY_UNREACH|LOWBAT|LOW_BAT|BATTERY_LOW|CONFIG_PENDING|UPDATE_PENDING|SABOTAGE|ERROR|FAULT_[^"]+)"=false\b/i;
+
+export function isClearingEventLine(line: string): boolean {
+  return clearingEventPattern.test(line);
+}
 
 export function prepareLogLines(logs: string[], mode: AiLogMode) {
   const cleanedLines = logs
@@ -24,7 +29,7 @@ export function prepareLogLines(logs: string[], mode: AiLogMode) {
     .slice(-maxAiLogLines)
     .map((line) => line.slice(0, 1000));
   const selectedLines = mode === "issues"
-    ? cleanedLines.filter((line) => issuePattern.test(line))
+    ? cleanedLines.filter((line) => issuePattern.test(line) && !isClearingEventLine(line))
     : cleanedLines;
   const limitedLines: string[] = [];
   let characterCount = 0;
@@ -86,6 +91,9 @@ export function explainAiEvidence(detail: string, masterdata?: CcuMasterdataPayl
   const event = cleaned.match(/^Event="([^"]+)"\."([^"]+)"=(.+)$/i);
   if (event) {
     const [, channel, parameter, value] = event;
+    if (value.trim().toLowerCase() === "false") {
+      return `${resolveDeviceLabel(channel, masterdata)} meldet „${parameter}“ als nicht aktiv. Das ist eine Entwarnung beziehungsweise ein Normalzustand und allein kein Fehler. Technischer Beleg: ${cleaned}`;
+    }
     return `${resolveDeviceLabel(channel, masterdata)} meldet den technischen Zustand „${parameter}“ mit dem Wert ${value}. Die Zeile ist ein Beleg, erklärt ohne weitere passende Logmeldungen aber noch keine Ursache und beweist keinen Defekt. Technischer Beleg: ${cleaned}`;
   }
 
