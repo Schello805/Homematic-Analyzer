@@ -1324,6 +1324,42 @@ h2 {
   font-size: 0.92rem;
 }
 
+.dc-duty-legend-row--free {
+  border-radius: 10px;
+  padding-inline: 6px;
+  background: #f0fdf4;
+}
+
+.dc-duty-legend-row--remaining {
+  border-radius: 10px;
+  padding-inline: 6px;
+  background: #f8fafc;
+}
+
+.dc-duty-legend-row--free b {
+  color: #15803d;
+}
+
+.dc-duty-legend-row--remaining b {
+  color: #475569;
+}
+
+.dc-duty-legend-row--free i {
+  border: 1px solid #86efac;
+}
+
+.dc-duty-legend-row--remaining i {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35);
+}
+
+.dc-duty-segment--free path {
+  stroke: #86efac;
+}
+
+.dc-duty-segment--remaining path {
+  stroke-width: .55;
+}
+
 .dc-duty-explanation {
   display: flex;
   gap: 8px;

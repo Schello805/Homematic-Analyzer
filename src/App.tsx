@@ -3827,7 +3827,8 @@ function App() {
                 <h3>Belegter Duty Cycle nach Verursacher</h3>
                 <p>
                   Gleitender Zeitraum: letzte 60 Minuten. Der Kreis entspricht 100% der verfügbaren Funkstunde:
-                  Geräte belegen ihren absoluten Anteil, der graue Bereich ist noch frei.
+                  farbige Segmente sind belegte Funkzeit, der hellgrüne Bereich ist noch verfügbar.
+                  Zusammengefasste weitere Geräte sind separat als „Weitere Geräte“ markiert.
                 </p>
               </div>
               {(() => {
@@ -3856,8 +3857,8 @@ function App() {
                     detail: "Zusammengefasster belegter Duty Cycle",
                     value: remainingDutyCycle,
                     share: remainingDutyCycle * chartScale,
-                    kind: "device" as const,
-                    color: "#94a3b8"
+                    kind: "remaining" as const,
+                    color: "#475569"
                   }] : []),
                   ...(freeDutyCycle > 0.01 ? [{
                     key: "free",
@@ -3866,7 +3867,7 @@ function App() {
                     value: freeDutyCycle,
                     share: freeDutyCycle,
                     kind: "free" as const,
-                    color: "#e5ebf3"
+                    color: "#dcfce7"
                   }] : [])
                 ];
                 let position = 0;
@@ -3894,7 +3895,7 @@ function App() {
                           const labelPosition = polarPoint(50, 36.5, segment.middle);
                           return (
                             <g
-                              className={`dc-duty-segment ${hoveredDutySegmentKey === segment.key ? "is-active" : ""}`}
+                              className={`dc-duty-segment dc-duty-segment--${segment.kind} ${hoveredDutySegmentKey === segment.key ? "is-active" : ""}`}
                               key={segment.key}
                               tabIndex={0}
                               onMouseEnter={() => setHoveredDutySegmentKey(segment.key)}
@@ -3905,7 +3906,13 @@ function App() {
                               <title>{segment.label}: {segment.value}% der verfügbaren Funkstunde</title>
                               <path d={donutSegmentPath(segment.start, segment.end)} fill={segment.color} />
                               {segment.value >= 4 && (
-                                <text x={labelPosition.x} y={labelPosition.y} textAnchor="middle" dominantBaseline="central">
+                                <text
+                                  x={labelPosition.x}
+                                  y={labelPosition.y}
+                                  textAnchor="middle"
+                                  dominantBaseline="central"
+                                  style={{ fill: segment.kind === "free" ? "#166534" : "#fff" }}
+                                >
                                   {segment.value}%
                                 </text>
                               )}
@@ -3918,7 +3925,13 @@ function App() {
                           <>
                             <strong>{hoveredSegment.value}%</strong>
                             <span>{hoveredSegment.label}</span>
-                            <small>{hoveredSegment.kind === "free" ? "noch verfügbar" : "absoluter DC-Anteil"}</small>
+                            <small>
+                              {hoveredSegment.kind === "free"
+                                ? "noch verfügbar"
+                                : hoveredSegment.kind === "remaining"
+                                  ? "weitere belegte Funkzeit"
+                                  : "absoluter DC-Anteil"}
+                            </small>
                           </>
                         ) : (
                           <>
@@ -3931,13 +3944,13 @@ function App() {
                     </div>
                     <div className="dc-duty-legend">
                       {segments.map((segment) => (
-                        <div className="dc-duty-legend-row" key={segment.key}>
+                        <div className={`dc-duty-legend-row dc-duty-legend-row--${segment.kind}`} key={segment.key}>
                           <i style={{ background: segment.color }} />
                           <div>
                             <strong>{segment.label}</strong>
                             <span>{segment.detail}</span>
                           </div>
-                          <b>{segment.value}% DC</b>
+                          <b>{segment.kind === "free" ? `${segment.value}% frei` : `${segment.value}% DC`}</b>
                         </div>
                       ))}
                     </div>
@@ -3949,6 +3962,7 @@ function App() {
                 <span>
                   62% in der Mitte bedeutet beispielsweise: 62% der erlaubten Funkzeit waren in den letzten 60 Minuten belegt.
                   Die farbigen Gerätesegmente erklären, wer wie viele Prozentpunkte davon verursacht hat.
+                  „Noch verfügbar“ zählt nicht als Verursacher, sondern ist die Restkapazität bis 100%.
                 </span>
               </div>
             </div>
