@@ -1541,6 +1541,11 @@ function App() {
     setCurrentPage(page);
     setMobileMenuOpen(false);
   }
+
+  function navigateHome() {
+    navigateTo("analysis");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   const hasAnalysis = Boolean(analysis);
   const isUpdateRunning = updatingApp || updateRunStatus?.status === "running";
   const backupItems = analysis?.systemDashboard?.backupItems ?? [];
@@ -3175,13 +3180,13 @@ function App() {
       </div>
 
       <header className="app-topbar">
-        <div className="app-brand">
+        <button type="button" className="app-brand" onClick={navigateHome} aria-label="Zur Startseite">
           <img src="/logo.png" alt="" aria-hidden="true" />
           <div>
             <strong>Homematic Analyzer</strong>
             <span>Belegbare Smarthome-Analyse</span>
           </div>
-        </div>
+        </button>
         <button
           type="button"
           className={`mobile-menu-toggle ${mobileMenuOpen ? "is-open" : ""}`}

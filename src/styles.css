@@ -71,6 +71,18 @@ main {
   align-items: center;
   gap: 10px;
   min-width: 250px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-brand:focus-visible {
+  outline: 3px solid rgba(47, 118, 255, 0.28);
+  outline-offset: 5px;
+  border-radius: 12px;
 }
 
 .app-brand img {
