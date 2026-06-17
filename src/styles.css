@@ -444,6 +444,58 @@ h2 {
   padding-right: 4px;
 }
 
+.signal-source-switch {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 12px 0 8px;
+  padding: 4px;
+  border: 1px solid #d8e4f2;
+  border-radius: 14px;
+  background: #eef4fb;
+}
+
+.signal-source-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  color: #53627a;
+  cursor: pointer;
+  background: transparent;
+  font-weight: 800;
+}
+
+.signal-source-switch button.is-active {
+  color: #1550aa;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(34, 74, 128, .12);
+}
+
+.signal-source-switch small {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #526178;
+  background: #eef4fb;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.signal-source-hint {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-left: 3px solid #3478f6;
+  border-radius: 10px;
+  color: #53627a;
+  background: #f3f8ff;
+  font-size: .84rem;
+}
+
 .action-device-list article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -483,6 +535,11 @@ h2 {
 .measurement-provisional {
   color: #b54708;
   background: #fef0c7;
+}
+
+.measurement-central {
+  color: #1849a9;
+  background: #eaf2ff;
 }
 
 .rssi-value.good {

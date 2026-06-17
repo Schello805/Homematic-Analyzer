@@ -1600,6 +1600,7 @@ function App() {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [actionModal, setActionModal] = useState<ActionModal>(null);
   const [actionModalCheckId, setActionModalCheckId] = useState<string | null>(null);
+  const [signalSourceFilter, setSignalSourceFilter] = useState<"both" | "ccu" | "sniffer">("both");
   const [backupPage, setBackupPage] = useState(0);
   const [configurationPassphrase, setConfigurationPassphrase] = useState("");
   const [configurationBusy, setConfigurationBusy] = useState(false);
@@ -1669,6 +1670,86 @@ function App() {
     routingNodeByIdentifier.get(normalizeRadioIdentifier(device.serial))
     ?? routingNodeByIdentifier.get(normalizeRadioIdentifier(device.address))
   );
+  const allSignalQualityDevices = useMemo(() => {
+    const map = new Map<string, {
+      key: string;
+      name: string;
+      type?: string;
+      serial?: string;
+      address?: string;
+      ccuRssi?: number;
+      snifferRssi?: number;
+      telegrams?: number;
+    }>();
+
+    const upsert = (key: string, patch: Partial<{
+      name: string;
+      type?: string;
+      serial?: string;
+      address?: string;
+      ccuRssi?: number;
+      snifferRssi?: number;
+      telegrams?: number;
+    }>) => {
+      const existing = map.get(key);
+      map.set(key, {
+        key,
+        name: patch.name ?? existing?.name ?? patch.serial ?? patch.address ?? key,
+        type: patch.type ?? existing?.type,
+        serial: patch.serial ?? existing?.serial,
+        address: patch.address ?? existing?.address,
+        ccuRssi: patch.ccuRssi ?? existing?.ccuRssi,
+        snifferRssi: patch.snifferRssi ?? existing?.snifferRssi,
+        telegrams: patch.telegrams ?? existing?.telegrams
+      });
+    };
+
+    for (const node of routingTopology?.nodes ?? []) {
+      if (node.role === "central" || node.ccuRssi === undefined) continue;
+      const key = normalizeRadioIdentifier(node.serial) || normalizeRadioIdentifier(node.address) || node.id;
+      upsert(key, {
+        name: node.name,
+        type: node.type,
+        serial: node.serial,
+        address: node.address,
+        ccuRssi: node.ccuRssi
+      });
+    }
+
+    for (const device of snifferSnapshot?.devices ?? []) {
+      if (device.avgRssi === undefined) continue;
+      const key = normalizeRadioIdentifier(device.serial) || normalizeRadioIdentifier(device.address) || device.address;
+      const node = topologyNodeFor(device);
+      upsert(key, {
+        name: node?.name ?? device.name,
+        type: node?.type ?? device.type,
+        serial: node?.serial ?? device.serial,
+        address: node?.address ?? device.address,
+        ccuRssi: node?.ccuRssi,
+        snifferRssi: device.avgRssi,
+        telegrams: device.telegrams
+      });
+    }
+
+    return Array.from(map.values());
+  }, [routingTopology, snifferSnapshot, routingNodeByIdentifier]);
+  const signalQualityDevices = useMemo(() => allSignalQualityDevices
+    .filter((device) => (
+      signalSourceFilter === "both"
+        ? device.ccuRssi !== undefined || device.snifferRssi !== undefined
+        : signalSourceFilter === "ccu"
+          ? device.ccuRssi !== undefined
+          : device.snifferRssi !== undefined
+    ))
+    .sort((left, right) => {
+      const leftValue = signalSourceFilter === "ccu"
+        ? left.ccuRssi
+        : signalSourceFilter === "sniffer" ? left.snifferRssi : Math.min(left.ccuRssi ?? 99, left.snifferRssi ?? 99);
+      const rightValue = signalSourceFilter === "ccu"
+        ? right.ccuRssi
+        : signalSourceFilter === "sniffer" ? right.snifferRssi : Math.min(right.ccuRssi ?? 99, right.snifferRssi ?? 99);
+      return (leftValue ?? 99) - (rightValue ?? 99);
+    }), [allSignalQualityDevices, signalSourceFilter]);
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
     ? `${snifferSnapshot.summary.carrierSense} dBm`
     : "nicht gemessen";
@@ -5831,27 +5912,52 @@ function App() {
                 <p>
                   Belastbar ab mindestens 3 Telegrammen. Werte mit weniger Telegrammen bleiben vorläufig und lösen keine harte Fehleraussage aus.
                 </p>
+                <div className="signal-source-switch" role="group" aria-label="Signalquelle auswählen">
+                  <button type="button" className={signalSourceFilter === "both" ? "is-active" : ""} onClick={() => setSignalSourceFilter("both")}>
+                    Beides <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined || device.snifferRssi !== undefined).length}</small>
+                  </button>
+                  <button type="button" className={signalSourceFilter === "ccu" ? "is-active" : ""} onClick={() => setSignalSourceFilter("ccu")}>
+                    Zentrale <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined).length}</small>
+                  </button>
+                  <button type="button" className={signalSourceFilter === "sniffer" ? "is-active" : ""} onClick={() => setSignalSourceFilter("sniffer")}>
+                    Sniffer <small>{allSignalQualityDevices.filter((device) => device.snifferRssi !== undefined).length}</small>
+                  </button>
+                </div>
+                <p className="signal-source-hint">
+                  {signalSourceFilter === "both"
+                    ? "Vergleicht beide Messquellen. Wenn nur eine Quelle vorhanden ist, bleibt die andere bewusst als „nicht gemessen“ sichtbar."
+                    : signalSourceFilter === "ccu"
+                      ? "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Das ist die Funkstrecke aus Sicht deiner CCU."
+                      : "Zeigt nur RSSI-Werte vom AskSin-Sniffer. Das ist die Empfangsstärke am Standort des Sniffers."}
+                </p>
                 <div className="action-device-list">
-                  {(snifferSnapshot?.devices ?? [])
-                    .filter((device) => device.avgRssi !== undefined)
-                    .slice()
-                    .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0))
-                    .map((device) => (
-                      <article key={device.address}>
+                  {signalQualityDevices.map((device) => (
+                      <article key={device.key}>
                         <div>
                           <strong>{device.name}</strong>
-                          <span>{device.type ?? device.serial ?? device.address}</span>
+                          <span>{device.type ?? device.serial ?? device.address ?? device.key}</span>
                         </div>
-                        <DualRssiAssessment ccu={topologyNodeFor(device)?.ccuRssi} sniffer={device.avgRssi} />
-                        <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
-                          {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
-                        </small>
+                        <DualRssiAssessment
+                          ccu={signalSourceFilter === "sniffer" ? undefined : device.ccuRssi}
+                          sniffer={signalSourceFilter === "ccu" ? undefined : device.snifferRssi}
+                        />
+                        {device.telegrams !== undefined ? (
+                          <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
+                            {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
+                          </small>
+                        ) : (
+                          <small className="measurement-central">Zentralenwert</small>
+                        )}
                       </article>
                     ))}
-                  {!snifferSnapshot?.devices.some((device) => device.avgRssi !== undefined) && (
+                  {signalQualityDevices.length === 0 && (
                     <div className="modal-empty">
-                      <strong>Noch keine RSSI-Gerätedaten</strong>
-                      <span>Sniffer weiterlaufen lassen und einige Homematic-Geräte auslösen.</span>
+                      <strong>Noch keine passenden RSSI-Gerätedaten</strong>
+                      <span>
+                        {signalSourceFilter === "sniffer"
+                          ? "Sniffer weiterlaufen lassen und einige Homematic-Geräte auslösen."
+                          : "Analyse erneut starten und prüfen, ob die XML-API RSSI-Werte der Zentrale liefert."}
+                      </span>
                     </div>
                   )}
                 </div>
