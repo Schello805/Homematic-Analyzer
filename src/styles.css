@@ -2976,6 +2976,74 @@ pre {
   font-weight: 650;
 }
 
+.analysis-source-mode {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0 16px;
+  border: 1px solid #dbe7f5;
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #f8fbff, #f1f7ff);
+}
+
+.analysis-source-mode > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.analysis-source-mode strong {
+  color: #172033;
+}
+
+.analysis-source-mode span {
+  color: #64748b;
+  font-size: .84rem;
+}
+
+.analysis-source-mode > div[role="group"] {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d6e3f3;
+  border-radius: 13px;
+  background: #eaf1fa;
+}
+
+.analysis-source-mode button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 9px;
+  padding: 7px 12px;
+  color: #526178;
+  cursor: pointer;
+  background: transparent;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.analysis-source-mode button.is-active {
+  color: #1550aa;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(34, 74, 128, .12);
+}
+
+.analysis-source-mode small {
+  min-width: 21px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #526178;
+  background: #eef4fb;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
 .summary-card {
   border-radius: 20px;
   padding: 13px;
@@ -6239,6 +6307,19 @@ pre {
 
   .routing-topology-header button {
     width: 100%;
+  }
+
+  .analysis-source-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-source-mode > div[role="group"] {
+    width: 100%;
+  }
+
+  .analysis-source-mode button {
+    min-width: 0;
+    padding-inline: 8px;
   }
 
   .routing-map-summary {

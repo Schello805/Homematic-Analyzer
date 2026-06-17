@@ -43,6 +43,8 @@ type AnalysisResponse = {
   };
 };
 
+type AnalysisSnifferMode = "base" | "with-sniffer";
+
 type DiagnosticSource = {
   id: string;
   label: string;
@@ -444,6 +446,30 @@ const analysisSteps = [
   { label: "Logs & Zugriffe", detail: "Optionale Shell-Zusatzdaten" },
   { label: "Ergebnis bauen", detail: "Bewerten, gruppieren, empfehlen" }
 ];
+
+function evidenceUsesSniffer(evidence: Evidence) {
+  const source = evidence.source.toLowerCase();
+  const detail = evidence.detail.toLowerCase();
+  return source.includes("sniffer")
+    || source.includes("asksin")
+    || detail.includes("sniffer")
+    || detail.includes("asksin");
+}
+
+function checkUsesSniffer(check: AnalysisCheck) {
+  return check.evidence.some(evidenceUsesSniffer)
+    || check.details.some((detail) => evidenceUsesSniffer({ source: "", detail }))
+    || /sniffer|asksin/i.test(`${check.summary} ${check.recommendation}`);
+}
+
+function filterSnifferFromCheck(check: AnalysisCheck, mode: AnalysisSnifferMode): AnalysisCheck | null {
+  if (mode === "with-sniffer") return check;
+  const evidence = check.evidence.filter((item) => !evidenceUsesSniffer(item));
+  const details = check.details.filter((detail) => !evidenceUsesSniffer({ source: "", detail }));
+  const snifferOnly = checkUsesSniffer(check) && evidence.length === 0 && details.length === 0;
+  if (snifferOnly && ["signal-strength", "routing-topology"].includes(check.id)) return null;
+  return { ...check, evidence, details };
+}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -1554,6 +1580,7 @@ function App() {
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
   const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
+  const [analysisSnifferMode, setAnalysisSnifferMode] = useState<AnalysisSnifferMode>("base");
   const [showHealthyChecks, setShowHealthyChecks] = useState(false);
   const [expandedCheckThemes, setExpandedCheckThemes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -1631,6 +1658,17 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   const hasAnalysis = Boolean(analysis);
+  const displayedChecks = useMemo(() => (
+    analysis?.checks
+      .map((check) => filterSnifferFromCheck(check, analysisSnifferMode))
+      .filter((check): check is AnalysisCheck => Boolean(check)) ?? []
+  ), [analysis, analysisSnifferMode]);
+  const displayedAnalysis = useMemo(() => (
+    analysis ? { ...analysis, checks: displayedChecks } : null
+  ), [analysis, displayedChecks]);
+  const snifferAffectedChecks = useMemo(() => (
+    analysis?.checks.filter(checkUsesSniffer).length ?? 0
+  ), [analysis]);
   const isUpdateRunning = updatingApp || updateRunStatus?.status === "running";
   const backupItems = analysis?.systemDashboard?.backupItems ?? [];
   const backupPageSize = 25;
@@ -1653,9 +1691,9 @@ function App() {
       { id: "ccu", label: "CCU Live", time: analysis.sources?.ccu, required: true },
       { id: "masterdata", label: "CCU Script", time: analysis.sources?.masterdata, required: false },
       { id: "collector", label: "Shell-Collector", time: analysis.sources?.collector, required: false },
-      { id: "sniffer", label: "Sniffer", time: analysis.sources?.sniffer, required: false, hidden: !form.snifferEnabled }
+      { id: "sniffer", label: "Sniffer", time: analysis.sources?.sniffer, required: false, hidden: !form.snifferEnabled || analysisSnifferMode === "base" }
     ].filter((item) => !item.hidden);
-  }, [analysis, form.snifferEnabled]);
+  }, [analysis, form.snifferEnabled, analysisSnifferMode]);
   const routingNodeByIdentifier = useMemo(() => {
     const map = new Map<string, RoutingTopologyNode>();
     for (const node of routingTopology?.nodes ?? []) {
@@ -2552,12 +2590,12 @@ function App() {
   }
 
   const groupedChecks = useMemo(() => {
-    if (!analysis) return [];
+    if (!displayedAnalysis) return [];
 
     return checkThemes
       .map((theme) => {
         const allChecks = theme.checkIds
-          .map((checkId) => analysis.checks.find((check) => check.id === checkId))
+          .map((checkId) => displayedAnalysis.checks.find((check) => check.id === checkId))
           .filter((check): check is AnalysisCheck => Boolean(check));
         const checks = selectedStatusFilter
           ? allChecks.filter((check) => check.status === selectedStatusFilter)
@@ -2583,35 +2621,35 @@ function App() {
         };
       })
       .filter((theme) => theme.checks.length > 0);
-  }, [analysis, selectedStatusFilter, showHealthyChecks]);
+  }, [displayedAnalysis, selectedStatusFilter, showHealthyChecks]);
 
   const summary = useMemo(() => {
-    if (!analysis) return null;
+    if (!displayedAnalysis) return null;
 
-    return analysis.checks.reduce<Record<CheckStatus, number>>(
+    return displayedAnalysis.checks.reduce<Record<CheckStatus, number>>(
       (accumulator, check) => {
         accumulator[check.status] += 1;
         return accumulator;
       },
       { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
     );
-  }, [analysis]);
-  const healthyCheckCount = analysis?.checks.filter((check) => check.status === "ok" && check.id !== "routing-topology").length ?? 0;
+  }, [displayedAnalysis]);
+  const healthyCheckCount = displayedAnalysis?.checks.filter((check) => check.status === "ok" && check.id !== "routing-topology").length ?? 0;
 
   useEffect(() => {
-    if (!analysis) {
+    if (!displayedAnalysis) {
       setExpandedCheckThemes(new Set());
       return;
     }
 
     const attentionThemes = checkThemes
       .filter((theme) => theme.checkIds.some((checkId) => {
-        const check = analysis.checks.find((item) => item.id === checkId);
+        const check = displayedAnalysis.checks.find((item) => item.id === checkId);
         return check && ["critical", "warning", "improvement"].includes(check.status);
       }))
       .map((theme) => theme.id);
     setExpandedCheckThemes(new Set(attentionThemes));
-  }, [analysis?.generatedAt]);
+  }, [analysis?.generatedAt, analysisSnifferMode, displayedAnalysis]);
 
   useEffect(() => {
     if (!activeCheck) return;
@@ -2626,7 +2664,7 @@ function App() {
   }, [activeCheck]);
 
   const guidedActions = useMemo(() => {
-    if (!analysis) return [];
+    if (!displayedAnalysis) return [];
 
     const actions: Array<{
       id: string;
@@ -2638,7 +2676,7 @@ function App() {
       modal: Exclude<ActionModal, null>;
       checkId?: string;
     }> = [];
-    const findCheck = (id: string) => analysis.checks.find((check) => check.id === id);
+    const findCheck = (id: string) => displayedAnalysis.checks.find((check) => check.id === id);
     const alarmCheck = findCheck("alarm-messages");
     const serviceCheck = findCheck("service-messages");
     const reachabilityCheck = findCheck("reachability");
@@ -2687,11 +2725,11 @@ function App() {
         priority: 75,
         eyebrow: "Funk",
         title: radioAttentionChecks.length > 1 ? "Funkzustand gemeinsam einordnen" : primaryRadioCheck.title,
-        detail: `${radioAttentionChecks.map((check) => check.summary).join(" ")}${form.snifferEnabled ? " Snifferdaten ergänzen bei Bedarf die Verursacheranalyse." : ""}`,
-        button: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled
+        detail: `${radioAttentionChecks.map((check) => check.summary).join(" ")}${form.snifferEnabled && analysisSnifferMode === "with-sniffer" ? " Snifferdaten ergänzen bei Bedarf die Verursacheranalyse." : ""}`,
+        button: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled && analysisSnifferMode === "with-sniffer"
           ? "Funklast aufteilen"
           : primaryRadioCheck.id === "signal-strength" ? "Signalwerte öffnen" : "Funkdetails öffnen",
-        modal: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled
+        modal: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled && analysisSnifferMode === "with-sniffer"
           ? "duty"
           : primaryRadioCheck.id === "signal-strength" ? "signal" : "check",
         checkId: primaryRadioCheck.id
@@ -2724,11 +2762,11 @@ function App() {
     }
 
     return actions.sort((left, right) => right.priority - left.priority).slice(0, 5);
-  }, [analysis, collectorStatus, form.snifferEnabled]);
+  }, [displayedAnalysis, collectorStatus, form.snifferEnabled, analysisSnifferMode]);
 
   const actionModalCheck = useMemo(
-    () => analysis?.checks.find((check) => check.id === actionModalCheckId),
-    [analysis, actionModalCheckId]
+    () => displayedAnalysis?.checks.find((check) => check.id === actionModalCheckId),
+    [displayedAnalysis, actionModalCheckId]
   );
 
   function openActionModal(modal: Exclude<ActionModal, null>, checkId?: string) {
@@ -2750,13 +2788,13 @@ function App() {
   }, [aiLogResult, aiLogLoading, currentPage]);
 
   useEffect(() => {
-    if (!analysis) return;
+    if (!displayedAnalysis) return;
 
     const visibleChecks = selectedStatusFilter
-      ? analysis.checks.filter((check) => check.status === selectedStatusFilter)
+      ? displayedAnalysis.checks.filter((check) => check.status === selectedStatusFilter)
       : showHealthyChecks
-        ? analysis.checks
-        : analysis.checks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
+        ? displayedAnalysis.checks
+        : displayedAnalysis.checks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
 
     if (visibleChecks.length > 0) {
       const isActiveVisible = visibleChecks.some((check) => check.id === activeCheck);
@@ -2766,7 +2804,7 @@ function App() {
     } else {
       setActiveCheck(null);
     }
-  }, [selectedStatusFilter, showHealthyChecks, analysis, activeCheck]);
+  }, [selectedStatusFilter, showHealthyChecks, displayedAnalysis, activeCheck]);
 
   useEffect(() => {
     let isActive = true;
@@ -4670,7 +4708,7 @@ function App() {
               </span>
             </div>
             <div className="results__header-actions">
-              {form.hmipRoutingEnabled && analysis.checks.some((check) => check.id === "routing-topology") && (
+              {form.hmipRoutingEnabled && displayedAnalysis?.checks.some((check) => check.id === "routing-topology") && (
                 <button
                   type="button"
                   className="routing-entry-button"
@@ -4684,7 +4722,7 @@ function App() {
                 Neu analysieren
               </button>
               <div className="score">
-                <strong>{analysis.checks.length}</strong>
+                <strong>{displayedAnalysis?.checks.length ?? analysis.checks.length}</strong>
                 <span>Prüfpunkte</span>
               </div>
             </div>
@@ -4704,6 +4742,35 @@ function App() {
             </div>
             <b>Status öffnen</b>
           </button>
+
+          {snifferAffectedChecks > 0 && (
+            <section className="analysis-source-mode" aria-label="Snifferdaten in der Analyse">
+              <div>
+                <strong>{analysisSnifferMode === "base" ? "Basisanalyse ohne Snifferdaten" : "Analyse mit Sniffer-Zusatzdaten"}</strong>
+                <span>
+                  {analysisSnifferMode === "base"
+                    ? "Die Analyseseite zeigt primär CCU-, XML-API-, Collector- und Systemdaten. Sniffer-Belege bleiben ausgeblendet."
+                    : "Sniffer-Belege und Funkdetails werden zusätzlich in Prüfpunkten und Empfehlungen angezeigt."}
+                </span>
+              </div>
+              <div role="group" aria-label="Analyseansicht wählen">
+                <button
+                  type="button"
+                  className={analysisSnifferMode === "base" ? "is-active" : ""}
+                  onClick={() => setAnalysisSnifferMode("base")}
+                >
+                  Ohne Sniffer
+                </button>
+                <button
+                  type="button"
+                  className={analysisSnifferMode === "with-sniffer" ? "is-active" : ""}
+                  onClick={() => setAnalysisSnifferMode("with-sniffer")}
+                >
+                  Mit Sniffer <small>{snifferAffectedChecks}</small>
+                </button>
+              </div>
+            </section>
+          )}
 
           {analysis.systemDashboard?.available && (
             <div className="system-dashboard">
@@ -4997,7 +5064,7 @@ function App() {
                     onClick={() => {
                       setSelectedStatusFilter((current) => current === status ? null : status);
                       if (status === "ok") setShowHealthyChecks(true);
-                      const firstMatchingCheck = analysis.checks.find((check) => check.status === status);
+                      const firstMatchingCheck = displayedAnalysis?.checks.find((check) => check.status === status);
                       if (firstMatchingCheck) {
                         setActiveCheck(firstMatchingCheck.id);
                       }
@@ -5100,14 +5167,14 @@ function App() {
             </div>
 
             <div className="check-detail">
-              {analysis.checks
+              {displayedAnalysis?.checks
                 .filter((check) => check.id === activeCheck)
                 .map((check) => {
                   const relatedTheme = checkThemes.find((theme) => (theme.checkIds as readonly string[]).includes(check.id));
                   const relatedChecks = relatedTheme
                     ? relatedTheme.checkIds
                       .filter((checkId) => checkId !== check.id)
-                      .map((checkId) => analysis.checks.find((item) => item.id === checkId))
+                      .map((checkId) => displayedAnalysis.checks.find((item) => item.id === checkId))
                       .filter((item): item is AnalysisCheck => Boolean(item))
                     : [];
                   return (
@@ -5123,7 +5190,7 @@ function App() {
                     {relatedTheme?.id === "foundation" && (
                       <div className="foundation-chain" aria-label="Prüfkette der CCU-Datenbasis">
                         {relatedTheme.checkIds.map((checkId, index) => {
-                          const foundationCheck = analysis.checks.find((item) => item.id === checkId);
+                          const foundationCheck = displayedAnalysis.checks.find((item) => item.id === checkId);
                           if (!foundationCheck) return null;
                           return (
                             <button
@@ -5164,7 +5231,7 @@ function App() {
                       {["ccu-connection", "xml-api", "ccu-masterdata", "system-health"].includes(check.id) && (
                         <button type="button" onClick={() => setCurrentPage("setup")}>Setup öffnen</button>
                       )}
-                      {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && (
+                      {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && analysisSnifferMode === "with-sniffer" && (
                         <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
                       )}
                       {check.id === "routing-topology" && (
