@@ -6179,6 +6179,20 @@ pre {
   letter-spacing: .04em;
 }
 
+.single-rssi {
+  display: inline-grid;
+  gap: 3px;
+  justify-items: start;
+}
+
+.single-rssi > small {
+  color: #69778d;
+  font-size: .68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
 .dual-rssi.is-compact {
   grid-template-columns: 1fr;
 }

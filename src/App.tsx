@@ -6004,10 +6004,14 @@ function App() {
                           <strong>{device.name}</strong>
                           <span>{device.type ?? device.serial ?? device.address ?? device.key}</span>
                         </div>
-                        <DualRssiAssessment
-                          ccu={signalSourceFilter === "sniffer" ? undefined : device.ccuRssi}
-                          sniffer={signalSourceFilter === "ccu" ? undefined : device.snifferRssi}
-                        />
+                        {signalSourceFilter === "both" ? (
+                          <DualRssiAssessment ccu={device.ccuRssi} sniffer={device.snifferRssi} />
+                        ) : (
+                          <span className="single-rssi">
+                            <small>{signalSourceFilter === "ccu" ? "Zentrale" : "Sniffer"}</small>
+                            <RssiAssessment value={signalSourceFilter === "ccu" ? device.ccuRssi : device.snifferRssi} />
+                          </span>
+                        )}
                         {device.telegrams !== undefined ? (
                           <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
                             {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
