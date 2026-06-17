@@ -324,6 +324,49 @@ test("rät ohne installierte Zentralenversion kein Update", () => {
   assert.match(centralRelease?.recommendation ?? "", /Collector/);
 });
 
+test("zeigt Diagnose, wenn die Zentralenversion live nicht gelesen wurde", () => {
+  const centralRelease = createAnalysis(
+    {},
+    undefined,
+    {
+      reachable: true,
+      xmlApiInstalled: true,
+      source: "xml-api",
+      collectedAt: "2026-06-17T11:00:00.000Z",
+      devices: [],
+      serviceMessages: [],
+      alarmMessages: [],
+      counters: {
+        devices: 0,
+        lowBattery: 0,
+        unreachable: 0,
+        configPending: 0,
+        serviceMessages: 0,
+        alarmMessages: 0
+      },
+      diagnostics: [{
+        step: "Zentralenversion",
+        status: "failed",
+        detail: "Die CCU-Gerätedaten wurden gelesen, aber die Firmwareversion war in den geprüften WebUI-Seiten nicht eindeutig auffindbar."
+      }]
+    },
+    undefined,
+    undefined,
+    undefined,
+    {},
+    {
+      available: false,
+      latestVersion: "3.87.6.20260614",
+      source: "openccu",
+      url: "https://github.com/OpenCCU/OpenCCU/releases",
+      checkedAt: "2026-06-17T11:00:00.000Z"
+    }
+  ).find((check) => check.id === "central-release");
+
+  assert.equal(centralRelease?.status, "improvement");
+  assert.equal(centralRelease?.evidence.some((evidence) => evidence.source === "Zentralenversion"), true);
+});
+
 test("meldet OpenCCU als aktuell, wenn WebUI-Version dem Release entspricht", () => {
   const centralRelease = createAnalysis(
     {},

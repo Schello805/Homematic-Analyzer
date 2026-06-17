@@ -165,17 +165,21 @@ function buildXmlApiUrl(endpoint: CcuEndpoint, path: string): string {
   return url.toString().replace(/%40/g, "@");
 }
 
-function buildCcuUrl(endpoint: CcuEndpoint, path: string, sid?: string): string {
+function buildCcuUrl(endpoint: CcuEndpoint, path: string, sid?: string, sidParam = "sid"): string {
   const url = new URL(path, endpoint.baseUrl);
-  if (sid) url.searchParams.set("sid", sid);
+  if (sid) url.searchParams.set(sidParam, sid);
   return url.toString().replace(/%40/g, "@");
 }
 
-function createAuthHeaders(config: AnalyzeRequest, endpointSid?: string): Record<string, string> {
+function createAuthHeaders(config: AnalyzeRequest, endpointSid?: string, includeSidCookie = false): Record<string, string> {
   const headers: Record<string, string> = {};
   const passwordIsSid = Boolean(
     config.ccuPassword?.trim().startsWith("@") && config.ccuPassword.trim().endsWith("@")
   ) || Boolean(config.ccuPassword && !config.ccuUser);
+
+  if (endpointSid && includeSidCookie) {
+    headers.Cookie = `sid=${endpointSid}; SID=${endpointSid}; _sid_=${endpointSid}`;
+  }
 
   if (!endpointSid && config.ccuUser && config.ccuPassword && !passwordIsSid) {
     headers.Authorization = `Basic ${Buffer.from(`${config.ccuUser}:${config.ccuPassword}`).toString("base64")}`;
@@ -282,18 +286,30 @@ async function fetchCcuText(endpoint: CcuEndpoint, path: string, config: Analyze
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   try {
-    const response = await fetch(buildCcuUrl(endpoint, path, sid), {
-      headers: createAuthHeaders(config, sid),
-      redirect: "follow",
-      signal: controller.signal
-    });
-    if (!response.ok) return undefined;
-    return decodeXmlBuffer(Buffer.from(await response.arrayBuffer())).text;
+    const urls = sid
+      ? [
+          buildCcuUrl(endpoint, path, sid, "sid"),
+          buildCcuUrl(endpoint, path, sid, "_sid_"),
+          buildCcuUrl(endpoint, path)
+        ]
+      : [buildCcuUrl(endpoint, path)];
+
+    for (const url of urls) {
+      const response = await fetch(url, {
+        headers: createAuthHeaders(config, sid, Boolean(sid)),
+        redirect: "follow",
+        signal: controller.signal
+      });
+      if (!response.ok) continue;
+      const text = decodeXmlBuffer(Buffer.from(await response.arrayBuffer())).text;
+      if (text.trim()) return text;
+    }
   } catch {
-    return undefined;
   } finally {
     clearTimeout(timeout);
   }
+
+  return undefined;
 }
 
 async function readCentralVersionFromWebUi(endpoint: CcuEndpoint, config: AnalyzeRequest, sid?: string): Promise<{ version?: string; product?: string; source?: string }> {
@@ -897,13 +913,30 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     const datapoints = collectDatapoints(stateList);
     const devices = enrichFromServiceMessages(collectDevices(stateList), serviceMessages);
     const dutyCycle = findDutyCycle(datapoints, serviceMessages);
-    const centralVersionInfo = await readCentralVersionFromWebUi(endpoint, config, activeSid);
+    let webUiVersionSid = sessionWasCreated ? activeSid : undefined;
+    let webUiVersionSessionWasCreated = false;
+    if (!webUiVersionSid && hasCredentials) {
+      webUiVersionSid = await loginToCcu(endpoint, config);
+      webUiVersionSessionWasCreated = Boolean(webUiVersionSid);
+    }
+    const centralVersionInfo = await readCentralVersionFromWebUi(endpoint, config, webUiVersionSid);
     if (centralVersionInfo.version) {
       diagnostics.push({
         step: "Zentralenversion",
         status: "ok",
         detail: `WebUI meldet ${centralVersionInfo.product ? `${centralVersionInfo.product} ` : ""}${centralVersionInfo.version}${centralVersionInfo.source ? ` über ${centralVersionInfo.source}` : ""}.`
       });
+    } else {
+      diagnostics.push({
+        step: "Zentralenversion",
+        status: "failed",
+        detail: hasCredentials
+          ? "Die CCU-Gerätedaten wurden gelesen, aber die Firmwareversion war in den geprüften WebUI-Seiten nicht eindeutig auffindbar. Der Shell-Collector liefert sie alternativ über `/VERSION`."
+          : "Die CCU-Gerätedaten wurden per XML-API-Token gelesen. Für die WebUI-Firmwareversion fehlen normale CCU-Login-Daten; alternativ liefert der Shell-Collector `/VERSION`."
+      });
+    }
+    if (webUiVersionSessionWasCreated && webUiVersionSid) {
+      void logoutFromCcu(endpoint, webUiVersionSid);
     }
 
     return {

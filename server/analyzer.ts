@@ -1042,6 +1042,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
 
   if (centralRelease) {
     const hasInstalledVersion = Boolean(centralRelease.installedVersion);
+    const centralVersionDiagnostic = ccu?.diagnostics?.find((diagnostic) => diagnostic.step === "Zentralenversion");
     checks.push({
       id: "central-release",
       title: centralRelease.source === "ccu3" ? "CCU3 Update" : "OpenCCU Update",
@@ -1062,14 +1063,21 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             ? "Analyse erneut starten oder den aktuellen Shell-Collector einmal abwarten. Die App liest die installierte Version belegbar aus der CCU-WebUI oder per Collector aus `/VERSION`."
             : "Kein Handlungsbedarf.",
       access: ["ccu", "ssh"],
-      evidence: [{
-        source: centralRelease.source === "ccu3" ? "Offizieller CCU3-Update-Dienst" : "OpenCCU Release",
-        detail: hasInstalledVersion
-          ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
-          : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde weder aus der CCU-WebUI noch vom Collector geliefert.`,
-        timestamp: centralRelease.checkedAt,
-        url: centralRelease.url
-      }],
+      evidence: [
+        {
+          source: centralRelease.source === "ccu3" ? "Offizieller CCU3-Update-Dienst" : "OpenCCU Release",
+          detail: hasInstalledVersion
+            ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
+            : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde weder aus der CCU-WebUI noch vom Collector geliefert.`,
+          timestamp: centralRelease.checkedAt,
+          url: centralRelease.url
+        },
+        ...(!hasInstalledVersion && centralVersionDiagnostic ? [{
+          source: "Zentralenversion",
+          detail: centralVersionDiagnostic.detail,
+          timestamp: ccu?.collectedAt
+        }] : [])
+      ],
       details: [
         "Die installierte Version wird bevorzugt live aus der CCU-WebUI gelesen; der Shell-Collector liefert zusätzlich `/VERSION` der Zentrale.",
         centralRelease.source === "ccu3"
