@@ -324,6 +324,31 @@ test("rät ohne installierte Zentralenversion kein Update", () => {
   assert.match(centralRelease?.recommendation ?? "", /Collector/);
 });
 
+test("meldet OpenCCU als aktuell, wenn WebUI-Version dem Release entspricht", () => {
+  const centralRelease = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    {
+      available: false,
+      installedVersion: "3.87.6.20260614",
+      latestVersion: "3.87.6.20260614",
+      product: "OpenCCU",
+      source: "openccu",
+      url: "https://github.com/OpenCCU/OpenCCU/releases/tag/3.87.6.20260614",
+      checkedAt: "2026-06-17T10:00:00.000Z"
+    }
+  ).find((check) => check.id === "central-release");
+
+  assert.equal(centralRelease?.status, "ok");
+  assert.match(centralRelease?.summary ?? "", /aktuell/);
+  assert.match(centralRelease?.evidence[0]?.detail ?? "", /Installiert: OpenCCU 3\.87\.6\.20260614/);
+});
+
 test("zeigt von der CCU gemeldete Geräte-Firmwareupdates mit Namen", () => {
   const collector: CollectorPayload = {
     collectedAt: new Date().toISOString(),

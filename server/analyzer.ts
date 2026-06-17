@@ -1059,22 +1059,23 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : centralRelease.error
           ? "Internetverbindung des Analyzer-Systems prüfen und die Analyse später erneut starten."
           : !hasInstalledVersion
-            ? "Den aktuellen Shell-Collector einmal abwarten oder erneut ausführen. Er liest die installierte Version belegbar aus `/VERSION` der Zentrale."
+            ? "Analyse erneut starten oder den aktuellen Shell-Collector einmal abwarten. Die App liest die installierte Version belegbar aus der CCU-WebUI oder per Collector aus `/VERSION`."
             : "Kein Handlungsbedarf.",
       access: ["ccu", "ssh"],
       evidence: [{
         source: centralRelease.source === "ccu3" ? "Offizieller CCU3-Update-Dienst" : "OpenCCU Release",
         detail: hasInstalledVersion
           ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
-          : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde vom Collector noch nicht geliefert.`,
+          : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde weder aus der CCU-WebUI noch vom Collector geliefert.`,
         timestamp: centralRelease.checkedAt,
         url: centralRelease.url
       }],
       details: [
-        "Die installierte Version wird direkt auf der CCU aus `/VERSION` gelesen.",
+        "Die installierte Version wird bevorzugt live aus der CCU-WebUI gelesen; der Shell-Collector liefert zusätzlich `/VERSION` der Zentrale.",
         centralRelease.source === "ccu3"
           ? "Der verfügbare Stand kommt aus dem offiziellen eQ-3-Update-Dienst, den auch die CCU3-WebUI verwendet."
           : "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",
+        "Nach einem Zentralen-Update reicht normalerweise eine neue Analyse; der Collector ist nur nötig, wenn die Live-WebUI-Version nicht gelesen werden kann.",
         "Der Analyzer installiert Zentralen-Updates niemals automatisch."
       ]
     });

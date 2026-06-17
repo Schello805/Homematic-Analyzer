@@ -165,6 +165,25 @@ function buildXmlApiUrl(endpoint: CcuEndpoint, path: string): string {
   return url.toString().replace(/%40/g, "@");
 }
 
+function buildCcuUrl(endpoint: CcuEndpoint, path: string, sid?: string): string {
+  const url = new URL(path, endpoint.baseUrl);
+  if (sid) url.searchParams.set("sid", sid);
+  return url.toString().replace(/%40/g, "@");
+}
+
+function createAuthHeaders(config: AnalyzeRequest, endpointSid?: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const passwordIsSid = Boolean(
+    config.ccuPassword?.trim().startsWith("@") && config.ccuPassword.trim().endsWith("@")
+  ) || Boolean(config.ccuPassword && !config.ccuUser);
+
+  if (!endpointSid && config.ccuUser && config.ccuPassword && !passwordIsSid) {
+    headers.Authorization = `Basic ${Buffer.from(`${config.ccuUser}:${config.ccuPassword}`).toString("base64")}`;
+  }
+
+  return headers;
+}
+
 function detectXmlError(parsedXml: UnknownRecord): string | undefined {
   if (parsedXml.error) {
     return stringValue(parsedXml.error);
@@ -215,15 +234,7 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
   const timeoutMs = xmlApiTimeoutForPath(path);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const headers: Record<string, string> = {};
-
-  const passwordIsSid = Boolean(
-    config.ccuPassword?.trim().startsWith("@") && config.ccuPassword.trim().endsWith("@")
-  ) || Boolean(config.ccuPassword && !config.ccuUser);
-
-  if (!endpoint.sid && config.ccuUser && config.ccuPassword && !passwordIsSid) {
-    headers.Authorization = `Basic ${Buffer.from(`${config.ccuUser}:${config.ccuPassword}`).toString("base64")}`;
-  }
+  const headers = createAuthHeaders(config, endpoint.sid);
 
   try {
     const response = await fetch(buildXmlApiUrl(endpoint, path), {
@@ -251,6 +262,63 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function extractCentralVersionFromText(text: string): string | undefined {
+  const versionFromLabel = text.match(/(?:Aktuelle\s+Firmwareversion|Firmwareversion|VERSION)\D{0,80}(\d+\.\d+\.\d+(?:\.\d+)?)/i)?.[1];
+  if (versionFromLabel) return versionFromLabel;
+  return text.match(/\b\d+\.\d+\.\d+(?:\.\d+)?\b/)?.[0];
+}
+
+function extractCentralProductFromText(text: string): string | undefined {
+  if (/\bOpenCCU\b/i.test(text)) return "OpenCCU";
+  if (/\bRaspberryMatic\b/i.test(text)) return "RaspberryMatic";
+  if (/\bHM-CCU3\b|\bCCU3\b/i.test(text)) return "CCU3";
+  return undefined;
+}
+
+async function fetchCcuText(endpoint: CcuEndpoint, path: string, config: AnalyzeRequest, sid?: string): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
+  try {
+    const response = await fetch(buildCcuUrl(endpoint, path, sid), {
+      headers: createAuthHeaders(config, sid),
+      redirect: "follow",
+      signal: controller.signal
+    });
+    if (!response.ok) return undefined;
+    return decodeXmlBuffer(Buffer.from(await response.arrayBuffer())).text;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readCentralVersionFromWebUi(endpoint: CcuEndpoint, config: AnalyzeRequest, sid?: string): Promise<{ version?: string; product?: string; source?: string }> {
+  const paths = [
+    "/config/cp_maintenance.cgi",
+    "/config/cp_software.cgi",
+    "/config/cp_system.cgi",
+    "/config/index.cgi",
+    "/"
+  ];
+
+  for (const path of paths) {
+    const text = await fetchCcuText(endpoint, path, config, sid);
+    if (!text) continue;
+    const version = extractCentralVersionFromText(text);
+    if (version) {
+      return {
+        version,
+        product: extractCentralProductFromText(text),
+        source: path
+      };
+    }
+  }
+
+  return {};
 }
 
 export function classifyCcuConnectionError(error: unknown): {
@@ -829,6 +897,14 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     const datapoints = collectDatapoints(stateList);
     const devices = enrichFromServiceMessages(collectDevices(stateList), serviceMessages);
     const dutyCycle = findDutyCycle(datapoints, serviceMessages);
+    const centralVersionInfo = await readCentralVersionFromWebUi(endpoint, config, activeSid);
+    if (centralVersionInfo.version) {
+      diagnostics.push({
+        step: "Zentralenversion",
+        status: "ok",
+        detail: `WebUI meldet ${centralVersionInfo.product ? `${centralVersionInfo.product} ` : ""}${centralVersionInfo.version}${centralVersionInfo.source ? ` über ${centralVersionInfo.source}` : ""}.`
+      });
+    }
 
     return {
       reachable: true,
@@ -843,6 +919,8 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       serviceMessages,
       alarmMessages,
       dutyCycle,
+      centralVersion: centralVersionInfo.version,
+      centralProduct: centralVersionInfo.product,
       counters: {
         devices: devices.length,
         lowBattery: devices.filter((device) => device.lowBattery).length,

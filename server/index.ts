@@ -1183,9 +1183,11 @@ app.post("/api/analyze", async (request, response) => {
       events: { critical: true }
     });
     const releaseCheck = await checkRepositoryRelease(appVersion);
-    const installedCentralVersion = stringFromRecord(latestCollector?.system, "centralVersion")
+    const installedCentralVersion = ccuSnapshot?.centralVersion
+      ?? stringFromRecord(latestCollector?.system, "centralVersion")
       ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
-    const centralProduct = stringFromRecord(latestCollector?.system, "centralProduct")
+    const centralProduct = ccuSnapshot?.centralProduct
+      ?? stringFromRecord(latestCollector?.system, "centralProduct")
       ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
     const centralReleaseCheck = isOfficialCcu3Product(centralProduct)
       ? await checkOfficialCcu3Release(installedCentralVersion, centralProduct)
@@ -1490,9 +1492,11 @@ app.get("/api/system/update-status", async (_request, response) => {
 });
 
 app.get("/api/system/central-update-status", async (_request, response) => {
-  const installedVersion = stringFromRecord(latestCollector?.system, "centralVersion")
+  const installedVersion = latestCcuSnapshot?.centralVersion
+    ?? stringFromRecord(latestCollector?.system, "centralVersion")
     ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
-  const product = stringFromRecord(latestCollector?.system, "centralProduct")
+  const product = latestCcuSnapshot?.centralProduct
+    ?? stringFromRecord(latestCollector?.system, "centralProduct")
     ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
 
   if (!isOpenCcuFamilyProduct(product) && !isOfficialCcu3Product(product)) {

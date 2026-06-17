@@ -114,6 +114,8 @@ export type CcuSnapshot = {
   serviceMessages: CcuEvidence[];
   alarmMessages: CcuEvidence[];
   dutyCycle?: number;
+  centralVersion?: string;
+  centralProduct?: string;
   counters: {
     devices: number;
     lowBattery: number;

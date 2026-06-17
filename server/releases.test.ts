@@ -9,6 +9,7 @@ test("vergleicht datumsbasierte OpenCCU-Versionen", () => {
 
 test("liest die OpenCCU-Version aus Text und Release-URL", () => {
   assert.equal(normalizeCentralVersion("VERSION=3.87.6.20260614"), "3.87.6.20260614");
+  assert.equal(normalizeCentralVersion("Aktuelle Firmwareversion:\t3.87.6.20260614"), "3.87.6.20260614");
   assert.equal(normalizeCentralVersion("Firmware CCU3 3.87.6"), "3.87.6");
   assert.equal(normalizeCentralVersion("https://github.com/OpenCCU/OpenCCU/releases/tag/3.87.6.20260614"), "3.87.6.20260614");
   assert.equal(normalizeCentralVersion("unbekannt"), undefined);
