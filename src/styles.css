@@ -2964,30 +2964,82 @@ pre {
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
 }
 
 .results__header-actions > button {
-  min-height: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 58px;
+  border-radius: 18px;
+  padding: 0 18px;
+  font-size: 0.95rem;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.results__header-actions > button > span {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 1rem;
+}
+
+.results__header-actions > button > strong {
+  font-size: inherit;
+  font-weight: 780;
+}
+
+.results__header-actions .analyze-button-compact {
+  width: auto;
+  min-width: 210px;
+  margin: 0;
+  box-shadow: 0 14px 30px rgba(52, 120, 246, 0.24);
+}
+
+.results__header-actions .routing-entry-button {
+  min-width: 156px;
+  border: 1px solid #cfe0f5;
+  color: #1849a9;
+  background: linear-gradient(180deg, #f8fbff, #edf5ff);
+  box-shadow: 0 10px 24px rgba(24, 73, 169, 0.08);
+}
+
+.results__header-actions .routing-entry-button > span {
+  color: #1849a9;
+  background: #dbeafe;
 }
 
 .score {
-  min-width: 112px;
-  border-radius: 22px;
-  padding: 14px;
+  display: grid;
+  align-content: center;
+  min-width: 118px;
+  min-height: 58px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 18px;
+  padding: 10px 15px;
   text-align: center;
   color: white;
-  background: #172033;
+  background: linear-gradient(180deg, #172033, #111827);
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.16);
 }
 
 .score strong {
   display: block;
-  font-size: 2rem;
+  font-size: 1.65rem;
   line-height: 1;
 }
 
 .score span {
+  margin-top: 4px;
   color: rgba(255, 255, 255, 0.72);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .summary-grid {
@@ -5234,8 +5286,9 @@ pre {
   }
 
   .results__header-actions > button {
-    min-height: 44px;
+    min-height: 50px;
     width: 100%;
+    padding: 0 14px;
   }
 
   .system-dashboard__header {
@@ -5258,6 +5311,11 @@ pre {
 
   .score {
     width: 100%;
+  }
+
+  .results__header-actions .analyze-button-compact,
+  .results__header-actions .routing-entry-button {
+    min-width: 0;
   }
 
   .system-metric-group > header,

@@ -4715,11 +4715,13 @@ function App() {
                   onClick={() => void openRoutingGraphic(false)}
                   disabled={loading || routingTopologyLoading}
                 >
-                  Routing-Grafik
+                  <span aria-hidden="true">↗</span>
+                  <strong>Routing-Grafik</strong>
                 </button>
               )}
               <button type="button" className="analyze-button analyze-button-compact" onClick={() => void runAnalysis()} disabled={loading}>
-                Neu analysieren
+                <span aria-hidden="true">↻</span>
+                <strong>Neu analysieren</strong>
               </button>
               <div className="score">
                 <strong>{displayedAnalysis?.checks.length ?? analysis.checks.length}</strong>
