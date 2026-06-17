@@ -1573,10 +1573,12 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
+  const analysisAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
   const aiLogResultRef = useRef<HTMLElement | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
+  const [analysisAutoRefreshing, setAnalysisAutoRefreshing] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
   const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
@@ -3117,6 +3119,9 @@ function App() {
     let isActive = true;
 
     async function refreshAnalysisSnapshot() {
+      if (analysisAutoRefreshInFlight.current) return;
+      analysisAutoRefreshInFlight.current = true;
+      setAnalysisAutoRefreshing(true);
       try {
         const data = await fetchAnalysisSnapshot({ notify: false });
         if (!isActive) return;
@@ -3129,6 +3134,9 @@ function App() {
         ));
       } catch (caughtError) {
         console.warn("[Homematic Analyzer][Analysis] Auto-Refresh fehlgeschlagen", caughtError);
+      } finally {
+        analysisAutoRefreshInFlight.current = false;
+        if (isActive) setAnalysisAutoRefreshing(false);
       }
     }
 
@@ -4719,10 +4727,13 @@ function App() {
                   <strong>Routing-Grafik</strong>
                 </button>
               )}
-              <button type="button" className="analyze-button analyze-button-compact" onClick={() => void runAnalysis()} disabled={loading}>
+              <div className={`auto-refresh-pill ${analysisAutoRefreshing ? "is-refreshing" : ""}`} aria-live="polite">
                 <span aria-hidden="true">↻</span>
-                <strong>Neu analysieren</strong>
-              </button>
+                <div>
+                  <strong>{analysisAutoRefreshing ? "Aktualisiert …" : "Auto-Refresh"}</strong>
+                  <small>{analysisAutoRefreshing ? "Daten werden geprüft" : `in ${dashboardRefreshSecondsLeft}s`}</small>
+                </div>
+              </div>
               <div className="score">
                 <strong>{displayedAnalysis?.checks.length ?? analysis.checks.length}</strong>
                 <span>Prüfpunkte</span>

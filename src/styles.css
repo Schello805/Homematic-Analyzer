@@ -2995,13 +2995,6 @@ pre {
   font-weight: 780;
 }
 
-.results__header-actions .analyze-button-compact {
-  width: auto;
-  min-width: 210px;
-  margin: 0;
-  box-shadow: 0 14px 30px rgba(52, 120, 246, 0.24);
-}
-
 .results__header-actions .routing-entry-button {
   min-width: 156px;
   border: 1px solid #cfe0f5;
@@ -3013,6 +3006,59 @@ pre {
 .results__header-actions .routing-entry-button > span {
   color: #1849a9;
   background: #dbeafe;
+}
+
+.auto-refresh-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 158px;
+  min-height: 58px;
+  border: 1px solid #dbe5f3;
+  border-radius: 18px;
+  padding: 0 16px;
+  color: #334155;
+  background: #f8fbff;
+  box-shadow: 0 10px 24px rgba(24, 73, 169, 0.06);
+}
+
+.auto-refresh-pill > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  color: #1849a9;
+  background: #dbeafe;
+  font-weight: 800;
+}
+
+.auto-refresh-pill > div {
+  display: grid;
+  gap: 2px;
+}
+
+.auto-refresh-pill strong {
+  color: #172033;
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
+.auto-refresh-pill small {
+  color: #657086;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.auto-refresh-pill.is-refreshing > span {
+  animation: refresh-spin 1s linear infinite;
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .score {
@@ -5278,7 +5324,7 @@ pre {
   .results__header-actions {
     display: grid;
     width: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .results__header-actions .score {
@@ -5286,6 +5332,13 @@ pre {
   }
 
   .results__header-actions > button {
+    min-height: 50px;
+    width: 100%;
+    padding: 0 14px;
+  }
+
+  .auto-refresh-pill {
+    min-width: 0;
     min-height: 50px;
     width: 100%;
     padding: 0 14px;
@@ -5313,7 +5366,6 @@ pre {
     width: 100%;
   }
 
-  .results__header-actions .analyze-button-compact,
   .results__header-actions .routing-entry-button {
     min-width: 0;
   }
