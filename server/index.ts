@@ -263,13 +263,19 @@ function recordArrayFromRecord(record: Record<string, unknown> | undefined, key:
   return value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry));
 }
 
+function isRealCcuBackupPath(value: string | undefined) {
+  if (!value) return false;
+  const filename = value.split(/[\\/]/).pop()?.toLowerCase() ?? value.toLowerCase();
+  return filename !== "backupusbstorage.tar.gz";
+}
+
 function backupItemsFromRecord(record: Record<string, unknown> | undefined) {
   return (recordArrayFromRecord(record, "items") ?? []).map((item) => ({
     name: stringFromRecord(item, "name") ?? "",
     path: stringFromRecord(item, "path") ?? "",
     size: stringFromRecord(item, "size") ?? "",
     modifiedAt: stringFromRecord(item, "modifiedAt") ?? ""
-  })).filter((item) => item.path || item.name);
+  })).filter((item) => isRealCcuBackupPath(item.path || item.name));
 }
 
 function numberFromText(value: string | undefined): number | undefined {
@@ -691,6 +697,16 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
   const ccuTarget = normalizeCcuUiTarget(ccuHost);
   const collectorBackupItems = backupItemsFromRecord(collector?.backups);
   const ccuBackupItems = backupItemsFromRecord(ccuBackups);
+  const backupItems = collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems;
+  const backupPaths = (stringArrayFromRecord(collector?.backups, "paths") ?? stringArrayFromRecord(ccuBackups, "paths") ?? [])
+    .filter(isRealCcuBackupPath);
+  const fallbackBackupCount = stringFromRecord(collector?.backups, "count") ?? stringFromRecord(ccuBackups, "count");
+  const rawLatestBackupPath = stringFromRecord(collector?.backups, "latestPath") ?? stringFromRecord(ccuBackups, "latestPath");
+  const latestBackupPath = backupItems[0]?.path ?? (isRealCcuBackupPath(rawLatestBackupPath) ? rawLatestBackupPath : undefined);
+  const latestBackupDirectory = latestBackupPath
+    ? latestBackupPath.split("/").slice(0, -1).join("/")
+    : stringFromRecord(collector?.backups, "latestDirectory") ?? stringFromRecord(ccuBackups, "latestDirectory");
+  const latestBackupAt = backupItems[0]?.modifiedAt ?? (latestBackupPath ? stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt") : undefined);
 
   if (!hasCcuSystemData && !collector) {
     return { available: false, logs: 0, connections: 0, ...ccuTarget };
@@ -706,13 +722,13 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     disk: stringFromRecord(collector?.system, "disk") ?? stringFromRecord(ccuSystem, "disk"),
     temperature: stringFromRecord(collector?.system, "temperatureRaw") ?? stringFromRecord(ccuSystem, "temperatureRaw"),
     cpu: stringFromRecord(collector?.system, "cpu") ?? stringFromRecord(ccuSystem, "cpu"),
-    backups: stringFromRecord(collector?.backups, "count") ?? stringFromRecord(ccuBackups, "count"),
-    backupPaths: stringArrayFromRecord(collector?.backups, "paths") ?? stringArrayFromRecord(ccuBackups, "paths"),
-    backupLatestPath: stringFromRecord(collector?.backups, "latestPath") ?? stringFromRecord(ccuBackups, "latestPath"),
-    backupLatestDirectory: stringFromRecord(collector?.backups, "latestDirectory") ?? stringFromRecord(ccuBackups, "latestDirectory"),
-    backupLatestAt: stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt"),
+    backups: backupItems.length > 0 ? String(backupItems.length) : backupPaths.length > 0 ? String(backupPaths.length) : fallbackBackupCount,
+    backupPaths: backupPaths.length > 0 ? backupPaths : undefined,
+    backupLatestPath: latestBackupPath,
+    backupLatestDirectory: latestBackupDirectory,
+    backupLatestAt: latestBackupAt,
     backupDisk: stringFromRecord(collector?.backups, "disk") ?? stringFromRecord(ccuBackups, "disk"),
-    backupItems: collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems,
+    backupItems,
     logs: collector?.logs?.length ?? 0,
     connections: collector?.network?.connections?.length ?? 0,
     history: collectorHistory.slice(-120)

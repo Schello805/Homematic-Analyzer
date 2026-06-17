@@ -201,7 +201,9 @@ if [ -z "$CENTRAL_PRODUCT_VALUE" ] && [ -r /etc/os-release ]; then
 fi
 for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
   if [ -d "$backup_dir" ]; then
-    find "$backup_dir" -type f 2>/dev/null | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
+    find "$backup_dir" -type f 2>/dev/null \
+      | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' \
+      | grep -Eiv '(^|/)BackupUSBStorage\.tar\.gz$' >> "$BACKUP_LIST_FILE" 2>/dev/null || true
   fi
 done
 sort -u "$BACKUP_LIST_FILE" -o "$BACKUP_LIST_FILE" 2>/dev/null || true

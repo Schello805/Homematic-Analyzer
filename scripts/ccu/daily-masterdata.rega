@@ -140,7 +140,7 @@ system.Exec("cat /proc/loadavg 2>/dev/null", &cpuValue, &execError);
 system.Exec("free -m 2>/dev/null | grep '^Mem:'", &ramValue, &execError);
 system.Exec("df -h /usr/local 2>/dev/null | tail -n 1", &diskValue, &execError);
 system.Exec("/usr/bin/vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'", &tempValue, &execError);
-system.Exec("find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)' | wc -l", &backupCount, &execError);
+system.Exec("find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)' | grep -Eiv '(^|/)BackupUSBStorage\\.tar\\.gz$' | wc -l", &backupCount, &execError);
 
 hostValue = hostValue.Replace("\\", "\\\\");
 hostValue = hostValue.Replace("\"", "\\\"");
