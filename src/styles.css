@@ -331,6 +331,49 @@ h2 {
   background: #2563eb;
 }
 
+.collector-command-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 18px;
+  padding: 14px;
+  background: linear-gradient(135deg, #eff6ff, #f8fbff);
+}
+
+.collector-command-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.collector-command-panel > div:first-child span {
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.collector-command-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.collector-command-options label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.collector-command-options select {
+  min-height: 38px;
+  border: 1px solid #cbdaf0;
+  border-radius: 12px;
+  padding: 0 10px;
+  color: #172033;
+  background: white;
+  font: inherit;
+}
+
 .modal-note,
 .modal-empty {
   border: 1px solid #dbeafe;
@@ -3174,6 +3217,30 @@ pre {
   text-align: right;
 }
 
+.system-dashboard__meta {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.collector-shortcut-button {
+  min-height: 34px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 7px 12px;
+  color: #1849a9;
+  background: #eef6ff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.collector-shortcut-button:hover {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
 .related-checks {
   display: grid;
   gap: 8px;
@@ -3664,7 +3731,7 @@ pre {
 
 .system-collector-empty .script-copy-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
 }
@@ -3687,6 +3754,11 @@ pre {
   background: #1849a9;
   cursor: pointer;
   font-weight: 760;
+}
+
+.system-collector-empty .script-copy-row button.secondary {
+  color: #1849a9;
+  background: #dbeafe;
 }
 
 .metric-card {
@@ -5175,6 +5247,15 @@ pre {
     text-align: left;
   }
 
+  .system-dashboard__meta {
+    justify-items: start;
+    width: 100%;
+  }
+
+  .collector-shortcut-button {
+    width: 100%;
+  }
+
   .score {
     width: 100%;
   }
@@ -5203,6 +5284,11 @@ pre {
   }
 
   .script-box {
+    grid-template-columns: 1fr;
+  }
+
+  .system-collector-empty .script-copy-row,
+  .collector-command-options {
     grid-template-columns: 1fr;
   }
 

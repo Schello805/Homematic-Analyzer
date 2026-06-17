@@ -4784,17 +4784,22 @@ function App() {
                     </a>
                   )}
                 </div>
-                <div className="system-dashboard__freshness">
-                  {analysis.systemDashboard.collectedAt ? (
-                    <>
-                      <small className={`data-age data-age-${formatDataAge(analysis.systemDashboard.collectedAt).state}`}>
-                        {formatDataAge(analysis.systemDashboard.collectedAt).label}
-                      </small>
-                      <span>Systemwerte vom {new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}</span>
-                    </>
-                  ) : (
-                    <span>Zeitpunkt des Snapshots unbekannt</span>
-                  )}
+                <div className="system-dashboard__meta">
+                  <div className="system-dashboard__freshness">
+                    {analysis.systemDashboard.collectedAt ? (
+                      <>
+                        <small className={`data-age data-age-${formatDataAge(analysis.systemDashboard.collectedAt).state}`}>
+                          {formatDataAge(analysis.systemDashboard.collectedAt).label}
+                        </small>
+                        <span>Systemwerte vom {new Date(analysis.systemDashboard.collectedAt).toLocaleString("de-DE")}</span>
+                      </>
+                    ) : (
+                      <span>Zeitpunkt des Snapshots unbekannt</span>
+                    )}
+                  </div>
+                  <button type="button" className="collector-shortcut-button" onClick={() => openActionModal("collector")}>
+                    Collector-Script anzeigen
+                  </button>
                 </div>
               </div>
               {hasShellSystemData(analysis.systemDashboard) && (
@@ -4827,6 +4832,9 @@ function App() {
                     <code>{collectorCommand}</code>
                     <button type="button" onClick={() => void copyCollectorCommand()}>
                       Kopieren
+                    </button>
+                    <button type="button" className="secondary" onClick={() => openActionModal("collector")}>
+                      Anleitung öffnen
                     </button>
                   </div>
                   <details className="system-collector-empty__help">
@@ -5230,6 +5238,9 @@ function App() {
                     <div className="check-context-actions">
                       {["ccu-connection", "xml-api", "ccu-masterdata", "system-health"].includes(check.id) && (
                         <button type="button" onClick={() => setCurrentPage("setup")}>Setup öffnen</button>
+                      )}
+                      {["system-health", "logs", "external-access"].includes(check.id) && (
+                        <button type="button" onClick={() => openActionModal("collector")}>Collector-Script anzeigen</button>
                       )}
                       {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && analysisSnifferMode === "with-sniffer" && (
                         <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
@@ -5886,29 +5897,71 @@ function App() {
           <section className="confirm-dialog action-modal" role="dialog" aria-modal="true" aria-labelledby="action-modal-title" onMouseDown={(event) => event.stopPropagation()}>
             {actionModal === "collector" && (
               <>
-                <p className="eyebrow">{collectorStatus?.available ? "Collector prüfen" : "Logdaten ergänzen"}</p>
+                <p className="eyebrow">Collector verwalten</p>
                 <h2 id="action-modal-title">
                   {collectorStatus?.state === "stale"
                     ? "Der Collector war eingerichtet, sendet aber nicht mehr"
                     : collectorStatus?.available
-                      ? "Collector sendet, findet aber keine Logs"
+                      ? "Collector ist eingerichtet"
                       : "Collector auf der CCU einrichten"}
                 </h2>
                 <p>
                   {collectorStatus?.state === "stale"
                     ? `Der Analyzer hat den Collector früher erkannt. Der letzte Snapshot kam am ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "unbekannten Zeitpunkt"}. Nach einem CCU-Neustart oder Update kann der alte, nicht dauerhaft gespeicherte Cronjob verschwunden sein.`
                     : collectorStatus?.available
-                      ? "Der Collector ist verbunden und sendet Systemwerte. Es wurden jedoch keine lesbaren Logzeilen gefunden; eine Neuinstallation ist dafür normalerweise nicht nötig."
-                      : "Das Script läuft auf der CCU/RaspberryMatic und sendet die Logdaten an diesen Analyzer. Dein PC oder Smartphone spielt dabei keine Rolle."}
+                      ? "Der Collector sendet Systemwerte, Backups, Speicherinfos, Verbindungen und — wenn vorhanden — Logzeilen an diesen Analyzer."
+                      : "Das Script läuft auf der CCU/RaspberryMatic und sendet Systemwerte, Backups, Verbindungen und Logdaten an diesen Analyzer. Dein PC oder Smartphone spielt dabei keine Rolle."}
                 </p>
+                <div className="collector-command-panel">
+                  <div>
+                    <strong>Was möchtest du tun?</strong>
+                    <span>
+                      {collectorStatus?.available && collectorStatus.state !== "stale"
+                        ? `Aktuell empfangen: ${collectorStatus.host ?? "Zentrale"} · ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}`
+                        : "Kopiere den Befehl und führe ihn per SSH auf der CCU/RaspberryMatic aus."}
+                    </span>
+                  </div>
+                  <div className="collector-command-options">
+                    <label>
+                      Ausführung
+                      <select value={collectorMode} onChange={(event) => setCollectorMode(event.target.value as typeof collectorMode)}>
+                        <option value="once">Einmal jetzt senden</option>
+                        <option value="install">Regelmäßig einrichten</option>
+                        <option value="uninstall">Regelmäßige Übertragung entfernen</option>
+                      </select>
+                    </label>
+                    <label>
+                      Zyklus
+                      <select value={collectorInterval} onChange={(event) => setCollectorInterval(event.target.value as typeof collectorInterval)} disabled={collectorMode === "once" || collectorMode === "uninstall"}>
+                        <option value="minute">Minütlich für Verlauf</option>
+                        <option value="hourly">Stündlich</option>
+                        <option value="daily">Täglich nachts</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="modal-command">
+                    <code>{collectorCommand}</code>
+                    <button type="button" onClick={() => void copyCollectorCommand()}>Kopieren</button>
+                  </div>
+                  {collectorCommandPreview && (
+                    <label className="script-preview">
+                      Shell-Befehl zum manuellen Kopieren
+                      <textarea readOnly value={collectorCommandPreview} onFocus={(event) => event.target.select()} />
+                    </label>
+                  )}
+                  <p className="modal-note">
+                    Installieren speichert den Cronjob auf OpenCCU/RaspberryMatic dauerhaft unter <code>/usr/local/crontabs/root</code>.
+                    Entfernen löscht nur den markierten Homematic-Analyzer-Eintrag.
+                  </p>
+                </div>
                 {collectorStatus?.available && collectorStatus.state !== "stale" ? (
                   <>
+                    <p className="modal-note">Wenn Systemwerte sichtbar sind, aber Logzeilen fehlen, prüfe die Logquellen direkt auf der CCU:</p>
                     <ol className="action-modal-steps">
                       <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
                       <li>Logquellen prüfen: <code>ls -l /var/log/messages /var/log/syslog 2&gt;/dev/null</code></li>
                       <li>Falls vorhanden, einen Auszug testen: <code>tail -n 20 /var/log/messages</code></li>
                     </ol>
-                    <p className="modal-note">Der Analyzer behauptet hier nicht, dass das Script fehlt: Es fehlen nur Logzeilen im aktuellen Snapshot.</p>
                   </>
                 ) : (
                   <>
@@ -5917,13 +5970,6 @@ function App() {
                       <li>Den Befehl kopieren und im SSH-Fenster einfügen.</li>
                       <li>Nach der Erfolgsmeldung kurz warten; Logs werden automatisch neu geladen.</li>
                     </ol>
-                    <div className="modal-command">
-                      <code>{recommendedCollectorCommand}</code>
-                      <button type="button" onClick={() => void copyText(recommendedCollectorCommand)}>Kopieren</button>
-                    </div>
-                    <p className="modal-note">
-                      Die neue Installation speichert den Cronjob auf OpenCCU/RaspberryMatic dauerhaft unter <code>/usr/local/crontabs/root</code>.
-                    </p>
                   </>
                 )}
               </>
