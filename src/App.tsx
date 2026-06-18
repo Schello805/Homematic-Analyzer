@@ -1201,6 +1201,20 @@ function RoutingTopologyView({
     : topologyFilter === "infrastructure"
       ? `${infrastructureCount} Empfänger, Router und Kandidaten werden angezeigt.`
       : `${allDeviceCount} bekannte Funkknoten werden angezeigt.`;
+  const hasAttentionNodes = weakNodes.length > 0 || observedNodes.length > 0;
+  const quickMapFilterTarget = hasAttentionNodes
+    ? topologyFilter === "focus" ? "all" : "focus"
+    : topologyFilter === "infrastructure" ? "all" : "infrastructure";
+  const quickMapFilterLabel = hasAttentionNodes
+    ? topologyFilter === "focus" ? "Alle Geräte zeigen" : "Auffällige zeigen"
+    : topologyFilter === "infrastructure" ? "Alle Geräte zeigen" : "Empfänger zeigen";
+  const quickMapFilterHint = hasAttentionNodes
+    ? topologyFilter === "focus"
+      ? "Zeigt zusätzlich alle unauffälligen oder noch nicht bewertbaren Geräte in der Karte."
+      : "Reduziert die Karte auf Empfänger, Router sowie schwache oder zu beobachtende Geräte."
+    : topologyFilter === "infrastructure"
+      ? "Zeigt zusätzlich alle bekannten Geräte in der Karte."
+      : "Reduziert die Karte auf Gateways, Router und mögliche Router.";
   const routeSummary = visibleEdges.length > 0
     ? `${visibleEdges.length} belegte Funkwege aus Logs oder Parametern.`
     : "Noch keine belegten Funkwege – gestrichelte Linien sind nur Orientierung.";
@@ -1319,9 +1333,10 @@ function RoutingTopologyView({
         <button
           type="button"
           className="light-button"
-          onClick={() => setTopologyFilter(weakNodes.length > 0 || observedNodes.length > 0 ? "focus" : "infrastructure")}
+          onClick={() => setTopologyFilter(quickMapFilterTarget)}
+          title={quickMapFilterHint}
         >
-          {weakNodes.length > 0 || observedNodes.length > 0 ? "Auffällige zeigen" : "Empfänger zeigen"}
+          {quickMapFilterLabel}
         </button>
       </div>
 
