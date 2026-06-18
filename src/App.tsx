@@ -1070,7 +1070,7 @@ function RoutingTopologyView({
   onRefresh: () => void;
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState("");
-  const [requestedRssiSource, setRequestedRssiSource] = useState<"ccu" | "sniffer">("ccu");
+  const [includeSnifferRssi, setIncludeSnifferRssi] = useState(false);
   const [topologyScope, setTopologyScope] = useState<"hmip" | "bidcos" | "combined">("hmip");
   const [topologyFilter, setTopologyFilter] = useState<"focus" | "infrastructure" | "all">("focus");
 
@@ -1101,11 +1101,14 @@ function RoutingTopologyView({
   const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? central;
   const selectedRoute = selectedNode ? visibleEdges.find((edge) => edge.source === selectedNode.id) : undefined;
   const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
-  const rssiSource = requestedRssiSource;
-  const nodeRssi = (node?: RoutingTopologyNode) => node
-    ? rssiSource === "ccu" ? node.ccuRssi : node.snifferRssi
-    : undefined;
-  const rssiSourceLabel = rssiSource === "ccu" ? "Zentrale / XML-API" : "AskSin-Sniffer";
+  const rssiSource = includeSnifferRssi ? "combined" : "ccu";
+  const nodeRssi = (node?: RoutingTopologyNode) => {
+    if (!node) return undefined;
+    if (!includeSnifferRssi) return node.ccuRssi;
+    const values = [node.ccuRssi, node.snifferRssi].filter((value): value is number => value !== undefined);
+    return values.length ? Math.min(...values) : undefined;
+  };
+  const rssiSourceLabel = includeSnifferRssi ? "Zentrale + AskSin-Sniffer" : "Zentrale / XML-API";
   const confirmedSourceIds = new Set(visibleEdges.map((edge) => edge.source));
   const nodeClass = (node: RoutingTopologyNode) => {
     if (node.role === "central") return "is-central";
@@ -1215,6 +1218,17 @@ function RoutingTopologyView({
     if (selectedRssi !== undefined) return "Der aktuelle Signalwert ist unauffällig. Kein direkter Handlungsbedarf aus dieser Messquelle.";
     return "Für dieses Gerät liegt noch kein RSSI-Wert vor. Ohne Messwert wird kein Funkproblem behauptet.";
   })();
+  const signalSummaryForNode = (node: RoutingTopologyNode) => {
+    const parts = [`CCU ${node.ccuRssi ?? "–"} dBm`];
+    if (includeSnifferRssi) parts.push(`Sniffer ${node.snifferRssi ?? "–"} dBm`);
+    return `${node.name} (${parts.join(" / ")})`;
+  };
+  const signalDetailForNode = (node?: RoutingTopologyNode) => {
+    if (!node) return "Keine Signalwerte";
+    const ccuDetail = `Zentrale: ${node.ccuRssi ?? "nicht verfügbar"} dBm${node.ccuRssiSource ? ` (${node.ccuRssiSource})` : ""}`;
+    if (!includeSnifferRssi) return ccuDetail;
+    return `${ccuDetail} · Sniffer: ${node.snifferRssi ?? "nicht verfügbar"} dBm`;
+  };
 
   return (
     <section className="routing-topology-card">
@@ -1253,19 +1267,19 @@ function RoutingTopologyView({
         <div>
           <strong><SourceBadge source={rssiSourceLabel} />Signalquelle</strong>
           <span>
-            {rssiSource === "ccu"
+            {!includeSnifferRssi
               ? "Von der CCU gemeldete Signalwerte. Für den Empfang an der Zentrale wird RSSI_PEER bevorzugt; RSSI_DEVICE dient nur als Rückfallwert."
-              : "Empfangsstärke der Telegramme am Standort des AskSin-Sniffers."}
+              : "Zentralenwerte plus vorhandene Snifferwerte. Für die Position wird der schwächere bekannte Wert verwendet."}
           </span>
         </div>
         <label>
           Signalwerte anzeigen von
-          <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
-            <option value="ccu">
-              Zentrale / XML-API ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Geräte)
+          <select value={includeSnifferRssi ? "with-sniffer" : "base"} onChange={(event) => setIncludeSnifferRssi(event.target.value === "with-sniffer")}>
+            <option value="base">
+              Ohne Snifferwerte ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Zentralenwerte)
             </option>
-            <option value="sniffer">
-              AskSin-Sniffer ({visibleNodes.filter((node) => node.snifferRssi !== undefined).length} Geräte)
+            <option value="with-sniffer">
+              Mit Snifferwerten ({visibleNodes.filter((node) => node.snifferRssi !== undefined).length} Snifferwerte)
             </option>
           </select>
         </label>
@@ -1284,15 +1298,15 @@ function RoutingTopologyView({
               {measuredNodes.length === 0
                 ? `Für „${rssiSourceLabel}“ liegen im aktuellen Snapshot keine RSSI-Werte vor. Erkannte Geräte, Gateways und Router werden trotzdem angezeigt – aber nicht als gut oder schlecht bewertet.`
                 : weakNodes.length > 0
-                ? `${weakNodes.slice(0, 4).map((node) => `${node.name} (CCU ${node.ccuRssi ?? "–"} / Sniffer ${node.snifferRssi ?? "–"} dBm)`).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
+                ? `${weakNodes.slice(0, 4).map(signalSummaryForNode).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
                 : `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`}
             </p>
           </div>
         </div>
         <small>
-          {rssiSource === "ccu"
+          {!includeSnifferRssi
             ? "Weiter außen bedeutet: Die Zentrale sieht dieses Gerät schwächer. Das heißt nicht automatisch „keine Verbindung“, sondern zeigt zuerst Prüfbedarf für Standort, Abstand, Hindernisse oder passenden Empfänger."
-            : "Weiter außen bedeutet schwächer am Standort des Sniffers empfangen. Das ist nicht automatisch die Funkstrecke zur Zentrale."}
+            : "Weiter außen bedeutet: Mindestens eine bekannte Messquelle sieht dieses Gerät schwächer. Prüfe danach, ob CCU, Sniffer oder beide Quellen betroffen sind."}
           {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Sie zeigt nur, dass der tatsächlich verwendete nächste Empfänger nicht aus den vorhandenen Daten abgeleitet werden konnte.
         </small>
       </div>
@@ -1333,7 +1347,7 @@ function RoutingTopologyView({
           <summary>
             <span>
               <strong>Schwächste Geräte · {scopeLabel} · {rssiSourceLabel}</strong>
-              <small>Nach {rssiSourceLabel} sortiert · beide Messquellen werden angezeigt</small>
+              <small>{includeSnifferRssi ? "Nach dem schwächeren bekannten Wert sortiert · beide Messquellen werden angezeigt" : "Nach Zentralenwert sortiert · Snifferwerte werden ausgeblendet"}</small>
             </span>
             <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
           </summary>
@@ -1344,10 +1358,17 @@ function RoutingTopologyView({
                   <strong>{node.name}</strong>
                   <small>
                     {node.type ?? "HmIP-Gerät"}
-                    {rssiSource === "sniffer" ? ` · ${node.rssiTelegrams ?? 0} Telegramme` : " · CCU-Livewert"}
+                    {includeSnifferRssi ? ` · ${node.rssiTelegrams ?? 0} Sniffer-Telegramme` : " · CCU-Livewert"}
                   </small>
                 </span>
-                <DualRssiAssessment ccu={node.ccuRssi} sniffer={node.snifferRssi} compact />
+                {includeSnifferRssi ? (
+                  <DualRssiAssessment ccu={node.ccuRssi} sniffer={node.snifferRssi} compact />
+                ) : (
+                  <span className="single-rssi">
+                    <small>Zentrale</small>
+                    <RssiAssessment value={node.ccuRssi} />
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -1452,7 +1473,7 @@ function RoutingTopologyView({
                     />
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "gateway" ? 20 : node.role === "router" ? 18 : 12} />
-                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · Zentrale: ${node.ccuRssi ?? "nicht verfügbar"} dBm${node.ccuRssiSource ? ` (${node.ccuRssiSource})` : ""} · Sniffer: ${node.snifferRssi ?? "nicht verfügbar"} dBm`}</title>
+                  <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · ${signalDetailForNode(node)}`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>
                   )}
@@ -1467,7 +1488,7 @@ function RoutingTopologyView({
                 <rect width="210" height="38" rx="9" />
                 <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
                 <text className="routing-hover-signal" x="105" y="31" textAnchor="middle">
-                  CCU {hoveredNode.ccuRssi ?? "–"}{hoveredNode.ccuRssiSource ? ` ${hoveredNode.ccuRssiSource}` : ""} · Sniffer {hoveredNode.snifferRssi ?? "–"} dBm
+                  {signalDetailForNode(hoveredNode)}
                 </text>
               </g>
             )}
@@ -1514,8 +1535,15 @@ function RoutingTopologyView({
               <div>
                 <dt>Signalwerte</dt>
                 <dd>
-                  <DualRssiAssessment ccu={selectedNode?.ccuRssi} sniffer={selectedNode?.snifferRssi} />
-                  {selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Sniffer-Telegramme</small>}
+                  {includeSnifferRssi ? (
+                    <DualRssiAssessment ccu={selectedNode?.ccuRssi} sniffer={selectedNode?.snifferRssi} />
+                  ) : (
+                    <span className="single-rssi">
+                      <small>Zentrale</small>
+                      <RssiAssessment value={selectedNode?.ccuRssi} />
+                    </span>
+                  )}
+                  {includeSnifferRssi && selectedNode?.rssiTelegrams !== undefined && <small>{selectedNode.rssiTelegrams} Sniffer-Telegramme</small>}
                   {selectedNode?.ccuRssiSource && <small>CCU-Wert verwendet: {selectedNode.ccuRssiSource}</small>}
                 </dd>
               </div>
@@ -1621,7 +1649,7 @@ function App() {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [actionModal, setActionModal] = useState<ActionModal>(null);
   const [actionModalCheckId, setActionModalCheckId] = useState<string | null>(null);
-  const [signalSourceFilter, setSignalSourceFilter] = useState<"both" | "ccu" | "sniffer">("both");
+  const [signalSourceFilter, setSignalSourceFilter] = useState<"both" | "ccu">("ccu");
   const [backupPage, setBackupPage] = useState(0);
   const [configurationPassphrase, setConfigurationPassphrase] = useState("");
   const [configurationBusy, setConfigurationBusy] = useState(false);
@@ -1769,17 +1797,15 @@ function App() {
     .filter((device) => (
       signalSourceFilter === "both"
         ? device.ccuRssi !== undefined || device.snifferRssi !== undefined
-        : signalSourceFilter === "ccu"
-          ? device.ccuRssi !== undefined
-          : device.snifferRssi !== undefined
+        : device.ccuRssi !== undefined
     ))
     .sort((left, right) => {
       const leftValue = signalSourceFilter === "ccu"
         ? left.ccuRssi
-        : signalSourceFilter === "sniffer" ? left.snifferRssi : Math.min(left.ccuRssi ?? 99, left.snifferRssi ?? 99);
+        : Math.min(left.ccuRssi ?? 99, left.snifferRssi ?? 99);
       const rightValue = signalSourceFilter === "ccu"
         ? right.ccuRssi
-        : signalSourceFilter === "sniffer" ? right.snifferRssi : Math.min(right.ccuRssi ?? 99, right.snifferRssi ?? 99);
+        : Math.min(right.ccuRssi ?? 99, right.snifferRssi ?? 99);
       return (leftValue ?? 99) - (rightValue ?? 99);
     }), [allSignalQualityDevices, signalSourceFilter]);
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
@@ -6031,22 +6057,17 @@ function App() {
                   Belastbar ab mindestens 3 Telegrammen. Werte mit weniger Telegrammen bleiben vorläufig und lösen keine harte Fehleraussage aus.
                 </p>
                 <div className="signal-source-switch" role="group" aria-label="Signalquelle auswählen">
-                  <button type="button" className={signalSourceFilter === "both" ? "is-active" : ""} onClick={() => setSignalSourceFilter("both")}>
-                    Beides <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined || device.snifferRssi !== undefined).length}</small>
-                  </button>
                   <button type="button" className={signalSourceFilter === "ccu" ? "is-active" : ""} onClick={() => setSignalSourceFilter("ccu")}>
-                    Zentrale <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined).length}</small>
+                    Ohne Snifferwerte <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined).length}</small>
                   </button>
-                  <button type="button" className={signalSourceFilter === "sniffer" ? "is-active" : ""} onClick={() => setSignalSourceFilter("sniffer")}>
-                    Sniffer <small>{allSignalQualityDevices.filter((device) => device.snifferRssi !== undefined).length}</small>
+                  <button type="button" className={signalSourceFilter === "both" ? "is-active" : ""} onClick={() => setSignalSourceFilter("both")}>
+                    Mit Snifferwerten <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined || device.snifferRssi !== undefined).length}</small>
                   </button>
                 </div>
                 <p className="signal-source-hint">
                   {signalSourceFilter === "both"
-                    ? "Vergleicht beide Messquellen. Wenn nur eine Quelle vorhanden ist, bleibt die andere bewusst als „nicht gemessen“ sichtbar."
-                    : signalSourceFilter === "ccu"
-                      ? "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Das ist die Funkstrecke aus Sicht deiner CCU."
-                      : "Zeigt nur RSSI-Werte vom AskSin-Sniffer. Das ist die Empfangsstärke am Standort des Sniffers."}
+                    ? "Zeigt Zentralenwerte plus vorhandene Snifferwerte. Der Sniffer ist eine zweite Messposition und kann vom Zentralenwert deutlich abweichen."
+                    : "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Snifferwerte werden in dieser Ansicht bewusst ausgeblendet."}
                 </p>
                 <div className="action-device-list">
                   {signalQualityDevices.map((device) => (
@@ -6059,8 +6080,8 @@ function App() {
                           <DualRssiAssessment ccu={device.ccuRssi} sniffer={device.snifferRssi} />
                         ) : (
                           <span className="single-rssi">
-                            <small>{signalSourceFilter === "ccu" ? "Zentrale" : "Sniffer"}</small>
-                            <RssiAssessment value={signalSourceFilter === "ccu" ? device.ccuRssi : device.snifferRssi} />
+                            <small>Zentrale</small>
+                            <RssiAssessment value={device.ccuRssi} />
                           </span>
                         )}
                         {device.telegrams !== undefined ? (
@@ -6076,9 +6097,7 @@ function App() {
                     <div className="modal-empty">
                       <strong>Noch keine passenden RSSI-Gerätedaten</strong>
                       <span>
-                        {signalSourceFilter === "sniffer"
-                          ? "Sniffer weiterlaufen lassen und einige Homematic-Geräte auslösen."
-                          : "Analyse erneut starten und prüfen, ob die XML-API RSSI-Werte der Zentrale liefert."}
+                        Analyse automatisch aktualisieren lassen und prüfen, ob die XML-API RSSI-Werte der Zentrale liefert.
                       </span>
                     </div>
                   )}
