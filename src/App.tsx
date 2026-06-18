@@ -1263,6 +1263,16 @@ function RoutingTopologyView({
         <button type="button" className={topologyScope === "combined" ? "is-active" : ""} onClick={() => setTopologyScope("combined")}>Beides</button>
       </div>
 
+      <details className="routing-reading-help">
+        <summary>So liest du diese Karte</summary>
+        <div>
+          <span><b>Abstand zur Mitte:</b> weiter außen = schwächerer gemessener RSSI-Wert der gewählten Quelle.</span>
+          <span><b>Durchgezogene Linie:</b> belegter Empfänger oder konfigurierter Router. Gestrichelt ist nur Orientierung, kein Fehler.</span>
+          <span><b>Grün/gelb/rot:</b> Signalbewertung. Rot bedeutet zuerst prüfen, nicht automatisch „Gerät defekt“.</span>
+          <span><b>G/R:</b> Gateway oder Router. Gateways sind Empfänger, aber nicht automatisch HmIP-Router.</span>
+        </div>
+      </details>
+
       <div className="routing-metrics">
         <span><strong>{visibleDeviceCount}</strong> Geräte</span>
         <span><strong>{gateways.length}</strong> Funk-Gateways</span>
@@ -1725,10 +1735,43 @@ function App() {
   const analysisSourceItems = useMemo(() => {
     if (!analysis) return [];
     return [
-      { id: "ccu", label: "CCU Live", time: analysis.sources?.ccu, required: true },
-      { id: "masterdata", label: "CCU Script", time: analysis.sources?.masterdata, required: false },
-      { id: "collector", label: "Shell-Collector", time: analysis.sources?.collector, required: false },
-      { id: "sniffer", label: "Sniffer", time: analysis.sources?.sniffer, required: false, hidden: !form.snifferEnabled || analysisSnifferMode === "base" }
+      {
+        id: "ccu",
+        label: "CCU Live",
+        time: analysis.sources?.ccu,
+        required: true,
+        purpose: "Geräte, Servicemeldungen, Batterien, Duty Cycle und RSSI der Zentrale.",
+        action: "Status öffnen",
+        actionType: "diagnostics" as const
+      },
+      {
+        id: "masterdata",
+        label: "CCU-Script",
+        time: analysis.sources?.masterdata,
+        required: false,
+        purpose: "Stammdaten, Gerätenamen, AskSin-Namensliste und zusätzliche CCU-Systemvariablen.",
+        action: "Script anzeigen",
+        actionType: "masterdata" as const
+      },
+      {
+        id: "collector",
+        label: "Shell-Collector",
+        time: analysis.sources?.collector,
+        required: false,
+        purpose: "CPU, RAM, Temperatur, Speicher, Backups, Logs und aktive Verbindungen.",
+        action: "Collector öffnen",
+        actionType: "collector" as const
+      },
+      {
+        id: "sniffer",
+        label: "AskSin-Sniffer",
+        time: analysis.sources?.sniffer,
+        required: false,
+        hidden: !form.snifferEnabled || analysisSnifferMode === "base",
+        purpose: "Telegramme, Funklast, Rauschpegel und RSSI am Standort des Sniffers.",
+        action: "DC öffnen",
+        actionType: "dc" as const
+      }
     ].filter((item) => !item.hidden);
   }, [analysis, form.snifferEnabled, analysisSnifferMode]);
   const routingNodeByIdentifier = useMemo(() => {
@@ -4774,20 +4817,45 @@ function App() {
             </div>
           </div>
 
-          <button type="button" className="analysis-source-strip" onClick={() => navigateTo("diagnostics")}>
-            <span>Datenquellen</span>
-            <div>
+          <section className="analysis-source-hub" aria-labelledby="analysis-source-title">
+            <div className="analysis-source-hub__header">
+              <div>
+                <p className="eyebrow">Datenquellen</p>
+                <h3 id="analysis-source-title">Woher kommen die Ergebnisse?</h3>
+              </div>
+              <button type="button" className="light-button" onClick={() => navigateTo("diagnostics")}>
+                Status öffnen
+              </button>
+            </div>
+            <div className="analysis-source-hub__grid">
               {analysisSourceItems.map((source) => {
                 const age = formatDataAge(source.time);
+                const state = source.time ? age.state : source.required ? "missing" : "optional";
                 return (
-                  <small className={`data-age data-age-${age.state}`} key={source.id}>
-                    {source.label}: {source.time ? age.label : source.required ? "fehlt" : "optional"}
-                  </small>
+                  <article className={`source-hub-card source-hub-card-${state}`} key={source.id}>
+                    <div>
+                      <strong>{source.label}</strong>
+                      <small className={`data-age data-age-${age.state}`}>
+                        {source.time ? age.label : source.required ? "fehlt" : "optional"}
+                      </small>
+                    </div>
+                    <p>{source.purpose}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (source.actionType === "diagnostics") navigateTo("diagnostics");
+                        if (source.actionType === "collector") openActionModal("collector");
+                        if (source.actionType === "masterdata") navigateTo("setup");
+                        if (source.actionType === "dc") navigateTo("dc");
+                      }}
+                    >
+                      {source.action}
+                    </button>
+                  </article>
                 );
               })}
             </div>
-            <b>Status öffnen</b>
-          </button>
+          </section>
 
           {snifferAffectedChecks > 0 && (
             <section className="analysis-source-mode" aria-label="Snifferdaten in der Analyse">
