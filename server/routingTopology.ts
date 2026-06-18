@@ -22,13 +22,21 @@ function normalizeIdentifier(value?: string | number): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function identifierVariants(value?: string | number): string[] {
+  const normalized = normalizeIdentifier(value);
+  if (!normalized) return [];
+  const withoutInterface = normalized.replace(/^[A-Z]+(?:-[A-Z]+)?\./, "");
+  const withoutChannel = withoutInterface.split(":")[0];
+  return [...new Set([normalized, withoutInterface, withoutChannel].filter(Boolean))];
+}
+
 function deviceIdentifiers(device: InventoryDevice): string[] {
   return [
     device.serial,
     device.address,
     device.rfAddress,
     device.radioAddress
-  ].map(normalizeIdentifier).filter(Boolean);
+  ].flatMap(identifierVariants).filter(Boolean);
 }
 
 function isHmIpDevice(device: InventoryDevice): boolean {
@@ -199,7 +207,7 @@ export function buildRoutingTopology(
 
   const ccuByIdentifier = new Map<string, CcuDevice>();
   ccuDevices.forEach((device) => {
-    [device.address].map(normalizeIdentifier).filter(Boolean)
+    [device.address, device.name].flatMap(identifierVariants).filter(Boolean)
       .forEach((identifier) => ccuByIdentifier.set(identifier, device));
   });
   devices.forEach((device, index) => {

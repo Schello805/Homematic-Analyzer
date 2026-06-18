@@ -1101,13 +1101,7 @@ function RoutingTopologyView({
   const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? central;
   const selectedRoute = selectedNode ? visibleEdges.find((edge) => edge.source === selectedNode.id) : undefined;
   const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
-  const ccuRssiAvailable = visibleNodes.some((node) => node.ccuRssi !== undefined);
-  const snifferRssiAvailable = visibleNodes.some((node) => node.snifferRssi !== undefined);
-  const rssiSource = requestedRssiSource === "ccu" && !ccuRssiAvailable && snifferRssiAvailable
-    ? "sniffer"
-    : requestedRssiSource === "sniffer" && !snifferRssiAvailable && ccuRssiAvailable
-      ? "ccu"
-      : requestedRssiSource;
+  const rssiSource = requestedRssiSource;
   const nodeRssi = (node?: RoutingTopologyNode) => node
     ? rssiSource === "ccu" ? node.ccuRssi : node.snifferRssi
     : undefined;
@@ -1269,10 +1263,10 @@ function RoutingTopologyView({
         <label>
           Positionen berechnen nach
           <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
-            <option value="ccu" disabled={!ccuRssiAvailable}>
+            <option value="ccu">
               Zentrale / XML-API ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Geräte)
             </option>
-            <option value="sniffer" disabled={!snifferRssiAvailable}>
+            <option value="sniffer">
               AskSin-Sniffer ({visibleNodes.filter((node) => node.snifferRssi !== undefined).length} Geräte)
             </option>
           </select>

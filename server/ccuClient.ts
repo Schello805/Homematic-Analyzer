@@ -268,10 +268,17 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
   }
 }
 
-function extractCentralVersionFromText(text: string): string | undefined {
-  const versionFromLabel = text.match(/(?:Aktuelle\s+Firmwareversion|Firmwareversion|VERSION)\D{0,80}(\d+\.\d+\.\d+(?:\.\d+)?)/i)?.[1];
+export function extractCentralVersionFromText(text: string): string | undefined {
+  const readableText = text
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(nbsp|#160);/gi, " ")
+    .replace(/&[a-z0-9#]+;/gi, " ")
+    .replace(/\s+/g, " ");
+  const versionFromLabel = readableText.match(/(?:Aktuelle\s+(?:Firmware)?version|Firmwareversion|PRODUCT_VERSION|VERSION)\D{0,400}(\d+\.\d+\.\d+(?:\.\d+)?)/i)?.[1];
   if (versionFromLabel) return versionFromLabel;
-  return text.match(/\b\d+\.\d+\.\d+(?:\.\d+)?\b/)?.[0];
+  return readableText.match(/\b\d+\.\d+\.\d+(?:\.\d+)?\b/)?.[0];
 }
 
 function extractCentralProductFromText(text: string): string | undefined {
@@ -314,6 +321,7 @@ async function fetchCcuText(endpoint: CcuEndpoint, path: string, config: Analyze
 
 async function readCentralVersionFromWebUi(endpoint: CcuEndpoint, config: AnalyzeRequest, sid?: string): Promise<{ version?: string; product?: string; source?: string }> {
   const paths = [
+    "/VERSION",
     "/config/cp_maintenance.cgi",
     "/config/cp_software.cgi",
     "/config/cp_system.cgi",

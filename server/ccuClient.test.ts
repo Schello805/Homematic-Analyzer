@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyCcuConnectionError, collectDevices, xmlApiTimeoutForPath } from "./ccuClient.js";
+import { classifyCcuConnectionError, collectDevices, extractCentralVersionFromText, xmlApiTimeoutForPath } from "./ccuClient.js";
 
 test("erkennt DNS-Fehler des Analyzer-Servers", () => {
   const error = new Error("fetch failed", { cause: { code: "ENOTFOUND" } });
@@ -30,6 +30,14 @@ test("erkennt Zeitüberschreitung", () => {
 test("gibt der großen XML-API-Geräteliste deutlich mehr Zeit", () => {
   assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/statelist.cgi"), 30000);
   assert.equal(xmlApiTimeoutForPath("/addons/xmlapi/systemNotification.cgi"), 12000);
+});
+
+test("liest Zentralenversion aus VERSION-Datei und WebUI-HTML", () => {
+  assert.equal(extractCentralVersionFromText("VERSION=3.87.6.20260614\nPRODUCT=OpenCCU"), "3.87.6.20260614");
+  assert.equal(
+    extractCentralVersionFromText("<td>Aktuelle Firmwareversion:</td><td><strong>3.87.6.20260614</strong></td>"),
+    "3.87.6.20260614"
+  );
 });
 
 test("liest RSSI_DEVICE und RSSI_PEER aus der XML-API-Geräteliste", () => {
