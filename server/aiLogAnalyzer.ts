@@ -17,9 +17,14 @@ const maxAiLogLines = 500;
 const maxAiLogCharacters = 120000;
 const issuePattern = /\b(error|errors|warn|warning|fatal|critical|failed|failure|exception|timeout|unreach|unreachable|lowbat|low battery|not reachable|communication error|config pending|overheat|corrupt|denied)\b|fehler|warnung|kritisch|gestört|störung|nicht erreichbar|batterie schwach|konfiguration ausstehend/i;
 const clearingEventPattern = /Event="[^"]+"\."(?:UNREACH|STICKY_UNREACH|LOWBAT|LOW_BAT|BATTERY_LOW|CONFIG_PENDING|UPDATE_PENDING|SABOTAGE|ERROR|FAULT_[^"]+|DUTY_CYCLE|OVERHEAT|MOTION|ACTIVITY_STATE|ERROR_[^"]+|[^"]*(?:ALARM|ERROR|FAULT|FAIL|LOW|UNREACH|PENDING|SABOTAGE)[^"]*)"=false\b/i;
+const benignFirmwareStatusPattern = /(?:kein(?:e|en)?|nicht|no|not)\s+(?:neue?s?\s+)?(?:geräte[-\s]*)?firmware[-\s]*(?:update|aktualisierung)?\s+(?:verfügbar|available)|(?:firmware|device firmware|geräte[-\s]*firmware).{0,120}(?:kein(?:e|en)?|nicht|no|not).{0,80}(?:update|aktualisierung|verfügbar|available)|(?:firmware|device firmware|geräte[-\s]*firmware).{0,120}(?:available|verfügbar)[:=]\s*(?:false|0|no)\b|(?:NEW_FIRMWARE_AVAILABLE|FIRMWARE_UPDATE_AVAILABLE|UPDATE_AVAILABLE)"?[:=]\s*(?:false|0|no)\b/i;
 
 export function isClearingEventLine(line: string): boolean {
   return clearingEventPattern.test(line);
+}
+
+export function isBenignLogLine(line: string): boolean {
+  return isClearingEventLine(line) || benignFirmwareStatusPattern.test(line);
 }
 
 export function prepareLogLines(logs: string[], mode: AiLogMode) {
@@ -28,9 +33,10 @@ export function prepareLogLines(logs: string[], mode: AiLogMode) {
     .filter(Boolean)
     .slice(-maxAiLogLines)
     .map((line) => line.slice(0, 1000));
+  const diagnosticLines = cleanedLines.filter((line) => !isBenignLogLine(line));
   const selectedLines = mode === "issues"
-    ? cleanedLines.filter((line) => issuePattern.test(line) && !isClearingEventLine(line))
-    : cleanedLines;
+    ? diagnosticLines.filter((line) => issuePattern.test(line))
+    : diagnosticLines;
   const limitedLines: string[] = [];
   let characterCount = 0;
 
@@ -44,11 +50,12 @@ export function prepareLogLines(logs: string[], mode: AiLogMode) {
     totalLines: cleanedLines.length,
     matchedLines: selectedLines.length,
     lines: limitedLines.reverse(),
-    truncated: limitedLines.length < selectedLines.length
+    truncated: limitedLines.length < selectedLines.length,
+    suppressedLines: cleanedLines.length - diagnosticLines.length
   };
 }
 
-function buildPrompt(logLines: string[], mode: AiLogMode, totalLines: number) {
+function buildPrompt(logLines: string[], mode: AiLogMode, totalLines: number, suppressedLines: number) {
   return [
     "Du bist ein vorsichtiger Homematic/RaspberryMatic Log-Analyst.",
     "Analysiere ausschließlich die folgenden Logzeilen.",
@@ -56,12 +63,16 @@ function buildPrompt(logLines: string[], mode: AiLogMode, totalLines: number) {
     mode === "issues"
       ? `Die Zeilen wurden aus ${totalLines} übertragenen Logzeilen auf mögliche Fehler und Warnungen vorgefiltert.`
       : `Dies ist der vollständige vom Collector übertragene Logauszug mit ${totalLines} Zeilen.`,
+    suppressedLines > 0
+      ? `${suppressedLines} eindeutige Entwarnungs- oder Statuszeilen wurden lokal ausgeblendet, zum Beispiel UNREACH=false oder „kein Firmwareupdate verfügbar“.`
+      : "Es wurden keine eindeutigen Entwarnungs- oder Statuszeilen lokal ausgeblendet.",
     "Antworte nur als JSON mit diesen Feldern:",
     "{ \"severity\": \"ok|improvement|warning|critical\", \"summary\": string, \"recommendation\": string, \"evidence\": string[], \"details\": string[] }",
     "Schreibe für normale Anwender verständlich und kurz.",
     "Jeder Eintrag in evidence muss zuerst in Alltagssprache erklären, was die Meldung bedeutet und welches Gerät oder welcher Kanal betroffen ist.",
     "Hänge den technischen Originalbeleg erst danach an. Gib niemals nur einen Parameternamen, eine Adresse oder eine rohe Logzeile als Erklärung aus.",
     "Erkläre ausdrücklich, ob eine Meldung allein bereits einen Defekt beweist oder nur beobachtet werden sollte.",
+    "Nenne nicht als Ergebnis, dass für ein Gerät kein Firmwareupdate verfügbar ist. Das ist ein Normalzustand, kein hilfreicher Analysefund.",
     "",
     "Logzeilen:",
     logLines.map((line, index) => `${index + 1}. ${line}`).join("\n")
@@ -129,6 +140,7 @@ function normalizeAiResult(
   totalLines: number,
   analyzedLines: number,
   truncated: boolean,
+  suppressedLines: number,
   masterdata?: CcuMasterdataPayload
 ): AnalysisCheck {
   const status = result.severity && allowedStatuses.has(result.severity) ? result.severity : "improvement";
@@ -152,6 +164,7 @@ function normalizeAiResult(
     })),
     details: [
       `Analysiert: ${analyzedLines} von ${totalLines} übertragenen Logzeilen · Modus: ${mode === "issues" ? "Nur Fehler und Warnungen" : "Gesamter übertragener Log"}.`,
+      ...(suppressedLines > 0 ? [`${suppressedLines} eindeutige Entwarnungs- oder Statuszeilen wurden lokal ausgeblendet, z. B. UNREACH=false oder „kein Firmwareupdate verfügbar“.`] : []),
       ...(truncated ? ["Der Auszug wurde wegen der maximalen KI-Eingabegröße gekürzt; die neuesten passenden Zeilen wurden berücksichtigt."] : []),
       ...(details.length > 0
         ? details
@@ -266,7 +279,7 @@ export async function createAiLogAnalysis(
   }
 
   try {
-    const prompt = buildPrompt(logLines, mode, preparedLogs.totalLines);
+    const prompt = buildPrompt(logLines, mode, preparedLogs.totalLines, preparedLogs.suppressedLines);
     const normalizedSettings = {
       enabled: Boolean(aiSettings.enabled),
       provider,
@@ -286,6 +299,7 @@ export async function createAiLogAnalysis(
       preparedLogs.totalLines,
       logLines.length,
       preparedLogs.truncated,
+      preparedLogs.suppressedLines,
       masterdata
     );
   } catch (error) {

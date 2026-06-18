@@ -1193,13 +1193,11 @@ function RoutingTopologyView({
   const focusCount = Math.max(0, focusNodeIds.size - 1);
   const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
   const allDeviceCount = Math.max(0, visibleNodes.length - 1);
-  const actionSummary = measuredNodes.length === 0
-    ? `${receiverCount} Empfänger oder Router erkannt. Für eine echte Schwächenbewertung fehlen noch RSSI-Werte.`
-    : weakNodes.length > 0
-      ? `${weakNodes.length} Geräte brauchen Aufmerksamkeit.`
-      : observedNodes.length > 0
-        ? `${observedNodes.length} Geräte beobachten, aber kein akuter Funk-Notfall.`
-        : "Funkabdeckung wirkt im aktuellen Snapshot unauffällig.";
+  const mapSummary = topologyFilter === "focus"
+    ? `${focusCount} relevante Knoten werden angezeigt.`
+    : topologyFilter === "infrastructure"
+      ? `${infrastructureCount} Empfänger, Router und Kandidaten werden angezeigt.`
+      : `${allDeviceCount} bekannte Funkknoten werden angezeigt.`;
   const routeSummary = visibleEdges.length > 0
     ? `${visibleEdges.length} belegte Funkwege aus Logs oder Parametern.`
     : "Noch keine belegten Funkwege – gestrichelte Linien sind nur Orientierung.";
@@ -1261,7 +1259,7 @@ function RoutingTopologyView({
           </span>
         </div>
         <label>
-          Positionen berechnen nach
+          Signalwerte anzeigen von
           <select value={rssiSource} onChange={(event) => setRequestedRssiSource(event.target.value as "ccu" | "sniffer")}>
             <option value="ccu">
               Zentrale / XML-API ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Geräte)
@@ -1301,8 +1299,8 @@ function RoutingTopologyView({
 
       <div className={`routing-map-summary ${measuredNodes.length === 0 ? "is-muted" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
         <div>
-          <strong>{actionSummary}</strong>
-          <span>{routeSummary} Signalquelle: {rssiSourceLabel}.</span>
+          <strong>{mapSummary}</strong>
+          <span>{routeSummary} Quelle: {rssiSourceLabel}.</span>
         </div>
         <button
           type="button"

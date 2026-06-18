@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { explainAiEvidence, prepareLogLines } from "./aiLogAnalyzer.js";
+import { explainAiEvidence, isBenignLogLine, prepareLogLines } from "./aiLogAnalyzer.js";
 
 test("filtert im Einsteiger-Modus nur Fehler und Warnungen", () => {
   const result = prepareLogLines([
@@ -37,6 +37,18 @@ test("wertet UNREACH=false als Entwarnung und nicht als Fehler", () => {
   assert.equal(result.totalLines, 1);
   assert.equal(result.matchedLines, 0);
   assert.deepEqual(result.lines, []);
+});
+
+test("blendet harmlose Firmware-Update-Statuszeilen auch im Vollmodus aus", () => {
+  const result = prepareLogLines([
+    "HmIPServer: Info: Für Gerät Taster Flur ist kein Firmwareupdate verfügbar",
+    "ReGaHss: Warning: Script timeout"
+  ], "full");
+
+  assert.equal(result.totalLines, 2);
+  assert.equal(result.suppressedLines, 1);
+  assert.deepEqual(result.lines, ["ReGaHss: Warning: Script timeout"]);
+  assert.equal(isBenignLogLine("Device firmware update available=false"), true);
 });
 
 test("begrenzt die vollständige Analyse auf die neuesten 500 Zeilen", () => {
