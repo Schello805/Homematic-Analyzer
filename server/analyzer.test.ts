@@ -347,8 +347,8 @@ test("zeigt Diagnose, wenn die Zentralenversion live nicht gelesen wurde", () =>
       },
       diagnostics: [{
         step: "Zentralenversion",
-        status: "failed",
-        detail: "Die CCU-Gerätedaten wurden gelesen, aber die Firmwareversion war in den geprüften WebUI-Seiten nicht eindeutig auffindbar."
+        status: "skipped",
+        detail: "Die CCU-Live-Verbindung ist ok. Die installierte Zentralenversion wurde in den geprüften WebUI-Seiten noch nicht eindeutig gefunden."
       }]
     },
     undefined,

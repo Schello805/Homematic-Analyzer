@@ -58,7 +58,7 @@ Während der Installation fragt das Script optional nach:
 Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
 Auch in der Web-App kann der Sniffer-Port später per Dropdown neu gesucht und ausgewählt werden. Falls der Port nicht sichtbar ist, kann er weiterhin manuell eingetragen werden.
 
-Wenn der Collector während der Installation aktiviert wird, wartet das Script auf die lokale Analyzer-API und sendet direkt einen ersten System-Snapshot. Bei regelmäßiger Übertragung wird zusätzlich ein Cronjob auf dem System angelegt.
+Wenn der Collector während der Installation aktiviert wird, wartet das Script auf die lokale Analyzer-API und sendet direkt einen ersten System-Snapshot. Bei regelmäßiger Übertragung wird zusätzlich ein Cronjob auf dem System angelegt. Für Verlaufsgrafiken und aktuelle Systemwerte wird die minütliche Übertragung empfohlen.
 
 Nach der Installation ist die Web-App unter `http://SERVER-IP:3001` erreichbar.
 
@@ -183,13 +183,15 @@ Der Entfernen-Modus löscht nur den Analyzer-Cronjob sowie `/tmp/homematic-analy
 
 Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
 
-## Funk-Topologie und HmIP-Routing
+## Funk-Topologie und Routing
 
 Die HmIP-Routing-Analyse ist standardmäßig ausgeschaltet. Wird sie unter **Einstellungen → HmIP-Routing-Analyse** aktiviert, führt die App durch Log-Einstellung, Neustart und Collector-Test. Der Collector liest zusätzlich die HmIP-RF-Geräteparameter `ROUTER_MODULE_ENABLED`, `ENABLE_ROUTING` und `MULTICAST_ROUTER_MODULE_ENABLED` lokal und ausschließlich lesend aus.
 
-Das Ergebnis erscheint anschließend unter **Analyse → Neu analysieren → Funk-Topologie**. Dort kann zwischen **HmIP**, **klassischem Homematic** und **Beides** gewechselt werden. Orange Punkte sind bei HmIP nur technisch geeignete, meist netzversorgte Kandidaten. Erst grüne Punkte sind durch CCU-Geräteparameter oder einen Routingbeleg als Router bestätigt.
+Das Ergebnis erscheint anschließend automatisch unter **Analyse → Funk-Topologie** und kann zusätzlich über den Button **Routing-Grafik** geöffnet werden. Dort kann zwischen **HmIP**, **klassischem Homematic** und **Beides** gewechselt werden. Orange Punkte sind bei HmIP nur technisch geeignete, meist netzversorgte Kandidaten. Erst grüne Punkte sind durch CCU-Geräteparameter oder einen Routingbeleg als Router bestätigt.
 
 Gateways werden nicht pauschal als Router behandelt: HmIP-Access-Points und klassische Homematic LAN-Gateways sind zusätzliche Funkempfänger. Ein klassisches LAN-Gateway bildet kein HmIP-Routingnetz. Wenn der konkret verwendete Empfänger eines Geräts nicht belegt ist, bleibt die Zuordnung in der Karte bewusst offen.
+
+Die Analyseseite aktualisiert sich regelmäßig im Hintergrund. Ein manueller Neustart der Analyse ist im Normalfall nicht nötig; Datenquellen und Datenalter werden im Ergebnisbereich angezeigt.
 
 Ausführliche bebilderte Anleitung: [`docs/HMIP_ROUTING.md`](docs/HMIP_ROUTING.md)
 
@@ -217,7 +219,7 @@ Bereits umgesetzt:
 - KI-Logauswertung mit OpenAI oder Google Gemini.
 - Geräte-Firmwareupdates anhand der offiziellen CCU-Felder `AVAILABLE_FIRMWARE` und `FIRMWARE_UPDATE_STATE`; zusätzlich Hinweise bei unterschiedlichen Firmwareständen gleicher Gerätetypen.
 - Zentralen-Updates für OpenCCU/RaspberryMatic über das offizielle OpenCCU-Repository und für die originale CCU3 über den offiziellen eQ-3-Update-Dienst.
-- Grafische HmIP-Routing-Karte mit Kandidaten, direkt gelesenen Router-/Routing-/Multicast-Schaltern, belegten Pfaden und verständlicher RSSI-Ampel.
+- Grafische Funk-Topologie für HmIP, klassisches Homematic und kombinierte Ansicht mit Kandidaten, Gateways, direkt gelesenen Router-/Routing-/Multicast-Schaltern, belegten Pfaden und verständlicher RSSI-Ampel.
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.
 - DC-Analyzer mit AskSin-kompatibler Telegramm-Auswertung, Duty-Cycle-Anteil pro Gerät und optionaler Namensauflösung über `AskSinAnalyzerDevList`.

@@ -60,8 +60,8 @@ Im Analyzer **Empfang jetzt testen** anklicken. Der letzte Haken wird automatisc
 Danach:
 
 1. **Analyse** öffnen.
-2. **Neu analysieren** anklicken.
-3. Den Prüfpunkt **HmIP Routing** auswählen.
+2. Kurz warten, bis die automatische Aktualisierung neue Daten geladen hat.
+3. Den Button **Routing-Grafik** öffnen oder den Prüfpunkt **Funk-Topologie** auswählen.
 
 In der Karte gilt:
 

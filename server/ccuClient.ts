@@ -937,10 +937,10 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
     } else {
       diagnostics.push({
         step: "Zentralenversion",
-        status: "failed",
+        status: "skipped",
         detail: hasCredentials
-          ? "Die CCU-Gerätedaten wurden gelesen, aber die Firmwareversion war in den geprüften WebUI-Seiten nicht eindeutig auffindbar. Der Shell-Collector liefert sie alternativ über `/VERSION`."
-          : "Die CCU-Gerätedaten wurden per XML-API-Token gelesen. Für die WebUI-Firmwareversion fehlen normale CCU-Login-Daten; alternativ liefert der Shell-Collector `/VERSION`."
+          ? "Die CCU-Live-Verbindung ist ok. Die installierte Zentralenversion wurde in den geprüften WebUI-Seiten noch nicht eindeutig gefunden; der Shell-Collector liefert sie zusätzlich über `/VERSION`."
+          : "Die CCU-Live-Verbindung ist ok. Für die WebUI-Firmwareversion fehlen normale CCU-Login-Daten; alternativ liefert der Shell-Collector `/VERSION`."
       });
     }
     if (webUiVersionSessionWasCreated && webUiVersionSid) {
