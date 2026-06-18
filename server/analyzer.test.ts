@@ -319,9 +319,10 @@ test("rät ohne installierte Zentralenversion kein Update", () => {
     }
   ).find((check) => check.id === "central-release");
 
-  assert.equal(centralRelease?.status, "improvement");
-  assert.match(centralRelease?.summary ?? "", /installierte Zentralenversion fehlt/);
+  assert.equal(centralRelease?.status, "unavailable");
+  assert.match(centralRelease?.summary ?? "", /kein Update behauptet/);
   assert.match(centralRelease?.recommendation ?? "", /Collector/);
+  assert.doesNotMatch(centralRelease?.summary ?? "", /Aktuell verfügbar/);
 });
 
 test("zeigt Diagnose, wenn die Zentralenversion live nicht gelesen wurde", () => {
@@ -363,7 +364,7 @@ test("zeigt Diagnose, wenn die Zentralenversion live nicht gelesen wurde", () =>
     }
   ).find((check) => check.id === "central-release");
 
-  assert.equal(centralRelease?.status, "improvement");
+  assert.equal(centralRelease?.status, "unavailable");
   assert.equal(centralRelease?.evidence.some((evidence) => evidence.source === "Zentralenversion"), true);
 });
 

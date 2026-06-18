@@ -1043,24 +1043,25 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   if (centralRelease) {
     const hasInstalledVersion = Boolean(centralRelease.installedVersion);
     const centralVersionDiagnostic = ccu?.diagnostics?.find((diagnostic) => diagnostic.step === "Zentralenversion");
+    const centralReleaseName = centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU";
     checks.push({
       id: "central-release",
-      title: centralRelease.source === "ccu3" ? "CCU3 Update" : "OpenCCU Update",
+      title: hasInstalledVersion ? `${centralReleaseName} Update` : "Zentralen-Version",
       category: "Wartung",
-      status: centralRelease.available ? "warning" : centralRelease.error || !hasInstalledVersion ? "improvement" : "ok",
+      status: centralRelease.available ? "warning" : centralRelease.error ? "improvement" : !hasInstalledVersion ? "unavailable" : "ok",
       summary: centralRelease.available
-        ? `Neue ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"}-Version verfügbar: ${centralRelease.latestVersion}.`
+        ? `Neue ${centralReleaseName}-Version verfügbar: ${centralRelease.latestVersion}.`
         : centralRelease.error
-          ? `Der ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"}-Stand konnte gerade nicht geprüft werden.`
+          ? `Der ${centralReleaseName}-Stand konnte gerade nicht geprüft werden.`
           : !hasInstalledVersion
-            ? `Aktuell verfügbar: ${centralRelease.source === "ccu3" ? "CCU3" : "OpenCCU"} ${centralRelease.latestVersion}. Die installierte Zentralenversion fehlt noch.`
+            ? "Die installierte Zentralenversion wurde noch nicht belegbar gelesen. Es wird deshalb kein Update behauptet."
             : `Die Zentrale ist aktuell (${centralRelease.installedVersion}).`,
       recommendation: centralRelease.available
         ? "Release-Hinweise öffnen, Backup erstellen und das Zentralen-Update anschließend bewusst über die CCU-WebUI installieren."
         : centralRelease.error
           ? "Internetverbindung des Analyzer-Systems prüfen und die Analyse später erneut starten."
           : !hasInstalledVersion
-            ? "Analyse erneut starten oder den aktuellen Shell-Collector einmal abwarten. Die App liest die installierte Version belegbar aus der CCU-WebUI oder per Collector aus `/VERSION`."
+            ? "Den aktuellen Shell-Collector einmal neu ausführen oder den nächsten Collector-Lauf abwarten. Erst wenn die installierte Version gelesen wurde, vergleicht die App sie mit dem Online-Release."
             : "Kein Handlungsbedarf.",
       access: ["ccu", "ssh"],
       evidence: [
@@ -1068,7 +1069,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           source: centralRelease.source === "ccu3" ? "Offizieller CCU3-Update-Dienst" : "OpenCCU Release",
           detail: hasInstalledVersion
             ? `Installiert: ${centralRelease.product ? `${centralRelease.product} ` : ""}${centralRelease.installedVersion}. Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}.`
-            : `Verfügbar: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Installierte Version wurde weder aus der CCU-WebUI noch vom Collector geliefert.`,
+            : `Online gefunden: ${centralRelease.latestVersion ?? "nicht ermittelbar"}. Keine Update-Aussage, weil die installierte Version noch fehlt.`,
           timestamp: centralRelease.checkedAt,
           url: centralRelease.url
         },

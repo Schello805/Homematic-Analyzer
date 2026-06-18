@@ -190,10 +190,10 @@ CPU_VALUE="$(read_cpu_percent)"
 CENTRAL_VERSION_VALUE=""
 CENTRAL_PRODUCT_VALUE=""
 if [ -r /VERSION ]; then
-  CENTRAL_VERSION_VALUE="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]*=[[:space:]]*[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /VERSION 2>/dev/null | head -n 1 || true)"
-  CENTRAL_PRODUCT_VALUE="$(sed -n 's/^[[:space:]]*PRODUCT[[:space:]]*=[[:space:]]*[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /VERSION 2>/dev/null | head -n 1 || true)"
+  CENTRAL_VERSION_VALUE="$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' /VERSION 2>/dev/null | head -n 1 || true)"
+  CENTRAL_PRODUCT_VALUE="$(awk -F= '/^[[:space:]]*PRODUCT[[:space:]]*=/{ gsub(/^[[:space:]\"'\"']+|[[:space:]\"'\"']+$/, "", $2); print $2; exit }' /VERSION 2>/dev/null || true)"
   if [ -z "$CENTRAL_VERSION_VALUE" ]; then
-    CENTRAL_VERSION_VALUE="$(grep -Eo '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' /VERSION 2>/dev/null | head -n 1 || true)"
+    CENTRAL_VERSION_VALUE="$(awk -F= '/^[[:space:]]*VERSION[[:space:]]*=/{ gsub(/^[[:space:]\"'\"']+|[[:space:]\"'\"']+$/, "", $2); print $2; exit }' /VERSION 2>/dev/null || true)"
   fi
 fi
 if [ -z "$CENTRAL_PRODUCT_VALUE" ] && [ -r /etc/os-release ]; then

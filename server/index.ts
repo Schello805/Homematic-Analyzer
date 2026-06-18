@@ -251,6 +251,10 @@ function stringFromRecord(record: Record<string, unknown> | undefined, key: stri
   return value === undefined || value === null ? undefined : String(value);
 }
 
+function firstNonBlankString(...values: Array<string | undefined>): string | undefined {
+  return values.map((value) => value?.trim()).find((value): value is string => Boolean(value));
+}
+
 function stringArrayFromRecord(record: Record<string, unknown> | undefined, key: string): string[] | undefined {
   const value = record?.[key];
   if (!Array.isArray(value)) return undefined;
@@ -1183,12 +1187,16 @@ app.post("/api/analyze", async (request, response) => {
       events: { critical: true }
     });
     const releaseCheck = await checkRepositoryRelease(appVersion);
-    const installedCentralVersion = ccuSnapshot?.centralVersion
-      ?? stringFromRecord(latestCollector?.system, "centralVersion")
-      ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
-    const centralProduct = ccuSnapshot?.centralProduct
-      ?? stringFromRecord(latestCollector?.system, "centralProduct")
-      ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
+    const installedCentralVersion = firstNonBlankString(
+      ccuSnapshot?.centralVersion,
+      stringFromRecord(latestCollector?.system, "centralVersion"),
+      stringFromRecord(latestCcuMasterdata?.system, "centralVersion")
+    );
+    const centralProduct = firstNonBlankString(
+      ccuSnapshot?.centralProduct,
+      stringFromRecord(latestCollector?.system, "centralProduct"),
+      stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+    );
     const centralReleaseCheck = isOfficialCcu3Product(centralProduct)
       ? await checkOfficialCcu3Release(installedCentralVersion, centralProduct)
       : isOpenCcuFamilyProduct(centralProduct)
@@ -1492,12 +1500,16 @@ app.get("/api/system/update-status", async (_request, response) => {
 });
 
 app.get("/api/system/central-update-status", async (_request, response) => {
-  const installedVersion = latestCcuSnapshot?.centralVersion
-    ?? stringFromRecord(latestCollector?.system, "centralVersion")
-    ?? stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
-  const product = latestCcuSnapshot?.centralProduct
-    ?? stringFromRecord(latestCollector?.system, "centralProduct")
-    ?? stringFromRecord(latestCcuMasterdata?.system, "centralProduct");
+  const installedVersion = firstNonBlankString(
+    latestCcuSnapshot?.centralVersion,
+    stringFromRecord(latestCollector?.system, "centralVersion"),
+    stringFromRecord(latestCcuMasterdata?.system, "centralVersion")
+  );
+  const product = firstNonBlankString(
+    latestCcuSnapshot?.centralProduct,
+    stringFromRecord(latestCollector?.system, "centralProduct"),
+    stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+  );
 
   if (!isOpenCcuFamilyProduct(product) && !isOfficialCcu3Product(product)) {
     response.json({
