@@ -269,6 +269,15 @@ async function fetchXml(endpoint: CcuEndpoint, path: string, config: AnalyzeRequ
 }
 
 export function extractCentralVersionFromText(text: string): string | undefined {
+  const versionKeys = [
+    /(?:^|\n)\s*(?:VERSION|PRODUCT_VERSION|FIRMWARE_VERSION|CCU_VERSION|VERSION_ID)\s*=\s*["']?(\d+\.\d+\.\d+(?:\.\d+)?)/im,
+    /(?:^|\n)\s*(?:VERSION|PRODUCT_VERSION|FIRMWARE_VERSION|CCU_VERSION|VERSION_ID)\s*:\s*["']?(\d+\.\d+\.\d+(?:\.\d+)?)/im
+  ];
+  for (const pattern of versionKeys) {
+    const version = text.match(pattern)?.[1];
+    if (version) return version;
+  }
+
   const readableText = text
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -282,9 +291,12 @@ export function extractCentralVersionFromText(text: string): string | undefined 
 }
 
 function extractCentralProductFromText(text: string): string | undefined {
-  if (/\bOpenCCU\b/i.test(text)) return "OpenCCU";
-  if (/\bRaspberryMatic\b/i.test(text)) return "RaspberryMatic";
-  if (/\bHM-CCU3\b|\bCCU3\b/i.test(text)) return "CCU3";
+  const productFromVersionFile = text.match(/(?:^|\n)\s*(?:PRODUCT|PRODUCT_NAME|NAME|PRETTY_NAME)\s*=\s*["']?([^"'\n\r]+)/im)?.[1]?.trim();
+  const haystack = `${productFromVersionFile ?? ""}\n${text}`;
+  if (/\bOpenCCU\b/i.test(haystack)) return "OpenCCU";
+  if (/\bRaspberryMatic\b/i.test(haystack)) return "RaspberryMatic";
+  if (/\bHM-CCU3\b|\bCCU3\b/i.test(haystack)) return "CCU3";
+  if (productFromVersionFile) return productFromVersionFile;
   return undefined;
 }
 

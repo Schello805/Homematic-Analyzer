@@ -408,6 +408,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const systemBackupCount = Number(collectorRecordValue(masterdata?.backups, "count") ?? collectorRecordValue(collector?.backups, "count") ?? "0");
   const systemMissingTemperature = Boolean((hasCcuSystemData || collector) && !systemTemperature);
   const systemMissingBackups = Boolean((hasCcuSystemData || collector) && systemBackupCount === 0);
+  const collectorScriptVersion = collectorRecordValue(collector?.system, "collectorScriptVersion");
+  const collectorInterval = collectorRecordValue(collector?.system, "collectorInterval");
 
   const checks: AnalysisCheck[] = [
     {
@@ -871,7 +873,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       evidence: hasCcuSystemData
         ? [{ source: "CCU WebUI-Script", detail: `Systemvariablen der Zentrale gelesen. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: masterdata?.collectedAt ?? now() }]
         : collector
-          ? [{ source: "Shell-Collector", detail: `Fallback-Daten von ${systemSourceHost}. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: collector.collectedAt ?? now() }]
+          ? [{ source: "Shell-Collector", detail: `Fallback-Daten von ${systemSourceHost}. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.${collectorScriptVersion ? ` Collector-Version: ${collectorScriptVersion}.` : " Collector-Version wurde noch nicht mitgeliefert; bitte den aktuellen Installationsbefehl einmal neu ausführen."}${collectorInterval ? ` Intervall: ${collectorInterval}.` : ""}`, timestamp: collector.collectedAt ?? now() }]
         : hasSsh
           ? [{ source: "SSH-Setup", detail: `SSH-Ziel ${config.sshHost ?? config.ccuHost} wurde angegeben.`, timestamp: now() }]
           : [],

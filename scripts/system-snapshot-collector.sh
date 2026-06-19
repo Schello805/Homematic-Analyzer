@@ -14,6 +14,7 @@ TMP_DIR="${TMPDIR:-/tmp}"
 CRON_MARKER="Homematic Analyzer system snapshot"
 HMIP_LOG_SOURCE="${HMIP_LOG_SOURCE:-/var/log/hmserver.log}"
 SYSTEM_LOG_SOURCE="${SYSTEM_LOG_SOURCE:-}"
+COLLECTOR_SCRIPT_VERSION="2026-06-19.1"
 
 make_tmp_file() {
   mktemp "$TMP_DIR/homematic-analyzer-$1.XXXXXX" 2>/dev/null || echo "$TMP_DIR/homematic-analyzer-$1.$$.tmp"
@@ -415,7 +416,10 @@ fi
   printf '    "temperatureRaw": "%s",\n' "$TEMP_VALUE"
   printf '    "cpu": "%s",\n' "$CPU_VALUE"
   printf '    "centralVersion": "%s",\n' "$(printf '%s' "$CENTRAL_VERSION_VALUE" | json_escape)"
-  printf '    "centralProduct": "%s"\n' "$(printf '%s' "$CENTRAL_PRODUCT_VALUE" | json_escape)"
+  printf '    "centralProduct": "%s",\n' "$(printf '%s' "$CENTRAL_PRODUCT_VALUE" | json_escape)"
+  printf '    "collectorScriptVersion": "%s",\n' "$COLLECTOR_SCRIPT_VERSION"
+  printf '    "collectorMode": "%s",\n' "$(printf '%s' "$COLLECTOR_MODE" | json_escape)"
+  printf '    "collectorInterval": "%s"\n' "$(printf '%s' "$COLLECTOR_INTERVAL" | json_escape)"
   printf '  },\n'
   printf '  "backups": { "count": "%s", "latestPath": "%s", "latestDirectory": "%s", "latestAt": "%s", "disk": "%s", "paths": [\n' \
     "$BACKUP_COUNT" \

@@ -40,6 +40,21 @@ test("liest Zentralenversion aus VERSION-Datei und WebUI-HTML", () => {
   );
 });
 
+test("liest Zentralenversion aus VERSION-Datei mit Anführungszeichen", () => {
+  assert.equal(extractCentralVersionFromText([
+    'PRODUCT="OpenCCU"',
+    'VERSION="3.87.6.20260614"',
+    "BUILD=20260614"
+  ].join("\n")), "3.87.6.20260614");
+});
+
+test("liest Zentralenversion aus einfachem WebUI-Text", () => {
+  assert.equal(
+    extractCentralVersionFromText("Aktuelle Firmwareversion: 3.87.6.20260614"),
+    "3.87.6.20260614"
+  );
+});
+
 test("liest RSSI_DEVICE und RSSI_PEER aus der XML-API-Geräteliste", () => {
   const devices = collectDevices({
     stateList: {

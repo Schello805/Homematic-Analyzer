@@ -30,6 +30,8 @@ Messwerte werden in der Oberfläche nach Quelle getrennt angezeigt:
 
 Der Sniffer erklärt mögliche Verursacher und Funkumgebung, ersetzt aber nicht den bekannten CCU-WebUI-Duty-Cycle.
 
+In der Analyse zeigt der Bereich **Datenquellen / Woher kommen die Ergebnisse?**, welche Quelle welchen Teil beiträgt und ob sie aktuell ist. So ist sichtbar, ob ein Hinweis aus der CCU, vom WebUI-Script, vom Shell-Collector oder optional vom Sniffer stammt.
+
 ## Installation auf Raspberry / Debian / Ubuntu / Proxmox LXC
 
 Auf einem leeren Debian- oder Ubuntu-System kann der Analyzer automatisch installiert werden:
@@ -173,6 +175,8 @@ curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001
 
 Bei regelmäßiger Ausführung legt das Script ausschließlich einen mit `Homematic Analyzer system snapshot` markierten Cronjob an. Es ersetzt keine bestehenden Cronjobs.
 
+Der aktuelle Collector sendet zusätzlich seine eigene Script-Version, Ausführungsart und Intervall mit. Wenn nach einem CCU-Update keine Systemwerte oder keine Zentralenversion mehr ankommen, in der App die Collector-Karte öffnen und den dort gezeigten Befehl einmal neu ausführen.
+
 Vollständig entfernen:
 
 ```bash
@@ -218,7 +222,7 @@ Bereits umgesetzt:
 - Telegram- und E-Mail-Benachrichtigungen inklusive auswählbarer Events.
 - KI-Logauswertung mit OpenAI oder Google Gemini.
 - Geräte-Firmwareupdates anhand der offiziellen CCU-Felder `AVAILABLE_FIRMWARE` und `FIRMWARE_UPDATE_STATE`; zusätzlich Hinweise bei unterschiedlichen Firmwareständen gleicher Gerätetypen.
-- Zentralen-Updates für OpenCCU/RaspberryMatic über das offizielle OpenCCU-Repository und für die originale CCU3 über den offiziellen eQ-3-Update-Dienst.
+- Zentralen-Updates für OpenCCU/RaspberryMatic über das offizielle OpenCCU-Repository und für die originale CCU3 über den offiziellen eQ-3-Update-Dienst. Ein Update wird nur behauptet, wenn die installierte Zentralenversion belegbar aus WebUI oder Collector gelesen wurde.
 - Grafische Funk-Topologie für HmIP, klassisches Homematic und kombinierte Ansicht mit Kandidaten, Gateways, direkt gelesenen Router-/Routing-/Multicast-Schaltern, belegten Pfaden und verständlicher RSSI-Ampel.
 - Erkennung aktiver externer Zugriffe auf typische CCU-Dienste anhand echter Verbindungsdaten.
 - Proxmox-USB-Dokumentation und Installationsscript mit USB-Port-Scan.

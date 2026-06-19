@@ -462,13 +462,51 @@ function checkUsesSniffer(check: AnalysisCheck) {
     || /sniffer|asksin/i.test(`${check.summary} ${check.recommendation}`);
 }
 
+function stripSnifferText(value: string) {
+  return value
+    .replace(/\s*Der AskSin-Sniffer[^.]*\./gi, "")
+    .replace(/\s*Snifferwerte?[^.]*\./gi, "")
+    .replace(/\s*Sniffer-Belege[^.]*\./gi, "")
+    .replace(/\s*Snifferdaten[^.]*\./gi, "")
+    .replace(/\s*Sniffer-RSSI[^.]*\./gi, "")
+    .replace(/\s*Optional einen Sniffer ergänzen[^.]*\./gi, "")
+    .replace(/\s*\/ Sniffer\s+–\s*dBm/gi, "")
+    .replace(/\s*,\s*Sniffer\s+(?:nicht verfügbar|–|-?\d+)\s*dBm/gi, "")
+    .replace(/\s*\(Zentrale\s+(-?\d+|–|nicht verfügbar)\s*\/\s*Sniffer\s+(?:-?\d+|–|nicht verfügbar)\s*dBm\)/gi, " (Zentrale $1 dBm)")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function filterSnifferEvidence(item: Evidence): Evidence | null {
+  const rssiComparison = item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null;
+  if (rssiComparison?.ccu !== undefined) {
+    return {
+      ...item,
+      detail: `${rssiComparison.name}: Zentrale ${rssiComparison.ccu} dBm.`
+    };
+  }
+  if (evidenceUsesSniffer(item)) return null;
+  return { ...item, detail: stripSnifferText(item.detail) || item.detail };
+}
+
 function filterSnifferFromCheck(check: AnalysisCheck, mode: AnalysisSnifferMode): AnalysisCheck | null {
   if (mode === "with-sniffer") return check;
-  const evidence = check.evidence.filter((item) => !evidenceUsesSniffer(item));
-  const details = check.details.filter((detail) => !evidenceUsesSniffer({ source: "", detail }));
+  const evidence = check.evidence
+    .map(filterSnifferEvidence)
+    .filter((item): item is Evidence => Boolean(item));
+  const details = check.details
+    .filter((detail) => !evidenceUsesSniffer({ source: "", detail }))
+    .map(stripSnifferText)
+    .filter(Boolean);
   const snifferOnly = checkUsesSniffer(check) && evidence.length === 0 && details.length === 0;
   if (snifferOnly && ["signal-strength", "routing-topology"].includes(check.id)) return null;
-  return { ...check, evidence, details };
+  return {
+    ...check,
+    summary: stripSnifferText(check.summary) || check.summary,
+    recommendation: stripSnifferText(check.recommendation) || check.recommendation,
+    evidence,
+    details
+  };
 }
 
 function wait(milliseconds: number) {
@@ -876,6 +914,15 @@ function parseRssiComparison(detail: string) {
   };
 }
 
+function parseCentralRssi(detail: string) {
+  const match = detail.match(/^(.+?): Zentrale (-?\d+|nicht verfügbar) dBm\.$/i);
+  if (!match) return null;
+  return {
+    name: match[1],
+    ccu: match[2] === "nicht verfügbar" ? undefined : Number(match[2])
+  };
+}
+
 function sourceBadge(source: string) {
   const normalized = source.toLowerCase();
   if (normalized.includes("sniffer") || normalized.includes("asksin")) return { label: "Sniffer", className: "source-sniffer" };
@@ -894,6 +941,21 @@ function SourceBadge({ source }: { source: string }) {
 
 function EvidenceDetail({ item }: { item: Evidence }) {
   const rssiComparison = item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null;
+  const centralRssi = item.source === "RSSI-Vergleich" ? parseCentralRssi(item.detail) : null;
+  if (!rssiComparison && !centralRssi) return <span>{item.detail}</span>;
+
+  if (centralRssi) {
+    return (
+      <div className="evidence-rssi-comparison">
+        <span>{centralRssi.name}</span>
+        <span className="single-rssi">
+          <small>Zentrale</small>
+          <RssiAssessment value={centralRssi.ccu} />
+        </span>
+      </div>
+    );
+  }
+
   if (!rssiComparison) return <span>{item.detail}</span>;
 
   return (
@@ -6167,7 +6229,7 @@ function App() {
                             <RssiAssessment value={device.ccuRssi} />
                           </span>
                         )}
-                        {device.telegrams !== undefined ? (
+                        {signalSourceFilter === "both" && device.telegrams !== undefined ? (
                           <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
                             {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
                           </small>
