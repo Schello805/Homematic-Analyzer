@@ -55,6 +55,24 @@ let updateRun: {
   error?: string;
 } = { running: false };
 
+async function getRuntimeAppVersion() {
+  try {
+    const rawPackageJson = await readFile(join(root, "package.json"), "utf8");
+    const runtimePackageInfo = JSON.parse(rawPackageJson) as { version?: string };
+    return runtimePackageInfo.version?.trim() || appVersion;
+  } catch {
+    return appVersion;
+  }
+}
+
+function preventHttpCaching(response: express.Response) {
+  response.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
+}
+
 const defaultNotificationSettings: NotificationSettings = {
   telegram: { enabled: false },
   email: { enabled: false, port: 587, secure: false },
@@ -999,11 +1017,14 @@ app.use((error: unknown, request: express.Request, response: express.Response, n
   });
 });
 
-app.get("/api/health", (_request, response) => {
+app.get("/api/health", async (_request, response) => {
+  preventHttpCaching(response);
+  const runtimeVersion = await getRuntimeAppVersion();
   response.json({
     ok: true,
     service: "Homematic Analyzer API",
-    version: appVersion
+    version: runtimeVersion,
+    processVersion: appVersion
   });
 });
 
@@ -1186,7 +1207,8 @@ app.post("/api/analyze", async (request, response) => {
       telegram: { enabled: parsed.data.telegramEnabled },
       events: { critical: true }
     });
-    const releaseCheck = await checkRepositoryRelease(appVersion);
+    const runtimeVersion = await getRuntimeAppVersion();
+    const releaseCheck = await checkRepositoryRelease(runtimeVersion);
     const installedCentralVersion = firstNonBlankString(
       ccuSnapshot?.centralVersion,
       stringFromRecord(latestCollector?.system, "centralVersion"),
@@ -1385,14 +1407,17 @@ app.get("/api/routing/topology", (_request, response) => {
   ));
 });
 
-app.get("/api/logs/latest", (_request, response) => {
+app.get("/api/logs/latest", async (_request, response) => {
+  preventHttpCaching(response);
   const age = dataAgeStatus(latestCollector?.collectedAt, 3);
+  const runtimeVersion = await getRuntimeAppVersion();
   response.json({
     available: Boolean(latestCollector?.logs?.length),
     collectorAvailable: Boolean(latestCollector),
     collectorState: age.state,
     collectorAgeMinutes: age.ageMinutes,
-    analyzerVersion: appVersion,
+    analyzerVersion: runtimeVersion,
+    processVersion: appVersion,
     servedAt: new Date().toISOString(),
     collectedAt: latestCollector?.collectedAt,
     host: latestCollector?.host,
@@ -1482,7 +1507,9 @@ app.post("/api/settings/restore", async (request, response) => {
 });
 
 app.get("/api/system/update-status", async (_request, response) => {
-  const releaseCheck = await checkRepositoryRelease(appVersion);
+  preventHttpCaching(response);
+  const runtimeVersion = await getRuntimeAppVersion();
+  const releaseCheck = await checkRepositoryRelease(runtimeVersion);
   const sourceLabel = releaseCheck.source === "tag" ? "Tag" : releaseCheck.source === "main" ? "main" : "Release";
   response.json({
     state: releaseCheck.error ? "unknown" : releaseCheck.available ? "update" : "current",
@@ -1500,6 +1527,7 @@ app.get("/api/system/update-status", async (_request, response) => {
 });
 
 app.get("/api/system/central-update-status", async (_request, response) => {
+  preventHttpCaching(response);
   const installedVersion = firstNonBlankString(
     latestCcuSnapshot?.centralVersion,
     stringFromRecord(latestCollector?.system, "centralVersion"),
@@ -1549,6 +1577,7 @@ app.get("/api/system/central-update-status", async (_request, response) => {
 });
 
 app.get("/api/system/update-run", async (_request, response) => {
+  preventHttpCaching(response);
   console.log("[Homematic Analyzer][Update] status requested");
   response.json(await createUpdateRunStatus());
 });

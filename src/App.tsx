@@ -4948,6 +4948,34 @@ function App() {
             </section>
           )}
 
+          {guidedActions.length > 0 && (
+            <section className="guided-actions" aria-labelledby="guided-actions-title">
+              <div className="guided-actions__header">
+                <div>
+                  <p className="eyebrow">Nächste Schritte</p>
+                  <h3 id="guided-actions-title">Das solltest du jetzt tun</h3>
+                  <p>Nach Priorität sortiert. Öffne nur den Schritt, den du gerade bearbeiten möchtest.</p>
+                </div>
+                <span>{guidedActions.length} Schritte</span>
+              </div>
+              <div className="guided-actions__grid">
+                {guidedActions.map((action, index) => (
+                  <article className="guided-action-card" key={action.id}>
+                    <div className="guided-action-card__number">{index + 1}</div>
+                    <div>
+                      <small>{action.eyebrow}</small>
+                      <h4>{action.title}</h4>
+                      <p>{action.detail}</p>
+                    </div>
+                    <button type="button" onClick={() => openActionModal(action.modal, action.checkId)}>
+                      {action.button}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
           {analysis.systemDashboard?.available && (
             <div className="system-dashboard">
               <div className="system-dashboard__header">
@@ -5199,34 +5227,6 @@ function App() {
                 </div>
               )}
             </div>
-          )}
-
-          {guidedActions.length > 0 && (
-            <section className="guided-actions" aria-labelledby="guided-actions-title">
-              <div className="guided-actions__header">
-                <div>
-                  <p className="eyebrow">Nächste Schritte</p>
-                  <h3 id="guided-actions-title">Das solltest du jetzt tun</h3>
-                  <p>Nach Priorität sortiert. Öffne nur den Schritt, den du gerade bearbeiten möchtest.</p>
-                </div>
-                <span>{guidedActions.length} Schritte</span>
-              </div>
-              <div className="guided-actions__grid">
-                {guidedActions.map((action, index) => (
-                  <article className="guided-action-card" key={action.id}>
-                    <div className="guided-action-card__number">{index + 1}</div>
-                    <div>
-                      <small>{action.eyebrow}</small>
-                      <h4>{action.title}</h4>
-                      <p>{action.detail}</p>
-                    </div>
-                    <button type="button" onClick={() => openActionModal(action.modal, action.checkId)}>
-                      {action.button}
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
           )}
 
           <section className="result-filters" aria-labelledby="result-filter-title">
