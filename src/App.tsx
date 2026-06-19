@@ -1,5 +1,37 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import packageInfo from "../package.json";
+import { EvidenceDetail, SourceBadge } from "./components/analysis/EvidenceDetail";
+import {
+  DualRssiAssessment,
+  normalizeRadioIdentifier,
+  parseRssiComparison,
+  RssiAssessment,
+  rssiClass
+} from "./components/radio/RssiAssessment";
+import {
+  firstLine,
+  flagClass,
+  formatBackups,
+  formatBackupDate,
+  formatCpu,
+  formatDataAge,
+  formatDisk,
+  formatMemory,
+  formatPercent,
+  formatSnifferTime,
+  formatTemperature,
+  formatUptime,
+  historyTimeLabels,
+  metricNeedsHelp,
+  noiseAssessment,
+  parseCpuLoad,
+  parseCpuUsagePercent,
+  parseDiskInfo,
+  parseDiskUsagePercent,
+  parseMemoryUsagePercent,
+  parseTemperature,
+  sparklinePoints
+} from "./utils/systemMetrics";
 
 type CheckStatus = "ok" | "improvement" | "warning" | "critical" | "unavailable";
 
@@ -692,381 +724,6 @@ function getApiBaseUrl() {
   const { protocol, hostname, port, origin } = window.location;
   if (port === "5173") return `${protocol}//${hostname}:3001`;
   return origin;
-}
-
-function firstLine(value?: string) {
-  return splitMetricLines(value)[0];
-}
-
-function splitMetricLines(value?: string) {
-  return value?.replaceAll("\\n", "\n").split(/\n|\s+\|\s+/).map((line) => line.trim()).filter(Boolean) ?? [];
-}
-
-function formatTemperature(raw?: string) {
-  const value = parseTemperature(raw);
-  if (value === undefined) return firstLine(raw) ?? "nicht verfügbar";
-  return `${Math.round(value * 10) / 10} °C`;
-}
-
-function formatMemory(raw?: string) {
-  const lines = splitMetricLines(raw);
-  const memoryLine = lines.find((line) => /^Mem:/i.test(line));
-  const fallbackLine = lines.find((line) => !/^total\s+used\s+free/i.test(line));
-  const line = memoryLine ?? fallbackLine;
-  if (!line) return "nicht verfügbar";
-
-  const busyboxMatch = line.match(/Mem:\s*([0-9.]+)\s*([KMGT]?B?|K)?\s+used,?\s+([0-9.]+)\s*([KMGT]?B?|K)?\s+free/i);
-  if (busyboxMatch) {
-    const used = parseMemoryNumberToMb(busyboxMatch[1], busyboxMatch[2]);
-    const free = parseMemoryNumberToMb(busyboxMatch[3], busyboxMatch[4]);
-    const total = used + free;
-    return total > 0 ? `${Math.round((used / total) * 100)}% belegt · ${Math.round(free)} MB frei` : "nicht verfügbar";
-  }
-
-  const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
-  if (parts.length >= 3) {
-    const total = Number(parts[0]);
-    const used = Number(parts[1]);
-    const available = Number(parts[6] ?? parts[3]);
-    if (Number.isFinite(total) && total > 0 && Number.isFinite(used)) {
-      return `${Math.round((used / total) * 100)}% belegt · ${Number.isFinite(available) ? `${available} MB verfügbar` : `${total - used} MB frei`}`;
-    }
-  }
-
-  return line;
-}
-
-function formatDisk(raw?: string) {
-  const disk = parseDiskInfo(raw);
-  if (disk) {
-    return `${formatPercent(disk.percent)} belegt · ${disk.available} frei von ${disk.total}${disk.mount ? ` · ${disk.mount}` : ""}`;
-  }
-
-  const lines = splitMetricLines(raw);
-  return lines.find((line) => !/^filesystem\s+/i.test(line)) ?? "nicht verfügbar";
-}
-
-function formatCpu(raw?: string) {
-  const percent = parseCpuUsagePercent(raw);
-  return percent === undefined ? "nicht verfügbar" : `${percent}% Auslastung`;
-}
-
-function formatUptime(raw?: string) {
-  const line = firstLine(raw);
-  if (!line) return "nicht verfügbar";
-  const uptime = line.match(/\bup\s+(.+?),\s+\d+\s+users?/i)?.[1]
-    ?? line.match(/\bup\s+(.+?),\s+load average/i)?.[1]
-    ?? line.replace(/^\s*\d{1,2}:\d{2}:\d{2}\s+up\s+/i, "");
-  const clean = uptime.replace(/,\s*load average:.*$/i, "").trim();
-  const dayMatch = clean.match(/(\d+)\s+days?,\s*(\d{1,2}):(\d{2})/i);
-  if (dayMatch) return `${dayMatch[1]} Tage, ${Number(dayMatch[2])} h ${Number(dayMatch[3])} min`;
-  const hourMinuteMatch = clean.match(/(\d{1,2}):(\d{2})/);
-  if (hourMinuteMatch) return `${Number(hourMinuteMatch[1])} h ${Number(hourMinuteMatch[2])} min`;
-  const minuteMatch = clean.match(/(\d+)\s+min/i);
-  if (minuteMatch) return `${minuteMatch[1]} min`;
-  return clean
-    .replace(/\bdays?\b/i, "Tage")
-    .replace(/\bhours?\b/i, "h")
-    .replace(/\bminutes?\b/i, "min");
-}
-
-function formatBackupDate(raw?: string) {
-  if (!raw) return "";
-  const date = new Date(raw.replace(" ", "T"));
-  if (Number.isNaN(date.getTime())) return raw;
-  return date.toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
-}
-
-function formatBackups(count?: string, paths?: string[], latestDirectory?: string, latestAt?: string, latestPath?: string) {
-  if (!count) return "nicht geprüft";
-  const backupCount = Number(count);
-  const label = Number.isFinite(backupCount)
-    ? backupCount === 0 ? "keine gefunden" : `${backupCount} gefunden`
-    : `${count} gefunden`;
-  if (backupCount === 0) return label;
-  const directory = latestDirectory
-    ?? (latestPath ? latestPath.replace(/\/[^/]+$/, "/") : undefined)
-    ?? (paths?.[paths.length - 1] ? paths[paths.length - 1].replace(/\/[^/]+$/, "/") : undefined);
-  const date = formatBackupDate(latestAt);
-  return [label, directory, date ? `Letztes Backup vom ${date}` : ""].filter(Boolean).join("\n");
-}
-
-function metricNeedsHelp(value: string) {
-  return value === "nicht verfügbar" || value === "nicht geprüft" || value === "keine gefunden" || value.startsWith("keine gefunden");
-}
-
-function parseTemperature(raw?: string) {
-  const value = Number(firstLine(raw)?.replace(",", "."));
-  if (!Number.isFinite(value)) return undefined;
-  return value > 1000 ? value / 1000 : value;
-}
-
-function parseDiskInfo(raw?: string) {
-  const line = splitMetricLines(raw).find((entry) => /\d+%/.test(entry) && !/^filesystem\s+/i.test(entry));
-  if (!line) return undefined;
-
-  const parts = line.split(/\s+/);
-  const percentIndex = parts.findIndex((part) => /^\d+%$/.test(part));
-  if (percentIndex < 4) return undefined;
-
-  const total = parts[percentIndex - 3];
-  const used = parts[percentIndex - 2];
-  const available = parts[percentIndex - 1];
-  const percentFromDf = Number(parts[percentIndex].replace("%", ""));
-  const calculatedPercent = calculateDiskPercent(used, total);
-  const percent = calculatedPercent ?? (Number.isFinite(percentFromDf) ? percentFromDf : undefined);
-  if (percent === undefined) return undefined;
-
-  return {
-    filesystem: parts[0],
-    total,
-    used,
-    available,
-    percent,
-    mount: parts.slice(percentIndex + 1).join(" ")
-  };
-}
-
-function parseStorageSizeToGiB(value: string) {
-  const match = value.match(/^([0-9.]+)\s*([KMGTPE]?)(?:i?B?)?$/i);
-  if (!match) return undefined;
-  const amount = Number(match[1]);
-  if (!Number.isFinite(amount)) return undefined;
-  const unit = match[2].toUpperCase();
-  if (unit === "K") return amount / 1024 / 1024;
-  if (unit === "M") return amount / 1024;
-  if (unit === "T") return amount * 1024;
-  if (unit === "P") return amount * 1024 * 1024;
-  if (unit === "E") return amount * 1024 * 1024 * 1024;
-  return amount;
-}
-
-function calculateDiskPercent(used: string, total: string) {
-  const usedGiB = parseStorageSizeToGiB(used);
-  const totalGiB = parseStorageSizeToGiB(total);
-  if (usedGiB === undefined || totalGiB === undefined || totalGiB <= 0) return undefined;
-  return (usedGiB / totalGiB) * 100;
-}
-
-function formatPercent(value: number) {
-  if (value > 0 && value < 1) return `${value.toFixed(1).replace(".", ",")}%`;
-  if (value < 10 && value % 1 !== 0) return `${value.toFixed(1).replace(".", ",")}%`;
-  return `${Math.round(value)}%`;
-}
-
-function formatSnifferTime(value?: string) {
-  if (!value) return "–";
-  return new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function noiseAssessment(value?: number) {
-  if (value === undefined) return { label: "Nicht gemessen", className: "unknown" };
-  if (value <= -100) return { label: "Sehr ruhiger Funkhintergrund", className: "excellent" };
-  if (value <= -90) return { label: "Ruhiger Funkhintergrund", className: "good" };
-  if (value <= -80) return { label: "Erhöhter Rauschpegel", className: "medium" };
-  return { label: "Starker Funkhintergrund", className: "weak" };
-}
-
-function formatDataAge(value?: string) {
-  if (!value) return { label: "keine Daten", state: "missing" };
-  const ageMinutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
-  if (ageMinutes < 2) return { label: "live / gerade eben", state: "fresh" };
-  if (ageMinutes < 60) return { label: `vor ${ageMinutes} Min.`, state: ageMinutes <= 10 ? "fresh" : "stale" };
-  const hours = Math.round(ageMinutes / 60);
-  return { label: `vor ${hours} Std.`, state: "stale" };
-}
-
-function rssiClass(value?: number) {
-  if (value === undefined || value >= 0 || value < -150) return "";
-  if (value >= -60) return "excellent";
-  if (value >= -72) return "good";
-  if (value >= -85) return "medium";
-  return "weak";
-}
-
-function rssiAssessment(value?: number) {
-  if (value === undefined || value >= 0 || value < -150) return { label: "Kein Wert", symbol: "?", className: "unknown", value: undefined };
-  if (value >= -60) return { label: "Sehr gut", symbol: "👍", className: "excellent", value };
-  if (value >= -72) return { label: "Gut", symbol: "👍", className: "good", value };
-  if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium", value };
-  return { label: "Schwach", symbol: "👎", className: "weak", value };
-}
-
-function RssiAssessment({ value }: { value?: number }) {
-  const assessment = rssiAssessment(value);
-  return (
-    <span className={`rssi-assessment ${assessment.className}`}>
-      <i aria-hidden="true">{assessment.symbol}</i>
-      <strong>{assessment.label}</strong>
-      {assessment.value !== undefined && <span>{assessment.value} dBm</span>}
-    </span>
-  );
-}
-
-function parseRssiComparison(detail: string) {
-  const match = detail.match(/^(.+?): Zentrale (-?\d+|nicht verfügbar) dBm, Sniffer (-?\d+|nicht verfügbar) dBm\.$/i);
-  if (!match) return null;
-  const parseValue = (value: string) => value === "nicht verfügbar" ? undefined : Number(value);
-  return {
-    name: match[1],
-    ccu: parseValue(match[2]),
-    sniffer: parseValue(match[3])
-  };
-}
-
-function parseCentralRssi(detail: string) {
-  const match = detail.match(/^(.+?): Zentrale (-?\d+|nicht verfügbar) dBm\.$/i);
-  if (!match) return null;
-  return {
-    name: match[1],
-    ccu: match[2] === "nicht verfügbar" ? undefined : Number(match[2])
-  };
-}
-
-function sourceBadge(source: string) {
-  const normalized = source.toLowerCase();
-  if (normalized.includes("sniffer") || normalized.includes("asksin")) return { label: "Sniffer", className: "source-sniffer" };
-  if (normalized.includes("collector") || normalized.includes("shell") || normalized.includes("logzeile") || normalized.includes("hmipserver")) return { label: "Collector", className: "source-collector" };
-  if (normalized.includes("ki") || normalized.includes("openai") || normalized.includes("gemini")) return { label: "KI", className: "source-ai" };
-  if (normalized.includes("github") || normalized.includes("release") || normalized.includes("openccu") || normalized.includes("eq-3")) return { label: "Online", className: "source-online" };
-  if (normalized.includes("setup") || normalized.includes("konfiguration")) return { label: "Setup", className: "source-setup" };
-  if (normalized.includes("ccu") || normalized.includes("xml-api") || normalized.includes("zentrale") || normalized.includes("webui") || normalized.includes("rega")) return { label: "CCU", className: "source-ccu" };
-  return { label: "Quelle", className: "source-default" };
-}
-
-function SourceBadge({ source }: { source: string }) {
-  const badge = sourceBadge(source);
-  return <span className={`source-badge ${badge.className}`}>{badge.label}</span>;
-}
-
-function EvidenceDetail({ item }: { item: Evidence }) {
-  const rssiComparison = item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null;
-  const centralRssi = item.source === "RSSI-Vergleich" ? parseCentralRssi(item.detail) : null;
-  if (!rssiComparison && !centralRssi) return <span>{item.detail}</span>;
-
-  if (centralRssi) {
-    return (
-      <div className="evidence-rssi-comparison">
-        <span>{centralRssi.name}</span>
-        <span className="single-rssi">
-          <small>Zentrale</small>
-          <RssiAssessment value={centralRssi.ccu} />
-        </span>
-      </div>
-    );
-  }
-
-  if (!rssiComparison) return <span>{item.detail}</span>;
-
-  return (
-    <div className="evidence-rssi-comparison">
-      <span>{rssiComparison.name}</span>
-      <DualRssiAssessment ccu={rssiComparison.ccu} sniffer={rssiComparison.sniffer} />
-    </div>
-  );
-}
-
-function DualRssiAssessment({
-  ccu,
-  sniffer,
-  compact = false
-}: {
-  ccu?: number;
-  sniffer?: number;
-  compact?: boolean;
-}) {
-  return (
-    <span className={`dual-rssi ${compact ? "is-compact" : ""}`}>
-      <span>
-        <small>Zentrale</small>
-        <RssiAssessment value={ccu} />
-      </span>
-      <span>
-        <small>Sniffer</small>
-        <RssiAssessment value={sniffer} />
-      </span>
-    </span>
-  );
-}
-
-function normalizeRadioIdentifier(value?: string) {
-  return (value ?? "").trim().toUpperCase().replace(/:\d+$/, "");
-}
-
-function flagClass(flag: string) {
-  if (flag === "BURST") return "danger";
-  if (flag === "BIDI") return "warn";
-  if (flag === "WKMEUP") return "info";
-  return "ok";
-}
-
-function parseMemoryNumberToMb(value: string, unit?: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  const normalizedUnit = (unit ?? "").toUpperCase();
-  if (normalizedUnit.startsWith("G")) return parsed * 1024;
-  if (normalizedUnit.startsWith("K") || normalizedUnit === "") return parsed / 1024;
-  return parsed;
-}
-
-function parseCpuUsagePercent(raw?: string) {
-  const line = firstLine(raw);
-  const value = line?.match(/(\d+(?:[.,]\d+)?)\s*%/)?.[1];
-  if (!value) return undefined;
-  const parsed = Number(value.replace(",", "."));
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : undefined;
-}
-
-function parseCpuLoad(raw?: string) {
-  return parseCpuUsagePercent(raw);
-}
-
-function parseMemoryUsagePercent(raw?: string) {
-  const line = splitMetricLines(raw).find((entry) => /^Mem:/i.test(entry)) ?? firstLine(raw);
-  if (!line) return undefined;
-  const parts = line.split(/\s+/).filter((part) => part !== "Mem:");
-  if (parts.length >= 3) {
-    const total = Number(parts[0]);
-    const used = Number(parts[1]);
-    if (Number.isFinite(total) && total > 0 && Number.isFinite(used)) return Math.round((used / total) * 100);
-  }
-  const busyboxMatch = line.match(/Mem:\s*(\d+)\w*\s+used,?\s+(\d+)\w*\s+free/i);
-  if (busyboxMatch) {
-    const used = Number(busyboxMatch[1]);
-    const free = Number(busyboxMatch[2]);
-    if (Number.isFinite(used) && Number.isFinite(free) && used + free > 0) return Math.round((used / (used + free)) * 100);
-  }
-  return undefined;
-}
-
-function parseDiskUsagePercent(raw?: string) {
-  return parseDiskInfo(raw)?.percent;
-}
-
-function sparklinePoints(values: number[], width = 120, height = 34, min = 0, max = 100) {
-  if (values.length === 0) return "";
-  const range = Math.max(max - min, 1);
-  const normalizedValues = values.map((value) => Math.max(min, Math.min(max, value)));
-  if (normalizedValues.length === 1) {
-    const y = height - ((normalizedValues[0] - min) / range) * height;
-    return `0,${Math.round(y * 10) / 10} ${width},${Math.round(y * 10) / 10}`;
-  }
-  return normalizedValues.map((value, index) => {
-    const x = (index / (normalizedValues.length - 1)) * width;
-    const y = height - ((value - min) / range) * height;
-    return `${Math.round(x * 10) / 10},${Math.round(y * 10) / 10}`;
-  }).join(" ");
-}
-
-function historyTimeLabels(history?: SystemDashboard["history"]) {
-  const points = history?.filter((point) => point.collectedAt) ?? [];
-  if (points.length < 2) return undefined;
-  const formatTime = (value: string) => new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  return {
-    start: formatTime(points[0].collectedAt),
-    end: formatTime(points[points.length - 1].collectedAt),
-    duration: `${points.length} min`
-  };
 }
 
 function hasShellSystemData(systemDashboard?: SystemDashboard) {

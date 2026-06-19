@@ -6452,107 +6452,12 @@ pre {
   font-size: .86rem;
 }
 
-.rssi-assessment {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #eef2f7;
-  color: #526077;
-  font-size: .78rem;
-  white-space: nowrap;
-}
-
-.rssi-assessment i {
-  display: inline-grid;
-  min-width: 16px;
-  place-items: center;
-  font-style: normal;
-  line-height: 1;
-}
-
-.rssi-assessment span {
-  font-weight: 600;
-}
-
-.rssi-assessment.good {
-  background: #e8f8f1;
-  color: #08764f;
-}
-
-.rssi-assessment.excellent {
-  background: #dff6eb;
-  color: #05603f;
-}
-
-.rssi-assessment.medium {
-  background: #fff4d8;
-  color: #8a5a00;
-}
-
-.rssi-assessment.weak {
-  background: #ffe8e6;
-  color: #a9231d;
-}
-
-.dual-rssi {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, max-content));
-  gap: 6px;
-  align-items: start;
-}
-
-.dual-rssi > span {
-  display: grid;
-  gap: 3px;
-}
-
-.dual-rssi > span > small {
-  color: #69778d;
-  font-size: .68rem;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.single-rssi {
-  display: inline-grid;
-  gap: 3px;
-  justify-items: start;
-}
-
-.single-rssi > small {
-  color: #69778d;
-  font-size: .68rem;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.dual-rssi.is-compact {
-  grid-template-columns: 1fr;
-}
-
-.dual-rssi.is-compact .rssi-assessment {
-  padding: 3px 6px;
-  font-size: .72rem;
-}
-
-.dc-table .rssi-assessment {
-  white-space: nowrap;
-}
-
 @media (max-width: 640px) {
   .evidence-rssi-comparison {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .dual-rssi {
-    grid-template-columns: 1fr;
-  }
 }
 
 .routing-node-detail ul {
