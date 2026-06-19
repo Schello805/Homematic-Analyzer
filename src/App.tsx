@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import packageInfo from "../package.json";
 import { EvidenceDetail, SourceBadge } from "./components/analysis/EvidenceDetail";
+import { SignalQualityDeviceList, type SignalReceiverOption } from "./components/analysis/SignalQualityDeviceList";
 import {
   DualRssiAssessment,
   normalizeRadioIdentifier,
@@ -523,6 +524,31 @@ function filterSnifferEvidence(item: Evidence): Evidence | null {
 
 function filterSnifferFromCheck(check: AnalysisCheck, mode: AnalysisSnifferMode): AnalysisCheck | null {
   if (mode === "with-sniffer") return check;
+  if (check.id === "signal-strength") {
+    const ccuAttentionEntries = check.evidence
+      .map((item) => ({ item, comparison: item.source === "RSSI-Vergleich" ? parseRssiComparison(item.detail) : null }))
+      .filter((entry) => entry.comparison && ["medium", "weak"].includes(rssiClass(entry.comparison.ccu)));
+    const ccuAttention = ccuAttentionEntries.map(({ item, comparison }) => ({ ...item, detail: `${comparison!.name}: Zentrale ${comparison!.ccu} dBm.` }));
+    const criticalCcuSignal = ccuAttentionEntries.some(({ comparison }) => (comparison?.ccu ?? 0) <= -95);
+    if (ccuAttention.length === 0) {
+      return {
+        ...check,
+        status: "ok",
+        summary: "Keine auffällig schwachen RSSI-Werte der Zentrale gefunden.",
+        recommendation: "Kein unmittelbarer Handlungsbedarf. Für eine zweite Messposition kannst du optional Snifferwerte einblenden.",
+        evidence: [],
+        details: ["Diese Basisansicht bewertet ausschließlich RSSI-Werte der Zentrale/XML-API.", "Snifferwerte bleiben ausgeblendet, damit beide Messorte nicht verwechselt werden."]
+      };
+    }
+    return {
+      ...check,
+      status: criticalCcuSignal ? "warning" : "improvement",
+      summary: `${ccuAttention.length} Geräte werden von der Zentrale schwach empfangen: ${ccuAttention.slice(0, 5).map((item) => item.detail.replace(/: Zentrale.*$/, "")).join(", ")}.`,
+      recommendation: "Öffne die Signalwerte und prüfe für jedes Gerät passende vorhandene Router oder Gateways. Die App schlägt nur Optionen vor; die räumliche Nähe musst du vor Ort bestätigen.",
+      evidence: ccuAttention,
+      details: ["Der Wert stammt aus der CCU/XML-API und beschreibt die Funkstrecke aus Sicht der Zentrale.", "Ein schwacher Wert ist kein automatischer Defekt, aber ein Anlass, Empfänger, Router oder Gateway am Standort zu prüfen."]
+    };
+  }
   const evidence = check.evidence
     .map(filterSnifferEvidence)
     .filter((item): item is Evidence => Boolean(item));
@@ -1571,21 +1597,17 @@ function App() {
 
     return Array.from(map.values());
   }, [routingTopology, snifferSnapshot, routingNodeByIdentifier]);
-  const signalQualityDevices = useMemo(() => allSignalQualityDevices
-    .filter((device) => (
-      signalSourceFilter === "both"
-        ? device.ccuRssi !== undefined || device.snifferRssi !== undefined
-        : device.ccuRssi !== undefined
-    ))
-    .sort((left, right) => {
-      const leftValue = signalSourceFilter === "ccu"
-        ? left.ccuRssi
-        : Math.min(left.ccuRssi ?? 99, left.snifferRssi ?? 99);
-      const rightValue = signalSourceFilter === "ccu"
-        ? right.ccuRssi
-        : Math.min(right.ccuRssi ?? 99, right.snifferRssi ?? 99);
-      return (leftValue ?? 99) - (rightValue ?? 99);
-    }), [allSignalQualityDevices, signalSourceFilter]);
+  const signalReceiverOptions = useMemo<SignalReceiverOption[]>(() => (routingTopology?.nodes ?? [])
+    .filter((node) => node.role === "gateway" || node.role === "router" || node.role === "candidate")
+    .map((node) => ({
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      protocol: node.protocol === "hmip" ? "hmip" : "bidcos",
+      role: node.role === "gateway" ? "gateway" : node.role === "router" ? "router" : "candidate",
+      routerEnabled: node.routerEnabled,
+      routingEnabled: node.routingEnabled
+    })), [routingTopology]);
   const carrierSenseText = snifferSnapshot?.summary.carrierSense !== undefined
     ? `${snifferSnapshot.summary.carrierSense} dBm`
     : "nicht gemessen";
@@ -5857,54 +5879,14 @@ function App() {
                 <p className="eyebrow">Signalqualität</p>
                 <h2 id="action-modal-title">Gemessene Geräte und Messqualität</h2>
                 <p>
-                  Belastbar ab mindestens 3 Telegrammen. Werte mit weniger Telegrammen bleiben vorläufig und lösen keine harte Fehleraussage aus.
+                  Standardmäßig siehst du nur Geräte mit Beobachtungs- oder Handlungsbedarf. Werte mit weniger als 3 Sniffer-Telegrammen bleiben vorläufig und lösen keine harte Fehleraussage aus.
                 </p>
-                <div className="signal-source-switch" role="group" aria-label="Signalquelle auswählen">
-                  <button type="button" className={signalSourceFilter === "ccu" ? "is-active" : ""} onClick={() => setSignalSourceFilter("ccu")}>
-                    Ohne Snifferwerte <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined).length}</small>
-                  </button>
-                  <button type="button" className={signalSourceFilter === "both" ? "is-active" : ""} onClick={() => setSignalSourceFilter("both")}>
-                    Mit Snifferwerten <small>{allSignalQualityDevices.filter((device) => device.ccuRssi !== undefined || device.snifferRssi !== undefined).length}</small>
-                  </button>
-                </div>
-                <p className="signal-source-hint">
-                  {signalSourceFilter === "both"
-                    ? "Zeigt Zentralenwerte plus vorhandene Snifferwerte. Der Sniffer ist eine zweite Messposition und kann vom Zentralenwert deutlich abweichen."
-                    : "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Snifferwerte werden in dieser Ansicht bewusst ausgeblendet."}
-                </p>
-                <div className="action-device-list">
-                  {signalQualityDevices.map((device) => (
-                      <article key={device.key}>
-                        <div>
-                          <strong>{device.name}</strong>
-                          <span>{device.type ?? device.serial ?? device.address ?? device.key}</span>
-                        </div>
-                        {signalSourceFilter === "both" ? (
-                          <DualRssiAssessment ccu={device.ccuRssi} sniffer={device.snifferRssi} />
-                        ) : (
-                          <span className="single-rssi">
-                            <small>Zentrale</small>
-                            <RssiAssessment value={device.ccuRssi} />
-                          </span>
-                        )}
-                        {signalSourceFilter === "both" && device.telegrams !== undefined ? (
-                          <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>
-                            {device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}
-                          </small>
-                        ) : (
-                          <small className="measurement-central">Zentralenwert</small>
-                        )}
-                      </article>
-                    ))}
-                  {signalQualityDevices.length === 0 && (
-                    <div className="modal-empty">
-                      <strong>Noch keine passenden RSSI-Gerätedaten</strong>
-                      <span>
-                        Analyse automatisch aktualisieren lassen und prüfen, ob die XML-API RSSI-Werte der Zentrale liefert.
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <SignalQualityDeviceList
+                  devices={allSignalQualityDevices}
+                  source={signalSourceFilter}
+                  onSourceChange={setSignalSourceFilter}
+                  receiverOptions={signalReceiverOptions}
+                />
               </>
             )}
 
