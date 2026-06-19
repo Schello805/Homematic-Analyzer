@@ -64,6 +64,8 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
   const relevantReceivers = selectedDevice
     ? receiverOptions.filter((receiver) => isHmIpDevice(selectedDevice) ? receiver.protocol === "hmip" : receiver.protocol === "bidcos")
     : [];
+  const existingReceivers = relevantReceivers.filter((receiver) => receiver.role === "gateway" || (receiver.routerEnabled && receiver.routingEnabled));
+  const actionableReceivers = relevantReceivers.filter((receiver) => !existingReceivers.some((existing) => existing.id === receiver.id));
 
   return (
     <>
@@ -92,7 +94,14 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
           <p className="eyebrow">Nächster Schritt für {selectedDevice.name}</p>
           <h3>Empfang verbessern, ohne das Gerät zu versetzen</h3>
           <p>Die Zentrale empfängt dieses Gerät schwach. Das kann Telegramme verzögern oder störanfälliger machen. Die App kennt jedoch keine Raumpositionen und kann deshalb keine echte Nähe behaupten.</p>
-          {relevantReceivers.length > 0 ? <><strong>Prüfe diese vorhandenen Optionen nur dann, wenn sie räumlich zwischen Zentrale und Gerät liegen:</strong><ul>{relevantReceivers.slice(0, 6).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}.</li>)}</ul></> : <p>Im aktuellen Snapshot ist kein passender vorhandener Empfänger oder Router-Kandidat belegt. Prüfe einen zusätzlichen, zur Funktechnik passenden Empfänger.</p>}
+          {existingReceivers.length > 0 && <>
+            <strong>Bereits vorhanden – kein neuer Vorschlag:</strong>
+            <ul>{existingReceivers.slice(0, 4).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}. Prüfe nur den Standort, falls dieser Empfänger nicht günstig liegt.</li>)}</ul>
+          </>}
+          {actionableReceivers.length > 0 ? <>
+            <strong>Mögliche zusätzliche Option – nur prüfen, wenn sie räumlich zwischen Zentrale und Gerät liegt:</strong>
+            <ul>{actionableReceivers.slice(0, 6).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}.</li>)}</ul>
+          </> : !existingReceivers.length ? <p>Im aktuellen Snapshot ist kein passender vorhandener Empfänger oder Router-Kandidat belegt. Prüfe einen zusätzlichen, zur Funktechnik passenden Empfänger.</p> : <p>Weitere passende Router-Kandidaten sind aktuell nicht belegt. Ein bestehender Empfänger hilft nur, wenn er räumlich günstig positioniert ist.</p>}
           {isHmIpDevice(selectedDevice) ? <p><b>Für Homematic IP:</b> „Gerät dient als Router“ beschreibt die Router-Fähigkeit. „Routing aktiv“ erlaubt die Nutzung für Weiterleitungen. Beides ist nicht dasselbe. Änderungen nur in der CCU-WebUI und nur an unterstützten, netzversorgten Geräten vornehmen.</p> : <p><b>Für klassisches Homematic:</b> Ein LAN-Gateway ist ein zusätzlicher Funkempfänger, kein HmIP-Router. Es muss am passenden Standort stehen; eine automatische Zuordnung zu diesem Gerät ist ohne Routing-Beleg nicht möglich.</p>}
         </section>
       )}
