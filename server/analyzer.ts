@@ -1061,7 +1061,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       recommendation: centralRelease.available
         ? "Release-Hinweise öffnen, Backup erstellen und das Zentralen-Update anschließend bewusst über die CCU-WebUI installieren."
         : centralRelease.error
-          ? "Internetverbindung des Analyzer-Systems prüfen und die Analyse später erneut starten."
+          ? "Internetverbindung des Analyzer-Systems prüfen. Die App versucht den Online-Check im Hintergrund erneut."
           : !hasInstalledVersion
             ? "Den aktuellen Shell-Collector einmal neu ausführen oder den nächsten Collector-Lauf abwarten. Erst wenn die installierte Version gelesen wurde, vergleicht die App sie mit dem Online-Release."
             : "Kein Handlungsbedarf.",
@@ -1086,7 +1086,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         centralRelease.source === "ccu3"
           ? "Der verfügbare Stand kommt aus dem offiziellen eQ-3-Update-Dienst, den auch die CCU3-WebUI verwendet."
           : "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",
-        "Nach einem Zentralen-Update reicht normalerweise eine neue Analyse; der Collector ist nur nötig, wenn die Live-WebUI-Version nicht gelesen werden kann.",
+        "Nach einem Zentralen-Update erkennt die App den Stand automatisch beim nächsten Hintergrundlauf; der Collector ist nur nötig, wenn die Live-WebUI-Version nicht gelesen werden kann.",
         "Der Analyzer installiert Zentralen-Updates niemals automatisch."
       ]
     });

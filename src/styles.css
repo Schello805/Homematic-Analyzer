@@ -489,7 +489,7 @@ h2 {
 
 .signal-source-switch {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   margin: 12px 0 8px;
   padding: 4px;
@@ -4289,7 +4289,8 @@ pre {
 
 .check-theme.status-ok {
   border-color: #75d7a5;
-  background: #ecfdf3;
+  background: linear-gradient(135deg, #ecfdf3, #dcfae6);
+  box-shadow: 0 8px 24px rgba(18, 183, 106, 0.1);
 }
 
 .check-theme.status-ok > summary {

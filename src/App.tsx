@@ -885,7 +885,7 @@ function rssiClass(value?: number) {
 }
 
 function rssiAssessment(value?: number) {
-  if (value === undefined || value >= 0 || value < -150) return { label: "Nicht gemessen", symbol: "?", className: "unknown", value: undefined };
+  if (value === undefined || value >= 0 || value < -150) return { label: "Kein Wert", symbol: "?", className: "unknown", value: undefined };
   if (value >= -60) return { label: "Sehr gut", symbol: "👍", className: "excellent", value };
   if (value >= -72) return { label: "Gut", symbol: "👍", className: "good", value };
   if (value >= -85) return { label: "Beobachten", symbol: "●", className: "medium", value };
@@ -1170,7 +1170,8 @@ function RoutingTopologyView({
     const values = [node.ccuRssi, node.snifferRssi].filter((value): value is number => value !== undefined);
     return values.length ? Math.min(...values) : undefined;
   };
-  const rssiSourceLabel = includeSnifferRssi ? "Zentrale + AskSin-Sniffer" : "Zentrale / XML-API";
+  const rssiSourceLabel = includeSnifferRssi ? "mit Snifferwerten" : "ohne Snifferwerte";
+  const rssiSourceShortLabel = includeSnifferRssi ? "CCU + Sniffer" : "CCU / XML-API";
   const confirmedSourceIds = new Set(visibleEdges.map((edge) => edge.source));
   const nodeClass = (node: RoutingTopologyNode) => {
     if (node.role === "central") return "is-central";
@@ -1259,10 +1260,10 @@ function RoutingTopologyView({
   const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
   const allDeviceCount = Math.max(0, visibleNodes.length - 1);
   const mapSummary = topologyFilter === "focus"
-    ? `${focusCount} relevante Knoten werden angezeigt.`
+    ? "Fokusansicht: Empfänger und Geräte mit Prüfbedarf."
     : topologyFilter === "infrastructure"
-      ? `${infrastructureCount} Empfänger, Router und Kandidaten werden angezeigt.`
-      : `${allDeviceCount} bekannte Funkknoten werden angezeigt.`;
+      ? "Infrastrukturansicht: Gateways, Router und Kandidaten."
+      : "Gesamtansicht: alle bekannten Funkknoten.";
   const hasAttentionNodes = weakNodes.length > 0 || observedNodes.length > 0;
   const quickMapFilterTarget = hasAttentionNodes
     ? topologyFilter === "focus" ? "all" : "focus"
@@ -1351,7 +1352,7 @@ function RoutingTopologyView({
 
       <div className="routing-rssi-source">
         <div>
-          <strong><SourceBadge source={rssiSourceLabel} />Signalquelle</strong>
+          <strong><SourceBadge source={includeSnifferRssi ? "Sniffer" : "CCU"} />Signalquelle</strong>
           <span>
             {!includeSnifferRssi
               ? "Von der CCU gemeldete Signalwerte. Für den Empfang an der Zentrale wird RSSI_PEER bevorzugt; RSSI_DEVICE dient nur als Rückfallwert."
@@ -1382,7 +1383,7 @@ function RoutingTopologyView({
             </strong>
             <p>
               {measuredNodes.length === 0
-                ? `Für „${rssiSourceLabel}“ liegen im aktuellen Snapshot keine RSSI-Werte vor. Erkannte Geräte, Gateways und Router werden trotzdem angezeigt – aber nicht als gut oder schlecht bewertet.`
+                ? `Für die Ansicht „${rssiSourceLabel}“ liegen im aktuellen Snapshot keine RSSI-Werte vor. Erkannte Geräte, Gateways und Router werden trotzdem angezeigt – aber nicht als gut oder schlecht bewertet.`
                 : weakNodes.length > 0
                 ? `${weakNodes.slice(0, 4).map(signalSummaryForNode).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
                 : `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`}
@@ -1400,7 +1401,7 @@ function RoutingTopologyView({
       <div className={`routing-map-summary ${measuredNodes.length === 0 ? "is-muted" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
         <div>
           <strong>{mapSummary}</strong>
-          <span>{routeSummary} Quelle: {rssiSourceLabel}.</span>
+          <span>{routeSummary} Signalquelle: {rssiSourceShortLabel}.</span>
         </div>
         <button
           type="button"
@@ -1413,7 +1414,7 @@ function RoutingTopologyView({
       </div>
 
       {measuredNodes.length > 0 ? (
-        <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceLabel}`}>
+        <div className="routing-signal-summary" aria-label={`Verteilung der Signalqualität für ${scopeLabel}: ${rssiSourceShortLabel}`}>
           <span className="excellent"><strong>{excellentNodes.length}</strong> sehr gut <small>ab −60 dBm</small></span>
           <span className="good"><strong>{goodNodes.length}</strong> gut <small>−61 bis −72 dBm</small></span>
           <span className="medium"><strong>{observedNodes.length}</strong> beobachten <small>−73 bis −85 dBm</small></span>
@@ -1433,7 +1434,7 @@ function RoutingTopologyView({
         <details className="routing-weak-devices" open={weakNodes.length > 0}>
           <summary>
             <span>
-              <strong>Schwächste Geräte · {scopeLabel} · {rssiSourceLabel}</strong>
+              <strong>Schwächste Geräte · {scopeLabel} · {rssiSourceShortLabel}</strong>
               <small>{includeSnifferRssi ? "Nach dem schwächeren bekannten Wert sortiert · beide Messquellen werden angezeigt" : "Nach Zentralenwert sortiert · Snifferwerte werden ausgeblendet"}</small>
             </span>
             <b>{Math.min(measuredNodes.length, 8)} anzeigen</b>
@@ -4922,11 +4923,11 @@ function App() {
           {snifferAffectedChecks > 0 && (
             <section className="analysis-source-mode" aria-label="Snifferdaten in der Analyse">
               <div>
-                <strong>{analysisSnifferMode === "base" ? "Basisanalyse ohne Snifferdaten" : "Analyse mit Sniffer-Zusatzdaten"}</strong>
+                <strong>{analysisSnifferMode === "base" ? "Basisanalyse ohne Snifferwerte" : "Zusatzanalyse mit Snifferwerten"}</strong>
                 <span>
                   {analysisSnifferMode === "base"
-                    ? "Die Analyseseite zeigt primär CCU-, XML-API-, Collector- und Systemdaten. Sniffer-Belege bleiben ausgeblendet."
-                    : "Sniffer-Belege und Funkdetails werden zusätzlich in Prüfpunkten und Empfehlungen angezeigt."}
+                    ? "Empfohlen für die meisten Nutzer: CCU-, XML-API-, Collector- und Systemdaten. Sniffer-Belege bleiben ausgeblendet."
+                    : "Ergänzt die Basisanalyse um Telegramme, Funklast und Messwerte am Standort des Sniffers."}
                 </span>
               </div>
               <div role="group" aria-label="Analyseansicht wählen">
@@ -5233,9 +5234,9 @@ function App() {
             <div className="result-filters__header">
               <div>
                 <p className="eyebrow">Prüfergebnisse</p>
-                <h3 id="result-filter-title">Nach Status filtern</h3>
+                <h3 id="result-filter-title">Statusfilter</h3>
               </div>
-              <span>{selectedStatusFilter ? `${statusLabel[selectedStatusFilter]} ausgewählt` : "Alle Status sichtbar"}</span>
+              <span>{selectedStatusFilter ? `${statusLabel[selectedStatusFilter]} ausgewählt` : "Karten klicken, um die Liste zu filtern"}</span>
             </div>
             <div className={`summary-grid ${selectedStatusFilter ? "has-filter" : ""}`}>
               {statusOrder.map((status) => {
