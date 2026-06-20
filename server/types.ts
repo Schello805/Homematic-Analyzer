@@ -59,6 +59,10 @@ export type NotificationSettings = {
     critical?: boolean;
     warning?: boolean;
     serviceOverheat?: boolean;
+    serviceSecurity?: boolean;
+    serviceHeating?: boolean;
+    serviceActuator?: boolean;
+    serviceTypes?: string[];
     dutyCycle?: boolean;
     battery?: boolean;
     unreachable?: boolean;

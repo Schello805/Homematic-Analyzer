@@ -308,6 +308,10 @@ function isReachabilityEvidence(evidence: Evidence): boolean {
 }
 
 function isCriticalServiceEvidence(evidence: Evidence): boolean {
+  return /\b(?:ERROR_)?OVERHEAT\b|\bSABOTAGE\b|\b(?:SMOKE|WATER|LEAK)(?:_[A-Z0-9]+)?\b/i.test(evidence.detail);
+}
+
+function hasServiceOverheat(evidence: Evidence): boolean {
   return /\b(?:ERROR_)?OVERHEAT\b/i.test(evidence.detail);
 }
 
@@ -400,6 +404,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
   const unreachableServiceMessages = ccu?.serviceMessages.filter(isReachabilityEvidence) ?? [];
   const criticalServiceMessages = ccu?.serviceMessages.filter(isCriticalServiceEvidence) ?? [];
+  const overheatServiceMessages = criticalServiceMessages.filter(hasServiceOverheat);
   const unreachableEvidence = unreachableDevices.length > 0
     ? evidenceFromDevices(ccu?.devices ?? [], (device) => device.unreachable)
     : unreachableServiceMessages.slice(0, 8);
@@ -570,8 +575,10 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           : "Keine Servicemeldungen gefunden."
         : "Servicemeldungen können ohne CCU-Daten nicht geprüft werden.",
       recommendation: hasCcuData
-        ? criticalServiceMessages.length
+        ? overheatServiceMessages.length
           ? "Überhitzung zeitnah prüfen: Gerät abkühlen lassen, Stromversorgung und Einbauort kontrollieren. Bei wiederholter Meldung Herstellerhinweise beachten."
+          : criticalServiceMessages.length
+          ? "Sicherheits- oder Manipulationsmeldung zeitnah prüfen. Prüfe Gerät, Umgebung und Herstellerhinweise; bei Rauch-, Wasser- oder Sabotagehinweisen sofort den realen Zustand vor Ort kontrollieren."
           : ccu?.counters.serviceMessages
           ? "Prüfe die Meldungen in Ruhe. Kommunikationsstörungen werden als Hinweis bewertet, Überhitzung dagegen kritisch."
           : "Kein Handlungsbedarf."
@@ -581,7 +588,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       details: [
         "Servicemeldungen sind direkte Belege der Zentrale, aber nicht automatisch kritisch.",
         "Sie helfen bei der Ursachenfindung, z. B. Batterie, Kommunikation oder Konfiguration.",
-        "ERROR_OVERHEAT wird als kritische Einzelmeldung bewertet; Kommunikationsstörungen bleiben zunächst Hinweise."
+        "ERROR_OVERHEAT sowie eindeutige Sabotage-, Rauch- und Wassermeldungen werden als kritisch bewertet; Kommunikationsstörungen bleiben zunächst Hinweise."
       ]
     },
     {

@@ -13,11 +13,33 @@ export type NotificationResult = {
   email: NotificationChannelResult;
 };
 
+function serviceNotificationCategory(detail: string) {
+  if (/\b(?:ERROR_)?OVERHEAT\b/i.test(detail)) return "overheat";
+  if (/\bSABOTAGE\b|\b(?:SMOKE|WATER|LEAK)(?:_[A-Z0-9]+)?\b/i.test(detail)) return "security";
+  if (/\b(?:VALVE|HEAT|HEATING|CLIMATE|THERMAL)(?:_[A-Z0-9]+)?\b/i.test(detail)) return "heating";
+  if (/\b(?:MOTOR|DRIVE|ACTUATOR|JAM|BLOCKED|OBSTRUCTION)(?:_[A-Z0-9]+)?\b/i.test(detail)) return "actuator";
+  return undefined;
+}
+
+function shouldNotifyServiceMessage(check: AnalysisCheck, settings: NotificationSettings) {
+  const events = settings.events ?? {};
+  const selectedTypes = new Set(events.serviceTypes ?? []);
+
+  return check.evidence.some(({ detail }) => {
+    const category = serviceNotificationCategory(detail);
+    if (category === "overheat" && events.serviceOverheat) return true;
+    if (category === "security" && events.serviceSecurity) return true;
+    if (category === "heating" && events.serviceHeating) return true;
+    if (category === "actuator" && events.serviceActuator) return true;
+    return [...selectedTypes].some((type) => detail.includes(type));
+  });
+}
+
 export function shouldNotifyCheck(check: AnalysisCheck, settings: NotificationSettings): boolean {
   const events = settings.events ?? { critical: true };
 
-  if (check.id === "service-messages" && check.evidence.some((item) => /\b(?:ERROR_)?OVERHEAT\b/i.test(item.detail))) {
-    return Boolean(events.serviceOverheat);
+  if (check.id === "service-messages") {
+    return shouldNotifyServiceMessage(check, settings);
   }
   if (check.status === "critical" && events.critical !== false) return true;
   if (check.status === "warning" && events.warning) return true;

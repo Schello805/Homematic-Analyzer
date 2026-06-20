@@ -59,3 +59,26 @@ test("respektiert die eigene Benachrichtigungseinstellung für ERROR_OVERHEAT", 
   assert.equal(shouldNotifyCheck(check, { events: { critical: true, serviceOverheat: false } }), false);
   assert.equal(shouldNotifyCheck(check, { events: { critical: false, serviceOverheat: true } }), true);
 });
+
+test("benachrichtigt weitere Service-Kategorien nur nach eigener Auswahl", () => {
+  const securityCheck: AnalysisCheck = {
+    id: "service-messages",
+    title: "Servicemeldungen",
+    category: "Geräte",
+    status: "critical",
+    summary: "Sabotage erkannt.",
+    recommendation: "Prüfen.",
+    access: ["ccu"],
+    evidence: [{ source: "CCU Servicemeldung", detail: "Fenster Keller:0: SABOTAGE" }],
+    details: []
+  };
+  const valveCheck: AnalysisCheck = {
+    ...securityCheck,
+    evidence: [{ source: "CCU Servicemeldung", detail: "Heizung:0: VALVE_ERROR_POSITION" }]
+  };
+
+  assert.equal(shouldNotifyCheck(securityCheck, { events: { critical: true, serviceSecurity: false } }), false);
+  assert.equal(shouldNotifyCheck(securityCheck, { events: { critical: false, serviceSecurity: true } }), true);
+  assert.equal(shouldNotifyCheck(valveCheck, { events: { critical: true, serviceTypes: [] } }), false);
+  assert.equal(shouldNotifyCheck(valveCheck, { events: { critical: false, serviceTypes: ["VALVE_ERROR_POSITION"] } }), true);
+});

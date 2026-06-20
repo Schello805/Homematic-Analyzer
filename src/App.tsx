@@ -77,6 +77,31 @@ type AnalysisResponse = {
   };
 };
 
+const knownServiceTypeTokens = new Set([
+  "ERROR_OVERHEAT",
+  "OVERHEAT",
+  "UNREACH",
+  "STICKY_UNREACH",
+  "LOWBAT",
+  "LOW_BAT",
+  "BATTERY_LOW",
+  "CONFIG_PENDING",
+  "PENDING_CONFIG",
+  "SABOTAGE",
+  "SMOKE",
+  "WATER",
+  "LEAK"
+]);
+
+function extractAdditionalServiceTypes(evidence: Evidence[]) {
+  return [...new Set(evidence.flatMap(({ detail }) => (
+    detail.match(/\b(?:[A-Z]+(?:_[A-Z0-9]+)+|SABOTAGE|SMOKE|WATER|LEAK)\b/g) ?? []
+  )))]
+    .filter((type) => !knownServiceTypeTokens.has(type))
+    .sort()
+    .slice(0, 12);
+}
+
 type AnalysisSnifferMode = "base" | "with-sniffer";
 
 type DiagnosticSource = {
@@ -661,6 +686,10 @@ const initialNotificationSettings = {
     critical: true,
     warning: false,
     serviceOverheat: true,
+    serviceSecurity: true,
+    serviceHeating: false,
+    serviceActuator: false,
+    serviceTypes: [] as string[],
     dutyCycle: true,
     battery: true,
     unreachable: true,
@@ -1433,6 +1462,10 @@ function App() {
   const displayedAnalysis = useMemo(() => (
     analysis ? { ...analysis, checks: displayedChecks } : null
   ), [analysis, displayedChecks]);
+  const detectedAdditionalServiceTypes = useMemo(() => {
+    const serviceMessages = analysis?.checks.find((check) => check.id === "service-messages");
+    return extractAdditionalServiceTypes(serviceMessages?.evidence ?? []);
+  }, [analysis]);
   const snifferAffectedChecks = useMemo(() => (
     analysis?.checks.filter(checkUsesSniffer).length ?? 0
   ), [analysis]);
@@ -5709,6 +5742,9 @@ function App() {
                   ["critical", "Kritische Punkte"],
                   ["warning", "Warnungen"],
                   ["serviceOverheat", "Überhitzung am Gerät (ERROR_OVERHEAT)"],
+                  ["serviceSecurity", "Sicherheitsmeldung (Sabotage, Rauch, Wasser)"],
+                  ["serviceHeating", "Heizungs-/Ventilfehler"],
+                  ["serviceActuator", "Motor-/Antriebsfehler"],
                   ["dutyCycle", "Duty Cycle kritisch/hoch"],
                   ["battery", "Batterie niedrig"],
                   ["unreachable", "Gerätekommunikation gestört / Gerät nicht erreichbar"],
@@ -5730,7 +5766,37 @@ function App() {
                   </label>
                 ))}
               </div>
-              <p className="muted">ERROR_OVERHEAT wird als kritische Überhitzungsmeldung behandelt. „Gerätekommunikation gestört“ wird über den Erreichbarkeits-Schalter gesteuert. Neue Releases werden als eigener Hinweis verarbeitet, sobald der Release-Check ein Update belegt.</p>
+              {detectedAdditionalServiceTypes.length > 0 && (
+                <details className="recognized-service-types">
+                  <summary>Weitere in deiner CCU erkannte Meldungstypen ({detectedAdditionalServiceTypes.length})</summary>
+                  <p className="muted">Nur tatsächlich empfangene, noch nicht zugeordnete Meldungstypen. Sie lösen erst nach deiner Auswahl eine Benachrichtigung aus.</p>
+                  <div className="event-grid">
+                    {detectedAdditionalServiceTypes.map((type) => {
+                      const selectedTypes = notificationSettings.events.serviceTypes ?? [];
+                      const selected = selectedTypes.includes(type);
+                      return (
+                        <label className="toggle event-toggle" key={type}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(event) => {
+                              const nextTypes = event.target.checked
+                                ? [...new Set([...selectedTypes, type])]
+                                : selectedTypes.filter((item) => item !== type);
+                              updateNotificationSettings({
+                                ...notificationSettings,
+                                events: { ...notificationSettings.events, serviceTypes: nextTypes }
+                              });
+                            }}
+                          />
+                          <span>{type}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+              <p className="muted">Kommunikationsstörungen werden über „Gerätekommunikation gestört / Gerät nicht erreichbar“ gesteuert. Sicherheits-, Heizungs- und Antriebsfehler werden nur bei einer passenden CCU-Meldung benachrichtigt. Neue Releases werden als eigener Hinweis verarbeitet, sobald der Release-Check ein Update belegt.</p>
               </div>
             </details>
 

@@ -2357,6 +2357,23 @@ textarea:focus {
   background: white;
 }
 
+.recognized-service-types {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #e0e7f2;
+  padding-top: 14px;
+}
+
+.recognized-service-types summary {
+  cursor: pointer;
+  color: #1f365f;
+  font-weight: 720;
+}
+
+.recognized-service-types p {
+  margin: 0;
+}
+
 .analyze-button {
   width: 100%;
   border: 0;

@@ -70,6 +70,29 @@ test("stuft ERROR_OVERHEAT in einer Servicemeldung als kritisch ein", () => {
   assert.match(serviceMessages?.recommendation ?? "", /Überhitzung zeitnah prüfen/);
 });
 
+test("stuft Sabotagehinweise als kritische Servicemeldung ein", () => {
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },
+    undefined,
+    failedSnapshot({
+      reachable: true,
+      serviceMessages: [{ source: "CCU Servicemeldung", detail: "Fenster Keller:0: SABOTAGE" }],
+      counters: {
+        devices: 1,
+        lowBattery: 0,
+        unreachable: 0,
+        configPending: 0,
+        serviceMessages: 1,
+        alarmMessages: 0
+      }
+    })
+  );
+  const serviceMessages = checks.find((check) => check.id === "service-messages");
+
+  assert.equal(serviceMessages?.status, "critical");
+  assert.match(serviceMessages?.recommendation ?? "", /Sicherheits-|Manipulationsmeldung/);
+});
+
 test("erklärt, dass Browser und Analyzer unterschiedliche Netzwerkwege nutzen", () => {
   const checks = createAnalysis(
     { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },
