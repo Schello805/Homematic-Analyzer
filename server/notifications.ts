@@ -34,17 +34,73 @@ function relevantChecks(checks: AnalysisCheck[], settings: NotificationSettings)
   return checks.filter((check) => shouldNotifyCheck(check, settings));
 }
 
-function buildMessage(checks: AnalysisCheck[], settings: NotificationSettings, analyzerUrl?: string) {
-  const selectedChecks = relevantChecks(checks, settings);
-  const warningChecks = checks.filter((check) => check.status === "warning");
+function escapeTelegramHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
+function shorten(value: string, maxLength: number) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1).trimEnd()}…` : compact;
+}
+
+function statusIcon(check: AnalysisCheck) {
+  if (check.status === "critical") return "🔴";
+  if (check.status === "warning") return "🟠";
+  if (check.status === "improvement") return "🔵";
+  return "⚪";
+}
+
+function dutyCycleChart(check: AnalysisCheck) {
+  if (check.id !== "duty-cycle") return undefined;
+  const rawPercent = check.summary.match(/(\d+(?:[.,]\d+)?)\s*%/)?.[1];
+  const percent = rawPercent ? Number(rawPercent.replace(",", ".")) : undefined;
+  if (percent === undefined || !Number.isFinite(percent)) return undefined;
+  const clamped = Math.max(0, Math.min(100, percent));
+  const filled = Math.round(clamped / 10);
+  return `📊 Funklast: <b>${Math.round(clamped)}%</b> <code>${"█".repeat(filled)}${"░".repeat(10 - filled)}</code>`;
+}
+
+function statusOverview(checks: AnalysisCheck[]) {
+  const counts = {
+    critical: checks.filter((check) => check.status === "critical").length,
+    warning: checks.filter((check) => check.status === "warning").length,
+    improvement: checks.filter((check) => check.status === "improvement").length
+  };
+  return [
+    counts.critical ? `🔴 ${counts.critical} kritisch` : undefined,
+    counts.warning ? `🟠 ${counts.warning} Hinweis` : undefined,
+    counts.improvement ? `🔵 ${counts.improvement} Optimierung` : undefined
+  ].filter(Boolean).join(" · ") || "✅ Keine kritischen Ereignisse";
+}
+
+export function buildTelegramMessage(checks: AnalysisCheck[], settings: NotificationSettings, analyzerUrl?: string) {
+  const selectedChecks = relevantChecks(checks, settings);
+  const visibleChecks = selectedChecks.slice(0, 5);
+  const text = [
+    "🏠 <b>Homematic Analyzer</b>",
+    escapeTelegramHtml(statusOverview(checks)),
+    "",
+    "<b>Was jetzt wichtig ist</b>",
+    ...visibleChecks.flatMap((check) => [
+      `${statusIcon(check)} <b>${escapeTelegramHtml(check.title)}</b>`,
+      escapeTelegramHtml(shorten(check.summary, 220)),
+      dutyCycleChart(check),
+      `➡️ ${escapeTelegramHtml(shorten(check.recommendation, 150))}`,
+      ""
+    ]).filter(Boolean),
+    selectedChecks.length > visibleChecks.length ? `… und ${selectedChecks.length - visibleChecks.length} weitere Meldung${selectedChecks.length - visibleChecks.length === 1 ? "" : "en"}.` : undefined,
+    analyzerUrl ? `🔗 <a href="${escapeTelegramHtml(analyzerUrl)}">Analyzer öffnen und Belege ansehen</a>` : "🔎 Bitte Analyzer öffnen und Belege prüfen."
+  ].filter(Boolean).join("\n");
+  return text;
+}
+
+function buildEmailMessage(checks: AnalysisCheck[], settings: NotificationSettings, analyzerUrl?: string) {
+  const selectedChecks = relevantChecks(checks, settings);
   return [
     "Homematic Analyzer: Benachrichtigung",
+    statusOverview(checks),
     "",
-    ...selectedChecks.slice(0, 8).map((check) => `• ${check.title}: ${check.summary}`),
-    warningChecks.length > 0 ? "" : undefined,
-    warningChecks.length > 0 ? `${warningChecks.length} weitere Hinweise/Warnungen vorhanden.` : undefined,
-    "",
+    ...selectedChecks.slice(0, 8).flatMap((check) => [`${check.title}: ${check.summary}`, `Empfehlung: ${check.recommendation}`, ""]),
     analyzerUrl ? `Analyzer öffnen: ${analyzerUrl}` : "Bitte Analyzer öffnen und Belege prüfen."
   ].filter(Boolean).join("\n");
 }
@@ -72,8 +128,12 @@ async function sendTelegramSummary(settings: NotificationSettings, checks: Analy
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: buildMessage(checks, settings, analyzerUrl),
-        disable_web_page_preview: true
+        text: buildTelegramMessage(checks, settings, analyzerUrl),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: analyzerUrl ? {
+          inline_keyboard: [[{ text: "🔎 Analyzer öffnen", url: analyzerUrl }]]
+        } : undefined
       })
     });
 
@@ -119,7 +179,7 @@ async function sendEmailSummary(settings: NotificationSettings, checks: Analysis
       from: email.from,
       to: email.to,
       subject: `Homematic Analyzer: ${selectedChecks.length} Ereignis(se)`,
-      text: buildMessage(checks, settings, analyzerUrl)
+      text: buildEmailMessage(checks, settings, analyzerUrl)
     });
 
     return { state: "sent", message: `${selectedChecks.length} Ereignis(se) per E-Mail gemeldet.` };
