@@ -1453,6 +1453,13 @@ function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   const hasAnalysis = Boolean(analysis);
+  const analysisDataRefreshing = loading || analysisAutoRefreshing;
+  const startupDataSources = [
+    { id: "ccu", label: "CCU & XML-API", detail: "Geräte, Meldungen und Livewerte" },
+    { id: "masterdata", label: "CCU-Stammdaten", detail: "Namen und vorbereitete Zusatzdaten" },
+    { id: "collector", label: "System-Collector", detail: "Logs, Backups und Systemwerte" },
+    { id: "sniffer", label: "AskSin-Sniffer", detail: "Optional: Funklast und zweite Messposition", optional: true }
+  ];
   const displayedChecks = useMemo(() => (
     analysis?.checks
       .map((check) => filterSnifferFromCheck(check, analysisSnifferMode))
@@ -4527,11 +4534,23 @@ function App() {
                 </div>
               ))}
             </div>
+            <div className="loader-data-sources" aria-label="Fortschritt der Datenquellen">
+              {startupDataSources.filter((source) => !source.optional || form.snifferEnabled).map((source) => {
+                const sourceStep = source.id === "ccu" ? 1 : source.id === "masterdata" ? 2 : source.id === "collector" ? 7 : 5;
+                const isCurrent = activeAnalysisStep >= sourceStep;
+                return (
+                  <div className={isCurrent ? "is-checking" : ""} key={source.id}>
+                    <span aria-hidden="true">{isCurrent ? "↻" : "◌"}</span>
+                    <div><strong>{source.label}</strong><small>{isCurrent ? "wird geprüft – noch keine Nullwerte ableiten" : "wartet auf Prüfung"}</small></div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
 
-      {analysis && summary && !loading && (
+      {analysis && summary && (
         <section className="results">
           <div className="results__header">
             <div>
@@ -4567,6 +4586,17 @@ function App() {
             </div>
           </div>
 
+          {analysisDataRefreshing && (
+            <div className="analysis-data-progress" aria-live="polite">
+              <span aria-hidden="true">↻</span>
+              <div>
+                <strong>Neue Daten werden gerade eingelesen</strong>
+                <p>{loading ? `${analysisSteps[activeAnalysisStep]?.detail ?? "Datenquellen werden geprüft."} Die bisherigen Ergebnisse bleiben sichtbar.` : "Die letzten bestätigten Werte bleiben sichtbar, bis die nächste Antwort vollständig eingetroffen ist."}</p>
+              </div>
+              <small>Keine „0“-Werte, bevor eine Quelle tatsächlich geantwortet hat.</small>
+            </div>
+          )}
+
           <section className="analysis-source-hub" aria-labelledby="analysis-source-title">
             <div className="analysis-source-hub__header">
               <div>
@@ -4580,13 +4610,17 @@ function App() {
             <div className="analysis-source-hub__grid">
               {analysisSourceItems.map((source) => {
                 const age = formatDataAge(source.time);
-                const state = source.time ? age.state : source.required ? "missing" : "optional";
+                const state = source.time ? age.state : analysisDataRefreshing ? "loading" : source.required ? "missing" : "optional";
+                const statusText = source.time
+                  ? analysisDataRefreshing ? `letzter Stand ${age.label}` : age.label
+                  : analysisDataRefreshing ? "wird gerade abgefragt"
+                  : source.required ? "noch nicht empfangen" : "optional";
                 return (
                   <article className={`source-hub-card source-hub-card-${state}`} key={source.id}>
                     <div>
                       <strong>{source.label}</strong>
-                      <small className={`data-age data-age-${age.state}`}>
-                        {source.time ? age.label : source.required ? "fehlt" : "optional"}
+                      <small className={`data-age data-age-${state}`}>
+                        {statusText}
                       </small>
                     </div>
                     <p>{source.purpose}</p>

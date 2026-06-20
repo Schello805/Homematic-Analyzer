@@ -2503,6 +2503,60 @@ textarea:focus {
   gap: 8px;
 }
 
+.loader-data-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.loader-data-sources > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #dce6f3;
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: #66748a;
+  background: rgba(255, 255, 255, .68);
+}
+
+.loader-data-sources > div.is-checking {
+  border-color: #9ec5ff;
+  color: #1849a9;
+  background: #eef6ff;
+}
+
+.loader-data-sources > div > span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e7edf7;
+  font-size: .9rem;
+}
+
+.loader-data-sources > div.is-checking > span {
+  color: #fff;
+  background: #3478f6;
+  animation: sourceSpin 1.1s linear infinite;
+}
+
+.loader-data-sources strong,
+.loader-data-sources small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.loader-data-sources strong { color: #26364d; font-size: .8rem; }
+.loader-data-sources small { font-size: .7rem; line-height: 1.25; }
+
+@keyframes sourceSpin { to { transform: rotate(360deg); } }
+
 .loader-step {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -3206,6 +3260,35 @@ pre {
   background: linear-gradient(135deg, #f8fbff, #f3f8ff);
 }
 
+.analysis-data-progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  padding: 11px 13px;
+  color: #174ea6;
+  background: linear-gradient(90deg, #eef6ff, #f8fbff);
+}
+
+.analysis-data-progress > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #fff;
+  background: #3478f6;
+  animation: sourceSpin 1.1s linear infinite;
+}
+
+.analysis-data-progress strong { color: #174ea6; }
+.analysis-data-progress p,
+.analysis-data-progress small { margin: 2px 0 0; color: #526987; font-size: .8rem; line-height: 1.35; }
+.analysis-data-progress > small { max-width: 190px; }
+
 .analysis-source-hub__header {
   display: flex;
   align-items: end;
@@ -3237,6 +3320,15 @@ pre {
 .source-hub-card-fresh {
   border-color: #afe6ce;
   box-shadow: inset 4px 0 0 #20a783;
+}
+
+.source-hub-card-loading {
+  border-color: #bfdbfe;
+  box-shadow: inset 4px 0 0 #3478f6;
+}
+
+.source-hub-card-loading .data-age {
+  color: #174ea6;
 }
 
 .source-hub-card-aging {
@@ -5077,6 +5169,10 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .loader-data-sources {
+    grid-template-columns: 1fr;
+  }
+
   .dc-duty-chart-layout {
     grid-template-columns: 1fr;
   }
@@ -6694,6 +6790,15 @@ pre {
 
   .analysis-source-hub__grid {
     grid-template-columns: 1fr;
+  }
+
+  .analysis-data-progress {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .analysis-data-progress > small {
+    grid-column: 1 / -1;
+    max-width: none;
   }
 
   .routing-map-summary {
