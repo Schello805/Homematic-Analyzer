@@ -2357,6 +2357,25 @@ textarea:focus {
   background: white;
 }
 
+.settings-autosave {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  border: 1px solid #bdebd7;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #effcf5;
+  color: #12734b;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.settings-autosave.is-saving {
+  border-color: #bad3ff;
+  background: #eff5ff;
+  color: #1759b8;
+}
+
 .recognized-service-types {
   display: grid;
   gap: 10px;

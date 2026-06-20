@@ -1361,6 +1361,10 @@ function App() {
   const snifferAutoRefreshInFlight = useRef(false);
   const analysisAutoRefreshInFlight = useRef(false);
   const setupDefaultsSyncTimer = useRef<number | undefined>(undefined);
+  const notificationSettingsSaveTimer = useRef<number | undefined>(undefined);
+  const notificationSettingsHydrated = useRef(false);
+  const savedNotificationSettings = useRef(JSON.stringify(initialNotificationSettings));
+  const notificationSettingsSaveRequests = useRef(0);
   const aiLogResultRef = useRef<HTMLElement | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
@@ -2237,31 +2241,25 @@ function App() {
     setNotificationSettings(nextSettings);
   }
 
-  async function saveNotificationSettings() {
+  async function saveNotificationSettings(settingsToSave: NotificationSettings, showSuccessToast = false) {
+    notificationSettingsSaveRequests.current += 1;
     setSavingSettings(true);
     try {
       const response = await fetch("/api/settings/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(notificationSettings)
+        body: JSON.stringify(settingsToSave)
       });
 
       if (!response.ok) throw new Error("Einstellungen konnten nicht gespeichert werden.");
-      const result = (await response.json()) as { settings?: NotificationSettings };
-      if (result.settings) {
-        setNotificationSettings({
-          telegram: { ...initialNotificationSettings.telegram, ...result.settings.telegram },
-          email: { ...initialNotificationSettings.email, ...result.settings.email },
-          events: { ...initialNotificationSettings.events, ...result.settings.events },
-          ai: { ...initialNotificationSettings.ai, ...result.settings.ai }
+      savedNotificationSettings.current = JSON.stringify(settingsToSave);
+      if (showSuccessToast) {
+        showToast({
+          type: "success",
+          title: "Einstellungen gespeichert",
+          message: "Einstellungen wurden dauerhaft in der lokalen Datenbank gespeichert."
         });
       }
-
-      showToast({
-        type: "success",
-        title: "Einstellungen gespeichert",
-        message: "Einstellungen wurden dauerhaft in der lokalen Datenbank gespeichert."
-      });
     } catch {
       showToast({
         type: "error",
@@ -2269,7 +2267,8 @@ function App() {
         message: "Bitte lokale API prüfen."
       });
     } finally {
-      setSavingSettings(false);
+      notificationSettingsSaveRequests.current = Math.max(0, notificationSettingsSaveRequests.current - 1);
+      if (notificationSettingsSaveRequests.current === 0) setSavingSettings(false);
     }
   }
 
@@ -2431,7 +2430,7 @@ function App() {
     showToast({
       type: "info",
       title: "Benachrichtigungen zurückgesetzt",
-      message: "Klicke Speichern, um die serverseitigen Einstellungen ebenfalls zurückzusetzen."
+      message: "Die zurückgesetzten Einstellungen werden automatisch gespeichert."
     });
   }
 
@@ -2725,14 +2724,19 @@ function App() {
         if (!response.ok) return;
         const settings = (await response.json()) as NotificationSettings;
         if (isActive) {
-          setNotificationSettings({
+          const nextSettings = {
             telegram: { ...initialNotificationSettings.telegram, ...settings.telegram },
             email: { ...initialNotificationSettings.email, ...settings.email },
             events: { ...initialNotificationSettings.events, ...settings.events },
             ai: { ...initialNotificationSettings.ai, ...settings.ai }
-          });
+          };
+          savedNotificationSettings.current = JSON.stringify(nextSettings);
+          notificationSettingsHydrated.current = true;
+          setNotificationSettings(nextSettings);
         }
       } catch {
+      } finally {
+        notificationSettingsHydrated.current = true;
       }
     }
 
@@ -2854,6 +2858,26 @@ function App() {
       window.removeEventListener("focus", checkForUpdatesWhenVisible);
     };
   }, []);
+
+  useEffect(() => {
+    if (!notificationSettingsHydrated.current) return;
+
+    const serializedSettings = JSON.stringify(notificationSettings);
+    if (serializedSettings === savedNotificationSettings.current) return;
+
+    if (notificationSettingsSaveTimer.current) {
+      window.clearTimeout(notificationSettingsSaveTimer.current);
+    }
+    notificationSettingsSaveTimer.current = window.setTimeout(() => {
+      void saveNotificationSettings(notificationSettings);
+    }, 650);
+
+    return () => {
+      if (notificationSettingsSaveTimer.current) {
+        window.clearTimeout(notificationSettingsSaveTimer.current);
+      }
+    };
+  }, [notificationSettings]);
 
   useEffect(() => {
     if (!loading) {
@@ -5268,9 +5292,9 @@ function App() {
             <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
             <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
             <div className="script-actions">
-              <button type="button" onClick={() => void saveNotificationSettings()} disabled={savingSettings}>
-                {savingSettings ? "Speichert ..." : "Einstellungen speichern"}
-              </button>
+              <span className={`settings-autosave ${savingSettings ? "is-saving" : ""}`} aria-live="polite">
+                {savingSettings ? "Speichert Änderungen ..." : "Änderungen werden automatisch gespeichert"}
+              </span>
               <button type="button" className="light-button" onClick={resetNotificationSettings}>
                 Zurücksetzen
               </button>
