@@ -550,6 +550,79 @@ h2 {
   font-size: .84rem;
 }
 
+.info-tooltip {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.info-tooltip__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  border: 1px solid #c9daf5;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #1853a8;
+  background: #f4f8ff;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 750;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.info-tooltip__trigger:hover,
+.info-tooltip.is-open .info-tooltip__trigger {
+  border-color: #78a9fb;
+  background: #eaf2ff;
+}
+
+.info-tooltip__content {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  left: 0;
+  width: min(360px, calc(100vw - 40px));
+  border: 1px solid #c9daf5;
+  border-radius: 14px;
+  padding: 11px 12px;
+  color: #344054;
+  background: #fff;
+  box-shadow: 0 16px 36px rgba(23, 45, 84, .18);
+  font-size: .84rem;
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.info-tooltip:hover .info-tooltip__content,
+.info-tooltip:focus-within .info-tooltip__content,
+.info-tooltip.is-open .info-tooltip__content {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.signal-source-tooltip {
+  margin: 0 0 12px;
+}
+
+.dc-metric-tooltip {
+  align-self: start;
+}
+
+.dc-metric-tooltip .info-tooltip__content {
+  right: 0;
+  left: auto;
+}
+
 .action-device-list article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DualRssiAssessment, RssiAssessment, rssiClass } from "../radio/RssiAssessment";
+import { InfoTooltip } from "../ui/InfoTooltip";
 import "./SignalQualityDeviceList.css";
 
 export type SignalDevice = {
@@ -114,7 +115,11 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
         <button type="button" className={source === "ccu" ? "is-active" : ""} onClick={() => { onSourceChange("ccu"); setSelectedKey(""); setSearchQuery(""); }}>Ohne Snifferwerte <small>{devices.filter((device) => device.ccuRssi !== undefined).length}</small></button>
         <button type="button" className={source === "both" ? "is-active" : ""} onClick={() => { onSourceChange("both"); setSelectedKey(""); setSearchQuery(""); }}>Mit Snifferwerten <small>{devices.filter((device) => device.ccuRssi !== undefined || device.snifferRssi !== undefined).length}</small></button>
       </div>
-      <p className="signal-source-hint">{source === "both" ? "Zeigt Zentralenwerte plus vorhandene Snifferwerte. Der Sniffer ist eine zweite Messposition und kann vom Zentralenwert deutlich abweichen." : "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Snifferwerte werden in dieser Ansicht bewusst ausgeblendet."}</p>
+      <InfoTooltip label="Messquelle erklären" className="signal-source-tooltip">
+        {source === "both"
+          ? "Zeigt Zentralenwerte plus vorhandene Snifferwerte. Der Sniffer ist eine zweite Messposition und kann vom Zentralenwert deutlich abweichen."
+          : "Zeigt nur RSSI-Werte, die die Zentrale/XML-API meldet. Snifferwerte werden in dieser Ansicht bewusst ausgeblendet."}
+      </InfoTooltip>
       <div className="signal-list-toolbar">
         <strong>{attentionDevices.length} Geräte brauchen Aufmerksamkeit</strong>
         <button type="button" className="light-button" onClick={() => { setShowAll((current) => !current); setSelectedKey(""); }}>{showAll ? "Nur auffällige zeigen" : `Alle ${sourceDevices.length} zeigen`}</button>

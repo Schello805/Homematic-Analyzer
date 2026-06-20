@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import packageInfo from "../package.json";
 import { EvidenceDetail, SourceBadge } from "./components/analysis/EvidenceDetail";
 import { SignalQualityDeviceList, type SignalReceiverOption } from "./components/analysis/SignalQualityDeviceList";
+import { InfoTooltip } from "./components/ui/InfoTooltip";
 import {
   DualRssiAssessment,
   normalizeRadioIdentifier,
@@ -1018,7 +1019,9 @@ function RoutingTopologyView({
         <div>
           <p className="eyebrow">Routing-Karte</p>
           <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
-          <p>Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen = Funkweg belegt. Gestrichelt = reine Darstellungshilfe, der tatsächlich verwendete Empfänger ist noch unbekannt.</p>
+          <InfoTooltip label="Karte lesen">
+            Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen bedeutet: Der Funkweg ist belegt. Gestrichelt ist nur eine Darstellungshilfe; der tatsächlich verwendete Empfänger ist noch unbekannt.
+          </InfoTooltip>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
           {loading ? "Aktualisiert …" : "Karte aktualisieren"}
@@ -3454,7 +3457,9 @@ function App() {
           <div className="setup-sections">
             <fieldset className="setup-card">
               <legend>CCU / RaspberryMatic Login</legend>
-              <p>Pflicht für Geräte, Servicemeldungen, Batterien, Duty Cycle und XML-API-Prüfung. Bei XML-API v2 wird zusätzlich ein XML-API Token (`sid`) benötigt.</p>
+              <InfoTooltip label="Wofür braucht die App das?">
+                Für Geräte, Servicemeldungen, Batterien, Duty Cycle und die XML-API-Prüfung. Bei XML-API v2 wird zusätzlich ein XML-API-Token (`sid`) benötigt.
+              </InfoTooltip>
               <p className="security-note">Bitte keine öffentliche CCU-Adresse oder Portweiterleitung verwenden. Von außen besser per VPN verbinden.</p>
               <div className="form-grid form-grid-3">
                 <label>
@@ -3522,7 +3527,9 @@ function App() {
 
             <fieldset className="setup-card setup-card-optional">
               <legend>SSH Login</legend>
-              <p>Optional für Logauszüge und aktive Verbindungen. CPU/RAM, Temperatur, Speicher und Backups kommen bevorzugt über das CCU-WebUI-Script.</p>
+              <InfoTooltip label="Wann ist SSH sinnvoll?">
+                Nur für Logauszüge und aktive Verbindungen. CPU, RAM, Temperatur, Speicher und Backups kommen bevorzugt über das CCU-WebUI-Script.
+              </InfoTooltip>
               <div className="form-grid form-grid-2">
                 <label>
                   SSH Benutzer
@@ -3560,7 +3567,9 @@ function App() {
                 />
                 <span>AskSin-Sniffer verwenden</span>
               </label>
-              <p>Die Basisanalyse ist bewusst ohne Löten nutzbar. Die Zentrale liefert Geräte, Meldungen, Batterien, Duty Cycle und Zentralen-RSSI; der Sniffer ergänzt nur tiefere Funkdetails.</p>
+              <InfoTooltip label="Was bringt der Sniffer?">
+                Die Basisanalyse funktioniert ohne Löten: Die Zentrale liefert Geräte, Meldungen, Batterien, Duty Cycle und Zentralen-RSSI. Der Sniffer ergänzt tiefere Funkdetails.
+              </InfoTooltip>
               <details className="inline-help">
                 <summary>Brauche ich den AskSin-Sniffer überhaupt?</summary>
                 <ul>
@@ -3609,7 +3618,6 @@ function App() {
           <button className="analyze-button" disabled={loading}>
             {loading ? "Analyse läuft ..." : "Zur Analyse wechseln und starten"}
           </button>
-          <p className="hint">Die Ergebnisse und die laufende Prüfung erscheinen auf der Analyse-Seite.</p>
           {error && <p className="error">{error}</p>}
         </section>
       </form>
@@ -3730,9 +3738,9 @@ function App() {
             <div>
               <p className="eyebrow">DC-Analyzer</p>
               <h2>Funkverkehr verständlich prüfen</h2>
-              <p>
-                Live-Messwerte vom AskSin-Sniffer. Die wichtigsten Ergebnisse bleiben sichtbar, technische Details öffnest du nur bei Bedarf.
-              </p>
+              <InfoTooltip label="Was misst der Sniffer?">
+                Live-Messwerte vom AskSin-Sniffer. Er ergänzt die CCU um Telegramme, Funkzeit, Carrier Sense und RSSI am Standort des Sniffers.
+              </InfoTooltip>
             </div>
             <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true)} disabled={snifferLoading}>
               {snifferLoading ? "Prüfe ..." : "Sniffer prüfen"}
@@ -3831,7 +3839,9 @@ function App() {
             <div className="dc-setup-grid">
               <fieldset className="setup-card">
                 <legend>USB-Port</legend>
-                <p>Der Sniffer steckt am Analyzer-System. Bei Proxmox muss der Port vorher an den LXC durchgereicht werden.</p>
+                <InfoTooltip label="USB-Port erklären">
+                  Der Sniffer steckt am Analyzer-System. Bei Proxmox muss der Port vorher an den LXC durchgereicht werden.
+                </InfoTooltip>
                 <div className="usb-port-picker">
                   <label>
                     Serieller Port
@@ -3914,7 +3924,7 @@ function App() {
               <div className="dc-metric" key={label}>
                 <span>{label}</span>
                 <strong>{value}</strong>
-                <em>{hint}</em>
+                <InfoTooltip label="Messwert erklären" className="dc-metric-tooltip">{hint}</InfoTooltip>
               </div>
             ))}
           </div>
@@ -3923,9 +3933,9 @@ function App() {
             <div>
               <p className="eyebrow">Verlauf</p>
               <h3>Telegramme und gemessener Rauschpegel</h3>
-              <p>
-                Blau = empfangene Homematic-Telegramme. Orange = regelmäßige Rauschpegel-Messpunkte des Sniffers – nicht einzelne Störsignale.
-              </p>
+              <InfoTooltip label="Diagramm erklären">
+                Blau = empfangene Homematic-Telegramme. Orange = regelmäßige Rauschpegel-Messpunkte des Sniffers, nicht einzelne Störsignale.
+              </InfoTooltip>
             </div>
             <div className="dc-chart">
               {(() => {
@@ -4426,10 +4436,9 @@ function App() {
             <div>
               <p className="eyebrow">Logs</p>
               <h2>Logauswertung</h2>
-              <p>
-                Hier siehst du die zuletzt vom Collector übertragenen Logs 1:1. Die KI bekommt diese Daten erst,
-                wenn du unten ausdrücklich „Fehler prüfen“ oder „Gesamten Log analysieren“ startest.
-              </p>
+              <InfoTooltip label="Datenschutz bei KI-Analyse">
+                Hier stehen die zuletzt vom Collector übertragenen Logs 1:1. Erst nach deinem Klick auf „Fehler prüfen“ oder „Gesamten Log analysieren“ werden die gewählten Logzeilen an den konfigurierten KI-Anbieter gesendet.
+              </InfoTooltip>
             </div>
             <div className="logs-actions">
               <button type="button" className="ghost-button" onClick={() => void loadLogs(true)} disabled={logsLoading}>
@@ -4713,7 +4722,7 @@ function App() {
                         {statusText}
                       </small>
                     </div>
-                    <p>{source.purpose}</p>
+                    <InfoTooltip label="Datenquelle erklärt" className="source-hub-tooltip">{source.purpose}</InfoTooltip>
                     <button
                       type="button"
                       onClick={() => {
@@ -4735,11 +4744,11 @@ function App() {
             <section className="analysis-source-mode" aria-label="Snifferdaten in der Analyse">
               <div>
                 <strong>{analysisSnifferMode === "base" ? "Basisanalyse ohne Snifferwerte" : "Zusatzanalyse mit Snifferwerten"}</strong>
-                <span>
+                <InfoTooltip label={analysisSnifferMode === "base" ? "Ohne Snifferwerte" : "Mit Snifferwerten"}>
                   {analysisSnifferMode === "base"
                     ? "Empfohlen für die meisten Nutzer: CCU-, XML-API-, Collector- und Systemdaten. Sniffer-Belege bleiben ausgeblendet."
                     : "Ergänzt die Basisanalyse um Telegramme, Funklast und Messwerte am Standort des Sniffers."}
-                </span>
+                </InfoTooltip>
               </div>
               <div role="group" aria-label="Analyseansicht wählen">
                 <button
@@ -4766,7 +4775,9 @@ function App() {
                 <div>
                   <p className="eyebrow">Nächste Schritte</p>
                   <h3 id="guided-actions-title">Das solltest du jetzt tun</h3>
-                  <p>Nach Priorität sortiert. Öffne nur den Schritt, den du gerade bearbeiten möchtest.</p>
+                  <InfoTooltip label="So verwendest du die Liste">
+                    Nach Priorität sortiert. Öffne nur den Schritt, den du gerade bearbeiten möchtest.
+                  </InfoTooltip>
                 </div>
                 <span>{guidedActions.length} Schritte</span>
               </div>
@@ -5319,7 +5330,9 @@ function App() {
           <div className="panel__header">
             <p className="eyebrow">Einstellungen</p>
             <h2>Optionale Funktionen</h2>
-            <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
+            <InfoTooltip label="Optionale Funktionen">
+              Aktiviere nur Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.
+            </InfoTooltip>
             <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
             <p className={`notification-monitor-status ${notificationMonitorStatus?.lastError ? "has-error" : ""}`}>
               {notificationMonitorStatus === null && "Benachrichtigungs-Überwachung wird geprüft ..."}
