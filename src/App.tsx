@@ -105,6 +105,17 @@ function extractAdditionalServiceTypes(evidence: Evidence[]) {
 type AnalysisSnifferMode = "base" | "with-sniffer";
 type SettingsSaveState = "ready" | "pending" | "saving" | "saved" | "failed";
 
+type NotificationMonitorStatus = {
+  enabled: boolean;
+  intervalSeconds: number;
+  running: boolean;
+  initialized: boolean;
+  lastRunAt?: string;
+  lastSuccessAt?: string;
+  lastNotificationAt?: string;
+  lastError?: string;
+};
+
 type DiagnosticSource = {
   id: string;
   label: string;
@@ -1391,6 +1402,7 @@ function App() {
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [settingsSaveState, setSettingsSaveState] = useState<SettingsSaveState>("ready");
   const [settingsSavedAt, setSettingsSavedAt] = useState<Date | null>(null);
+  const [notificationMonitorStatus, setNotificationMonitorStatus] = useState<NotificationMonitorStatus | null>(null);
   const [updatingApp, setUpdatingApp] = useState(false);
   const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
   const [updateRunStatus, setUpdateRunStatus] = useState<UpdateRunStatus | null>(null);
@@ -3088,6 +3100,28 @@ function App() {
       window.removeEventListener("focus", refreshLogs);
     };
   }, [currentPage]);
+
+  useEffect(() => {
+    if (currentPage !== "settings") return;
+    let isActive = true;
+
+    async function loadNotificationMonitorStatus() {
+      try {
+        const response = await fetch("/api/notifications/monitor-status", { cache: "no-store" });
+        if (!response.ok) return;
+        const status = (await response.json()) as NotificationMonitorStatus;
+        if (isActive) setNotificationMonitorStatus(status);
+      } catch {
+      }
+    }
+
+    void loadNotificationMonitorStatus();
+    const interval = window.setInterval(() => void loadNotificationMonitorStatus(), 15000);
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [currentPage, notificationSettings.telegram.enabled, notificationSettings.email.enabled]);
 
   useEffect(() => {
     if (!analysis || currentPage !== "analysis" || !form.snifferEnabled || !form.snifferPort.trim()) return;
@@ -5287,6 +5321,13 @@ function App() {
             <h2>Optionale Funktionen</h2>
             <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
             <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
+            <p className={`notification-monitor-status ${notificationMonitorStatus?.lastError ? "has-error" : ""}`}>
+              {notificationMonitorStatus === null && "Benachrichtigungs-Überwachung wird geprüft ..."}
+              {notificationMonitorStatus && !notificationMonitorStatus.enabled && "Für Ereignisbenachrichtigungen Telegram oder E-Mail aktivieren."}
+              {notificationMonitorStatus?.enabled && notificationMonitorStatus.lastError && `Überwachung wartet: ${notificationMonitorStatus.lastError}`}
+              {notificationMonitorStatus?.enabled && !notificationMonitorStatus.lastError && !notificationMonitorStatus.initialized && "Überwachung startet: Der erste CCU-Abgleich bildet still eine Basis."}
+              {notificationMonitorStatus?.enabled && !notificationMonitorStatus.lastError && notificationMonitorStatus.initialized && `Überwachung aktiv · neue Ereignisse werden innerhalb von ${notificationMonitorStatus.intervalSeconds} Sekunden geprüft.`}
+            </p>
             <div className="script-actions">
               <span className={`settings-autosave ${settingsSaveState}`} aria-live="polite">
                 {settingsSaveState === "pending" && "Änderungen werden vorbereitet ..."}

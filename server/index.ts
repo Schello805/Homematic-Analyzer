@@ -15,6 +15,8 @@ import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase }
 import type { SetupDefaults } from "./localDatabase.js";
 import { resolveNetworkHostnames } from "./networkIdentity.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
+import { selectNewNotificationChecks } from "./notificationMonitor.js";
+import type { NotificationMonitorState } from "./notificationMonitor.js";
 import { checkOfficialCcu3Release, checkOpenCcuRelease, checkRepositoryRelease, isOfficialCcu3Product, isOpenCcuFamilyProduct } from "./releases.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
@@ -45,6 +47,8 @@ let activeSnifferPort = "";
 let snifferReader: ReturnType<typeof spawn> | undefined;
 let snifferReaderBuffer = "";
 let persistedNotificationSettings: NotificationSettings | undefined;
+let notificationMonitorState: NotificationMonitorState = {};
+let notificationMonitorRunning = false;
 let collectorHistory: CollectorHistoryPoint[] = [];
 let analysisHistory: AnalysisHistoryEntry[] = [];
 let snifferHistory: SnifferHistoryPoint[] = [];
@@ -948,6 +952,7 @@ function mergeNotificationSettings(settings?: NotificationSettings): Notificatio
 
 async function loadPersistedNotificationSettings() {
   const database = await readLocalDatabase(localDatabaseFile);
+  notificationMonitorState = database.notificationMonitor ?? {};
   const databaseSettings = notificationSettingsSchema.safeParse(database.notificationSettings);
   if (databaseSettings.success) {
     persistedNotificationSettings = mergeNotificationSettings(databaseSettings.data);
@@ -966,6 +971,73 @@ async function loadPersistedNotificationSettings() {
     }
   } catch {
     persistedNotificationSettings = defaultNotificationSettings;
+  }
+}
+
+async function persistNotificationMonitorState(nextState: NotificationMonitorState) {
+  notificationMonitorState = nextState;
+  await updateLocalDatabase(localDatabaseFile, (database) => ({
+    ...database,
+    notificationMonitor: nextState
+  }));
+}
+
+function notificationChannelsEnabled(settings: NotificationSettings) {
+  return Boolean(settings.telegram?.enabled || settings.email?.enabled);
+}
+
+async function runNotificationMonitor() {
+  if (notificationMonitorRunning) return;
+  notificationMonitorRunning = true;
+
+  try {
+    const database = await readLocalDatabase(localDatabaseFile);
+    const setup = database.setupDefaults ?? {};
+    const settings = mergeNotificationSettings(persistedNotificationSettings);
+    if (!setup.ccuHost || !notificationChannelsEnabled(settings)) {
+      await persistNotificationMonitorState({
+        ...notificationMonitorState,
+        lastRunAt: new Date().toISOString(),
+        lastError: !setup.ccuHost
+          ? "Keine serverseitig gespeicherte CCU-Adresse."
+          : "Telegram oder E-Mail ist nicht aktiviert."
+      });
+      return;
+    }
+
+    const config = {
+      ccuHost: setup.ccuHost,
+      ccuUser: setup.ccuUser,
+      ccuPassword: setup.ccuPassword,
+      xmlApiToken: setup.xmlApiToken,
+      snifferEnabled: setup.snifferEnabled,
+      snifferPort: setup.snifferPort,
+      hmipRoutingEnabled: setup.hmipRoutingEnabled,
+      notificationSettings: settings
+    };
+    const ccuSnapshot = await readCcuSnapshot(config);
+    latestCcuSnapshot = ccuSnapshot;
+    const checks = createAnalysis(config, latestCollector, ccuSnapshot, latestCcuMasterdata, undefined, latestSnifferSnapshot);
+    const selection = selectNewNotificationChecks(checks, settings, notificationMonitorState);
+
+    if (selection.newChecks.length > 0) {
+      const publicUrl = process.env.ANALYZER_PUBLIC_URL?.trim();
+      const notificationResult = await sendNotificationSummaries(settings, selection.newChecks, publicUrl || undefined);
+      const delivered = [notificationResult.telegram, notificationResult.email].some((result) => result.state === "sent");
+      if (!delivered) {
+        throw new Error("Ereignis erkannt, aber Telegram oder E-Mail konnte nicht versendet werden. Einstellungen prüfen.");
+      }
+      selection.state.lastNotificationAt = new Date().toISOString();
+    }
+    await persistNotificationMonitorState(selection.state);
+  } catch (error) {
+    await persistNotificationMonitorState({
+      ...notificationMonitorState,
+      lastRunAt: new Date().toISOString(),
+      lastError: error instanceof Error ? error.message : "Überwachung fehlgeschlagen."
+    });
+  } finally {
+    notificationMonitorRunning = false;
   }
 }
 
@@ -1062,6 +1134,20 @@ app.get("/api/health", async (_request, response) => {
     service: "Homematic Analyzer API",
     version: runtimeVersion,
     processVersion: appVersion
+  });
+});
+
+app.get("/api/notifications/monitor-status", (_request, response) => {
+  const settings = mergeNotificationSettings(persistedNotificationSettings);
+  response.json({
+    enabled: notificationChannelsEnabled(settings),
+    intervalSeconds: 60,
+    running: notificationMonitorRunning,
+    initialized: Boolean(notificationMonitorState.initialized),
+    lastRunAt: notificationMonitorState.lastRunAt,
+    lastSuccessAt: notificationMonitorState.lastSuccessAt,
+    lastNotificationAt: notificationMonitorState.lastNotificationAt,
+    lastError: notificationMonitorState.lastError
   });
 });
 
@@ -1821,6 +1907,9 @@ await loadPersistedCcuMasterdata();
 await loadPersistedCollector();
 await loadPersistedNotificationSettings();
 await ensureLocalDatabaseEncryption(localDatabaseFile);
+
+void runNotificationMonitor();
+setInterval(() => void runNotificationMonitor(), 60 * 1000);
 
 app.listen(port, () => {
   console.log(`Homematic Analyzer API läuft auf http://127.0.0.1:${port}`);

@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint } from "./types.js";
+import type { NotificationMonitorState } from "./notificationMonitor.js";
 import { decryptSecret, encryptSecret } from "./secretStore.js";
 
 export type SetupDefaults = {
@@ -22,6 +23,7 @@ export type LocalDatabase = {
   updatedAt?: string;
   collectorToken?: string;
   notificationSettings?: NotificationSettings;
+  notificationMonitor?: NotificationMonitorState;
   ccuMasterdata?: CcuMasterdataPayload;
   latestCollector?: CollectorPayload;
   collectorHistory?: CollectorHistoryPoint[];

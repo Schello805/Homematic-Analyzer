@@ -2383,6 +2383,22 @@ textarea:focus {
   color: #b42318;
 }
 
+.notification-monitor-status {
+  margin: 12px 0 0;
+  border-left: 3px solid #26a96c;
+  padding: 8px 12px;
+  background: #f0fcf5;
+  color: #126841;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.notification-monitor-status.has-error {
+  border-left-color: #e05a47;
+  background: #fff2f0;
+  color: #a63121;
+}
+
 .recognized-service-types {
   display: grid;
   gap: 10px;
