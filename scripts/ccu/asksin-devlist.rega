@@ -43,11 +43,9 @@ if (!errorVar) {
 
 string now = system.Date("%s");
 string nowIso = system.Date("%Y-%m-%dT%H:%M:%S");
-string centralName;
+string centralName = "Zentrale";
 string stdout;
 string stderr;
-system.Exec("hostname", &centralName, &stderr);
-centralName = centralName.Trim();
 centralName = centralName.Replace("\\", "\\\\");
 centralName = centralName.Replace("\"", "\\\"");
 centralName = centralName.Replace("'", " ");

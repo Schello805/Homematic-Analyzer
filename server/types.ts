@@ -217,6 +217,7 @@ export type CcuMasterdataPayload = {
   token?: string;
   source?: string;
   collectedAt?: string;
+  receivedAt?: string;
   deviceCount?: number;
   system?: Record<string, unknown>;
   backups?: Record<string, unknown>;

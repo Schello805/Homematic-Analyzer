@@ -170,7 +170,7 @@ In der App wird ein Copy-Paste-Befehl angezeigt. Das Script sammelt Systemwerte,
 Beispiel:
 
 ```bash
-curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001&token=homematic-analyzer-demo-token" | sh
+curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001" | sh
 ```
 
 Bei regelmäßiger Ausführung legt das Script ausschließlich einen mit `Homematic Analyzer system snapshot` markierten Cronjob an. Es ersetzt keine bestehenden Cronjobs.
@@ -180,7 +180,7 @@ Der aktuelle Collector sendet zusätzlich seine eigene Script-Version, Ausführu
 Vollständig entfernen:
 
 ```bash
-curl -fsSL "http://ANALYZER-IP:3001/api/collector/script?url=http%3A%2F%2FANALYZER-IP%3A3001&token=homematic-analyzer-demo-token&mode=uninstall&interval=minute" | sh
+curl -fsSL "http://ANALYZER-IP:3001/api/collector/script?url=http%3A%2F%2FANALYZER-IP%3A3001&mode=uninstall&interval=minute" | sh
 ```
 
 Der Entfernen-Modus löscht nur den Analyzer-Cronjob sowie `/tmp/homematic-analyzer-collector.log` und `/tmp/homematic-analyzer-last-payload.json`. Andere CCU-Dateien, Backups und Cronjobs bleiben unberührt.

@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,7 @@ import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, Collect
 
 const app = express();
 const appVersion = packageInfo.version;
+const legacyCollectorToken = "homematic-analyzer-demo-token";
 const port = Number(process.env.PORT ?? 3001);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -47,6 +49,7 @@ let collectorHistory: CollectorHistoryPoint[] = [];
 let analysisHistory: AnalysisHistoryEntry[] = [];
 let snifferHistory: SnifferHistoryPoint[] = [];
 let lastPersistedSnifferHistoryAt = 0;
+let installationCollectorTokenPromise: Promise<string> | undefined;
 let updateRun: {
   running: boolean;
   startedAt?: string;
@@ -231,6 +234,7 @@ const ccuMasterdataSchema = z.object({
   token: z.string().max(200).optional(),
   source: z.string().max(80).optional(),
   collectedAt: z.string().max(80).optional(),
+  receivedAt: z.string().max(80).optional(),
   deviceCount: z.number().int().nonnegative().optional(),
   system: z.record(z.unknown()).optional(),
   backups: z.record(z.unknown()).optional(),
@@ -615,6 +619,30 @@ function dataAgeStatus(timestamp?: string, staleAfterMinutes = 10) {
   };
 }
 
+async function createOrLoadInstallationCollectorToken() {
+  if (process.env.COLLECTOR_TOKEN) return process.env.COLLECTOR_TOKEN;
+  const database = await readLocalDatabase(localDatabaseFile);
+  if (database.collectorToken) return database.collectorToken;
+
+  const token = `ha_${randomBytes(24).toString("base64url")}`;
+  await updateLocalDatabase(localDatabaseFile, (currentDatabase) => ({
+    ...currentDatabase,
+    collectorToken: token
+  }));
+  return token;
+}
+
+function getInstallationCollectorToken() {
+  if (process.env.COLLECTOR_TOKEN) return Promise.resolve(process.env.COLLECTOR_TOKEN);
+  installationCollectorTokenPromise ??= createOrLoadInstallationCollectorToken();
+  return installationCollectorTokenPromise;
+}
+
+async function isAcceptedCollectorToken(token?: string) {
+  const expectedToken = await getInstallationCollectorToken();
+  return token === expectedToken || (!process.env.COLLECTOR_TOKEN && token === legacyCollectorToken);
+}
+
 function latestHistoryChange() {
   const current = analysisHistory.at(-1);
   const previous = analysisHistory.at(-2);
@@ -960,9 +988,7 @@ app.post("/api/ccu-masterdata", express.raw({ type: "*/*", limit: "2mb" }), asyn
     return;
   }
 
-  const expectedCollectorToken = process.env.COLLECTOR_TOKEN;
-
-  if (expectedCollectorToken && parsed.data.token !== expectedCollectorToken) {
+  if (!(await isAcceptedCollectorToken(parsed.data.token))) {
     response.status(401).json({ error: "Collector-Token ist ungültig." });
     return;
   }
@@ -971,6 +997,7 @@ app.post("/api/ccu-masterdata", express.raw({ type: "*/*", limit: "2mb" }), asyn
     ...latestCcuMasterdata,
     ...parsed.data,
     collectedAt: parsed.data.collectedAt ?? new Date().toISOString(),
+    receivedAt: new Date().toISOString(),
     system: parsed.data.system ?? latestCcuMasterdata?.system,
     backups: parsed.data.backups ?? latestCcuMasterdata?.backups,
     devices: parsed.data.devices ?? latestCcuMasterdata?.devices,
@@ -1039,7 +1066,7 @@ app.get("/api/diagnostics", async (_request, response) => {
   const database = await readLocalDatabase(localDatabaseFile);
   const setup = database.setupDefaults ?? {};
   const collectorAge = dataAgeStatus(latestCollector?.collectedAt, 3);
-  const masterdataAge = dataAgeStatus(latestCcuMasterdata?.collectedAt, 36 * 60);
+  const masterdataAge = dataAgeStatus(latestCcuMasterdata?.receivedAt ?? latestCcuMasterdata?.collectedAt, 36 * 60);
   const snifferAge = dataAgeStatus(latestSnifferSnapshot?.checkedAt, 2);
   const analysisAge = dataAgeStatus(analysisHistory.at(-1)?.generatedAt, 60);
 
@@ -1081,7 +1108,7 @@ app.get("/api/diagnostics", async (_request, response) => {
         detail: latestCcuMasterdata
           ? `${latestCcuMasterdata.deviceCount ?? latestCcuMasterdata.devices?.length ?? 0} Geräte; Daten ${masterdataAge.ageMinutes ?? 0} Minuten alt.`
           : "Noch keine Stammdaten empfangen.",
-        lastSuccessAt: latestCcuMasterdata?.collectedAt,
+        lastSuccessAt: latestCcuMasterdata?.receivedAt ?? latestCcuMasterdata?.collectedAt,
         ageMinutes: masterdataAge.ageMinutes
       },
       {
@@ -1261,7 +1288,7 @@ app.post("/api/analyze", async (request, response) => {
       sources: {
         ccu: ccuSnapshot?.collectedAt,
         collector: latestCollector?.collectedAt,
-        masterdata: latestCcuMasterdata?.collectedAt,
+        masterdata: latestCcuMasterdata?.receivedAt ?? latestCcuMasterdata?.collectedAt,
         sniffer: snifferSnapshot?.checkedAt
       }
     });
@@ -1271,7 +1298,7 @@ app.post("/api/analyze", async (request, response) => {
       sources: {
         ccu: ccuSnapshot?.collectedAt,
         collector: latestCollector?.collectedAt,
-        masterdata: latestCcuMasterdata?.collectedAt,
+        masterdata: latestCcuMasterdata?.receivedAt ?? latestCcuMasterdata?.collectedAt,
         sniffer: snifferSnapshot?.checkedAt
       },
       checks,
@@ -1306,9 +1333,7 @@ app.post("/api/collector", async (request, response) => {
     return;
   }
 
-  const expectedCollectorToken = process.env.COLLECTOR_TOKEN;
-
-  if (expectedCollectorToken && parsed.data.token !== expectedCollectorToken) {
+  if (!(await isAcceptedCollectorToken(parsed.data.token))) {
     response.status(401).json({ error: "Collector-Token ist ungültig." });
     return;
   }
@@ -1452,6 +1477,7 @@ app.get("/api/ccu-masterdata/latest", (_request, response) => {
   response.json({
     available: Boolean(latestCcuMasterdata),
     collectedAt: latestCcuMasterdata?.collectedAt,
+    receivedAt: latestCcuMasterdata?.receivedAt,
     deviceCount: latestCcuMasterdata?.deviceCount ?? latestCcuMasterdata?.devices?.length ?? 0,
     systemAvailable: Boolean(latestCcuMasterdata?.system || latestCcuMasterdata?.backups),
     askSinDevListAvailable: Boolean(latestCcuMasterdata?.askSinDevList?.devices?.length),
@@ -1706,7 +1732,7 @@ app.post("/api/system/update", async (_request, response) => {
 
 app.get("/api/collector/script", async (request, response) => {
   const analyzerUrl = String(request.query.url ?? `http://127.0.0.1:${port}`);
-  const token = String(request.query.token ?? "bitte-token-aendern");
+  const token = String(request.query.token ?? "") || await getInstallationCollectorToken();
   const mode = String(request.query.mode ?? "once");
   const interval = String(request.query.interval ?? "daily");
   const onceParams = new URLSearchParams({
@@ -1731,7 +1757,7 @@ app.get("/api/collector/script", async (request, response) => {
 
 app.get("/api/ccu-masterdata/script", async (request, response) => {
   const analyzerUrl = String(request.query.url ?? `http://127.0.0.1:${port}`);
-  const token = String(request.query.token ?? "bitte-token-aendern");
+  const token = String(request.query.token ?? "") || await getInstallationCollectorToken();
   const scriptPath = join(root, "scripts", "ccu", "daily-masterdata.rega");
   const script = await readFile(scriptPath, "utf8");
 
@@ -1744,7 +1770,7 @@ app.get("/api/ccu-masterdata/script", async (request, response) => {
 
 app.get("/api/asksin-devlist/script", async (request, response) => {
   const analyzerUrl = String(request.query.url ?? `http://127.0.0.1:${port}`);
-  const token = String(request.query.token ?? "bitte-token-aendern");
+  const token = String(request.query.token ?? "") || await getInstallationCollectorToken();
   const scriptPath = join(root, "scripts", "ccu", "asksin-devlist.rega");
   const script = await readFile(scriptPath, "utf8");
 

@@ -225,6 +225,7 @@ type ActionModal = "collector" | "duty" | "signal" | "check" | null;
 type MasterdataStatus = {
   available: boolean;
   collectedAt?: string;
+  receivedAt?: string;
   deviceCount: number;
   systemAvailable?: boolean;
   askSinDevListAvailable?: boolean;
@@ -1502,7 +1503,7 @@ function App() {
       {
         id: "masterdata",
         label: "CCU-Script",
-        time: analysis.sources?.masterdata,
+        time: masterdataStatus?.receivedAt ?? masterdataStatus?.collectedAt ?? analysis.sources?.masterdata,
         required: false,
         purpose: "Stammdaten, Gerätenamen, AskSin-Namensliste und zusätzliche CCU-Systemvariablen.",
         action: "Script anzeigen",
@@ -1528,7 +1529,7 @@ function App() {
         actionType: "dc" as const
       }
     ].filter((item) => !item.hidden);
-  }, [analysis, form.snifferEnabled, analysisSnifferMode]);
+  }, [analysis, form.snifferEnabled, analysisSnifferMode, masterdataStatus?.collectedAt, masterdataStatus?.receivedAt]);
   const routingNodeByIdentifier = useMemo(() => {
     const map = new Map<string, RoutingTopologyNode>();
     for (const node of routingTopology?.nodes ?? []) {
@@ -1628,7 +1629,6 @@ function App() {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
       url: baseUrl,
-      token: "homematic-analyzer-demo-token",
       mode: collectorMode,
       interval: collectorInterval
     });
@@ -1638,8 +1638,7 @@ function App() {
   const ccuMasterdataScriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl,
-      token: "homematic-analyzer-demo-token"
+      url: baseUrl
     });
     return `${baseUrl}/api/ccu-masterdata/script?${params.toString()}`;
   }, []);
@@ -1647,8 +1646,7 @@ function App() {
   const askSinDevListScriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl,
-      token: "homematic-analyzer-demo-token"
+      url: baseUrl
     });
     return `${baseUrl}/api/asksin-devlist/script?${params.toString()}`;
   }, []);
@@ -1658,7 +1656,6 @@ function App() {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
       url: baseUrl,
-      token: "homematic-analyzer-demo-token",
       mode: "install",
       interval: "minute"
     });
@@ -1668,7 +1665,6 @@ function App() {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
       url: baseUrl,
-      token: "homematic-analyzer-demo-token",
       mode: "uninstall",
       interval: "minute"
     });
@@ -3548,7 +3544,7 @@ function App() {
             <p className="setup-note">Empfehlung: erst oben CCU-Login eintragen und eine Analyse testen, danach dieses Script kopieren.</p>
             <p className={`setup-note ${masterdataStatus?.available ? "setup-note-ok" : ""}`}>
               {masterdataStatus?.available
-                ? `Empfangen: ${masterdataStatus.deviceCount} Geräte${masterdataStatus.systemAvailable ? " · CCU-Systemwerte" : ""}, zuletzt ${masterdataStatus.collectedAt ? new Date(masterdataStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}.`
+                ? `Empfangen: ${masterdataStatus.deviceCount} Geräte${masterdataStatus.systemAvailable ? " · CCU-Systemwerte" : ""}, am Analyzer zuletzt ${masterdataStatus.receivedAt ? new Date(masterdataStatus.receivedAt).toLocaleString("de-DE") : masterdataStatus.collectedAt ? new Date(masterdataStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}.`
                 : "Noch keine CCU-Daten empfangen."}
             </p>
             {usesLocalAnalyzerUrl && (

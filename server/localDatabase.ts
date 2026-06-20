@@ -20,6 +20,7 @@ export type SetupDefaults = {
 export type LocalDatabase = {
   version: 1;
   updatedAt?: string;
+  collectorToken?: string;
   notificationSettings?: NotificationSettings;
   ccuMasterdata?: CcuMasterdataPayload;
   latestCollector?: CollectorPayload;
@@ -38,6 +39,7 @@ let writeQueue: Promise<LocalDatabase> = Promise.resolve(emptyDatabase);
 async function transformSecrets(databaseFile: string, database: LocalDatabase, mode: "encrypt" | "decrypt"): Promise<LocalDatabase> {
   const transform = mode === "encrypt" ? encryptSecret : decryptSecret;
   const copy = structuredClone(database);
+  copy.collectorToken = await transform(databaseFile, copy.collectorToken);
   if (copy.setupDefaults) {
     copy.setupDefaults.ccuPassword = await transform(databaseFile, copy.setupDefaults.ccuPassword);
     copy.setupDefaults.xmlApiToken = await transform(databaseFile, copy.setupDefaults.xmlApiToken);
@@ -96,6 +98,7 @@ export async function ensureLocalDatabaseEncryption(filePath: string): Promise<b
   try {
     const raw = JSON.parse(await readFile(filePath, "utf8")) as LocalDatabase;
     const secrets = [
+      raw.collectorToken,
       raw.setupDefaults?.ccuPassword,
       raw.setupDefaults?.xmlApiToken,
       raw.setupDefaults?.sshPassword,

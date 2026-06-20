@@ -423,7 +423,7 @@ configure_collector_delivery() {
 
   wait_for_analyzer || return
 
-  script_url="http://127.0.0.1:${PORT}/api/collector/script?url=http%3A%2F%2F127.0.0.1%3A${PORT}&token=homematic-analyzer-demo-token&mode=${mode}&interval=${interval}"
+  script_url="http://127.0.0.1:${PORT}/api/collector/script?url=http%3A%2F%2F127.0.0.1%3A${PORT}&mode=${mode}&interval=${interval}"
   info "Collector-Script wird ausgeführt ..."
   if curl -fsSL "$script_url" | sh; then
     success "System-Snapshot wurde verarbeitet."
