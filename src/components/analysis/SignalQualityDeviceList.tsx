@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DualRssiAssessment, RssiAssessment, rssiClass } from "../radio/RssiAssessment";
 import "./SignalQualityDeviceList.css";
 
@@ -41,11 +41,12 @@ function receiverStatus(receiver: SignalReceiverOption) {
   return "Möglicher netzversorgter Router-Kandidat";
 }
 
-export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions }: {
+export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions, focusDeviceName }: {
   devices: SignalDevice[];
   source: SignalSource;
   onSourceChange: (source: SignalSource) => void;
   receiverOptions: SignalReceiverOption[];
+  focusDeviceName?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
@@ -66,6 +67,16 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
     : [];
   const existingReceivers = relevantReceivers.filter((receiver) => receiver.role === "gateway" || (receiver.routerEnabled && receiver.routingEnabled));
   const actionableReceivers = relevantReceivers.filter((receiver) => !existingReceivers.some((existing) => existing.id === receiver.id));
+
+  useEffect(() => {
+    if (!focusDeviceName) return;
+    const focusedDevice = devices.find((device) => device.name === focusDeviceName && (source === "both"
+      ? device.ccuRssi !== undefined || device.snifferRssi !== undefined
+      : device.ccuRssi !== undefined));
+    if (!focusedDevice) return;
+    setShowAll(false);
+    setSelectedKey(focusedDevice.key);
+  }, [devices, focusDeviceName, source]);
 
   return (
     <>

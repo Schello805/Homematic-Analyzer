@@ -5,6 +5,7 @@ import { SignalQualityDeviceList, type SignalReceiverOption } from "./components
 import {
   DualRssiAssessment,
   normalizeRadioIdentifier,
+  parseCentralRssi,
   parseRssiComparison,
   RssiAssessment,
   rssiClass
@@ -1420,6 +1421,7 @@ function App() {
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [actionModal, setActionModal] = useState<ActionModal>(null);
   const [actionModalCheckId, setActionModalCheckId] = useState<string | null>(null);
+  const [signalFocusDeviceName, setSignalFocusDeviceName] = useState("");
   const [signalSourceFilter, setSignalSourceFilter] = useState<"both" | "ccu">("ccu");
   const [backupPage, setBackupPage] = useState(0);
   const [configurationPassphrase, setConfigurationPassphrase] = useState("");
@@ -2594,9 +2596,15 @@ function App() {
     setActionModal(modal);
   }
 
+  function openSignalImprovement(deviceName = "") {
+    setSignalFocusDeviceName(deviceName);
+    openActionModal("signal");
+  }
+
   function closeActionModal() {
     setActionModal(null);
     setActionModalCheckId(null);
+    setSignalFocusDeviceName("");
   }
 
   useEffect(() => {
@@ -5101,6 +5109,9 @@ function App() {
                       {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && analysisSnifferMode === "with-sniffer" && (
                         <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
                       )}
+                      {check.id === "signal-strength" && (
+                        <button type="button" onClick={() => openSignalImprovement()}>Empfang verbessern</button>
+                      )}
                       {check.id === "routing-topology" && (
                         <button type="button" onClick={() => void openRoutingGraphic(false)}>Routing-Grafik öffnen</button>
                       )}
@@ -5138,6 +5149,14 @@ function App() {
                           <li key={`${item.source}-${index}`}>
                             <strong><SourceBadge source={item.source} />{item.source}</strong>
                             <EvidenceDetail item={item} />
+                            {check.id === "signal-strength" && (() => {
+                              const comparison = parseRssiComparison(item.detail) ?? parseCentralRssi(item.detail);
+                              return comparison?.name ? (
+                                <button type="button" className="evidence-action" onClick={() => openSignalImprovement(comparison.name)}>
+                                  Empfang verbessern
+                                </button>
+                              ) : null;
+                            })()}
                             {item.url && (
                               <a href={item.url} target="_blank" rel="noreferrer">
                                 Anleitung öffnen
@@ -5886,6 +5905,7 @@ function App() {
                   source={signalSourceFilter}
                   onSourceChange={setSignalSourceFilter}
                   receiverOptions={signalReceiverOptions}
+                  focusDeviceName={signalFocusDeviceName}
                 />
               </>
             )}

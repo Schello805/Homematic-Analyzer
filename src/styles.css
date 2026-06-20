@@ -4705,6 +4705,24 @@ pre {
   text-decoration: underline;
 }
 
+.evidence-action {
+  justify-self: start;
+  min-height: 32px;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  padding: 5px 9px;
+  color: #1251a7;
+  cursor: pointer;
+  background: #eff6ff;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.evidence-action:hover {
+  background: #dbeafe;
+}
+
 .app-footer {
   display: grid;
   grid-template-columns: 1fr auto minmax(260px, 420px) auto;
