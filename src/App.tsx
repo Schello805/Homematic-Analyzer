@@ -4568,13 +4568,15 @@ function App() {
                   <strong>Routing-Grafik</strong>
                 </button>
               )}
-              <div className={`auto-refresh-pill ${analysisAutoRefreshing ? "is-refreshing" : ""}`} aria-live="polite">
-                <span aria-hidden="true">↻</span>
-                <div>
-                  <strong>{analysisAutoRefreshing ? "Aktualisiert …" : "Auto-Refresh"}</strong>
-                  <small>{analysisAutoRefreshing ? "Daten werden geprüft" : `in ${dashboardRefreshSecondsLeft}s`}</small>
+              {!analysisDataRefreshing && (
+                <div className="auto-refresh-pill" aria-live="polite">
+                  <span aria-hidden="true">↻</span>
+                  <div>
+                    <strong>Auto-Refresh</strong>
+                    <small>in {dashboardRefreshSecondsLeft}s</small>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="score">
                 <strong>{displayedAnalysis?.checks.length ?? analysis.checks.length}</strong>
                 <span>Prüfpunkte</span>
