@@ -103,6 +103,7 @@ function extractAdditionalServiceTypes(evidence: Evidence[]) {
 }
 
 type AnalysisSnifferMode = "base" | "with-sniffer";
+type SettingsSaveState = "ready" | "pending" | "saving" | "saved" | "failed";
 
 type DiagnosticSource = {
   id: string;
@@ -1364,7 +1365,6 @@ function App() {
   const notificationSettingsSaveTimer = useRef<number | undefined>(undefined);
   const notificationSettingsHydrated = useRef(false);
   const savedNotificationSettings = useRef(JSON.stringify(initialNotificationSettings));
-  const notificationSettingsSaveRequests = useRef(0);
   const aiLogResultRef = useRef<HTMLElement | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
@@ -1389,7 +1389,8 @@ function App() {
   const [selectedRoutingNodeId, setSelectedRoutingNodeId] = useState("central");
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
-  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSaveState, setSettingsSaveState] = useState<SettingsSaveState>("ready");
+  const [settingsSavedAt, setSettingsSavedAt] = useState<Date | null>(null);
   const [updatingApp, setUpdatingApp] = useState(false);
   const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
   const [updateRunStatus, setUpdateRunStatus] = useState<UpdateRunStatus | null>(null);
@@ -2241,9 +2242,8 @@ function App() {
     setNotificationSettings(nextSettings);
   }
 
-  async function saveNotificationSettings(settingsToSave: NotificationSettings, showSuccessToast = false) {
-    notificationSettingsSaveRequests.current += 1;
-    setSavingSettings(true);
+  async function saveNotificationSettings(settingsToSave: NotificationSettings) {
+    setSettingsSaveState("saving");
     try {
       const response = await fetch("/api/settings/notifications", {
         method: "POST",
@@ -2253,22 +2253,15 @@ function App() {
 
       if (!response.ok) throw new Error("Einstellungen konnten nicht gespeichert werden.");
       savedNotificationSettings.current = JSON.stringify(settingsToSave);
-      if (showSuccessToast) {
-        showToast({
-          type: "success",
-          title: "Einstellungen gespeichert",
-          message: "Einstellungen wurden dauerhaft in der lokalen Datenbank gespeichert."
-        });
-      }
+      setSettingsSavedAt(new Date());
+      setSettingsSaveState("saved");
     } catch {
+      setSettingsSaveState("failed");
       showToast({
         type: "error",
         title: "Einstellungen nicht gespeichert",
         message: "Bitte lokale API prüfen."
       });
-    } finally {
-      notificationSettingsSaveRequests.current = Math.max(0, notificationSettingsSaveRequests.current - 1);
-      if (notificationSettingsSaveRequests.current === 0) setSavingSettings(false);
     }
   }
 
@@ -2732,6 +2725,7 @@ function App() {
           };
           savedNotificationSettings.current = JSON.stringify(nextSettings);
           notificationSettingsHydrated.current = true;
+          setSettingsSaveState("ready");
           setNotificationSettings(nextSettings);
         }
       } catch {
@@ -2864,6 +2858,8 @@ function App() {
 
     const serializedSettings = JSON.stringify(notificationSettings);
     if (serializedSettings === savedNotificationSettings.current) return;
+
+    setSettingsSaveState("pending");
 
     if (notificationSettingsSaveTimer.current) {
       window.clearTimeout(notificationSettingsSaveTimer.current);
@@ -5292,8 +5288,12 @@ function App() {
             <p>Aktiviere nur die Funktionen, die du wirklich nutzen möchtest. Benachrichtigungen, KI und HmIP-Routing bleiben sonst vollständig außen vor.</p>
             <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
             <div className="script-actions">
-              <span className={`settings-autosave ${savingSettings ? "is-saving" : ""}`} aria-live="polite">
-                {savingSettings ? "Speichert Änderungen ..." : "Änderungen werden automatisch gespeichert"}
+              <span className={`settings-autosave ${settingsSaveState}`} aria-live="polite">
+                {settingsSaveState === "pending" && "Änderungen werden vorbereitet ..."}
+                {settingsSaveState === "saving" && "Speichert Änderungen ..."}
+                {settingsSaveState === "saved" && `✓ Automatisch gespeichert · ${settingsSavedAt?.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`}
+                {settingsSaveState === "failed" && "Speichern fehlgeschlagen – lokale API prüfen"}
+                {settingsSaveState === "ready" && "Automatisches Speichern ist aktiv"}
               </span>
               <button type="button" className="light-button" onClick={resetNotificationSettings}>
                 Zurücksetzen

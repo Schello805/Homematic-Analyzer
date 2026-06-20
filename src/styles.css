@@ -2370,10 +2370,17 @@ textarea:focus {
   font-weight: 700;
 }
 
-.settings-autosave.is-saving {
+.settings-autosave.pending,
+.settings-autosave.saving {
   border-color: #bad3ff;
   background: #eff5ff;
   color: #1759b8;
+}
+
+.settings-autosave.failed {
+  border-color: #ffc3bd;
+  background: #fff1ef;
+  color: #b42318;
 }
 
 .recognized-service-types {
