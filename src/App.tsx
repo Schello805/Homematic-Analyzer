@@ -2072,6 +2072,44 @@ function App() {
     }
   }
 
+  function runDiagnosticAction(sourceId: string) {
+    if (sourceId === "setup") {
+      navigateTo("setup");
+      return;
+    }
+    if (sourceId === "ccu") {
+      navigateTo("setup");
+      if (!form.ccuHost.trim()) {
+        showToast({ type: "warning", title: "CCU-Adresse fehlt", message: "Trage zuerst im Setup die Adresse der Zentrale ein." });
+        return;
+      }
+      void testCcuConnection();
+      return;
+    }
+    if (sourceId === "masterdata") {
+      navigateTo("setup");
+      return;
+    }
+    if (sourceId === "collector") {
+      openActionModal("collector");
+      return;
+    }
+    if (sourceId === "sniffer") {
+      navigateTo("dc");
+      return;
+    }
+    navigateTo("analysis");
+  }
+
+  function diagnosticActionLabel(sourceId: string) {
+    if (sourceId === "setup") return "Setup öffnen";
+    if (sourceId === "ccu") return "CCU Live-Test starten";
+    if (sourceId === "masterdata") return "CCU-Script öffnen";
+    if (sourceId === "collector") return "Collector-Script öffnen";
+    if (sourceId === "sniffer") return "DC-Analyzer öffnen";
+    return "Analyse öffnen";
+  }
+
   async function analyzeLogsWithAi() {
     if (!logPayload?.available || logPayload.logs.length === 0) {
       showToast({
@@ -4235,6 +4273,9 @@ function App() {
                   )}
                 </div>
                 <p>{source.detail}</p>
+                <button type="button" className="diagnostic-card__action" onClick={() => runDiagnosticAction(source.id)}>
+                  {diagnosticActionLabel(source.id)}
+                </button>
                 {source.diagnostics?.length ? (
                   <details>
                     <summary>Prüfschritte anzeigen</summary>

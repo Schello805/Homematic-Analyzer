@@ -3785,6 +3785,25 @@ pre {
   background: #fff;
 }
 
+.diagnostic-card__action {
+  justify-self: start;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #bdd6ff;
+  border-radius: 9px;
+  background: #f1f6ff;
+  color: #1454ad;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.diagnostic-card__action:hover {
+  border-color: #3478f6;
+  background: #e8f1ff;
+}
+
 .diagnostic-card-ok,
 .diagnostic-card-fresh {
   border-top-color: #12b76a;
