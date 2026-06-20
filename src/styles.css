@@ -5844,47 +5844,6 @@ pre {
   padding-left: 34px;
 }
 
-.routing-map-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin: 0 0 12px;
-  padding: 12px 14px;
-  border: 1px solid #bfd4fa;
-  border-radius: 15px;
-  background: linear-gradient(135deg, #f7fbff, #eff6ff);
-}
-
-.routing-map-summary.is-good {
-  border-color: #b8ead7;
-  background: linear-gradient(135deg, #f5fffb, #ecfbf5);
-}
-
-.routing-map-summary.has-warning {
-  border-color: #f5cf87;
-  background: linear-gradient(135deg, #fffaf0, #fff5dd);
-}
-
-.routing-map-summary > div {
-  display: grid;
-  gap: 2px;
-}
-
-.routing-map-summary strong {
-  color: #172238;
-}
-
-.routing-map-summary span {
-  color: #617087;
-  font-size: .82rem;
-}
-
-.routing-map-summary button {
-  flex: 0 0 auto;
-  min-height: 36px;
-}
-
 .routing-rssi-source {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, .45fr);
@@ -6803,11 +6762,6 @@ pre {
   .analysis-data-progress > small {
     grid-column: 1 / -1;
     max-width: none;
-  }
-
-  .routing-map-summary {
-    align-items: stretch;
-    flex-direction: column;
   }
 
   .routing-reading-help > div {

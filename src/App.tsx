@@ -944,28 +944,6 @@ function RoutingTopologyView({
   const focusCount = Math.max(0, focusNodeIds.size - 1);
   const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
   const allDeviceCount = Math.max(0, visibleNodes.length - 1);
-  const mapSummary = topologyFilter === "focus"
-    ? "Fokusansicht: Empfänger und Geräte mit Prüfbedarf."
-    : topologyFilter === "infrastructure"
-      ? "Infrastrukturansicht: Gateways, Router und Kandidaten."
-      : "Gesamtansicht: alle bekannten Funkknoten.";
-  const hasAttentionNodes = weakNodes.length > 0 || observedNodes.length > 0;
-  const quickMapFilterTarget = hasAttentionNodes
-    ? topologyFilter === "focus" ? "all" : "focus"
-    : topologyFilter === "infrastructure" ? "all" : "infrastructure";
-  const quickMapFilterLabel = hasAttentionNodes
-    ? topologyFilter === "focus" ? "Alle Geräte zeigen" : "Auffällige zeigen"
-    : topologyFilter === "infrastructure" ? "Alle Geräte zeigen" : "Empfänger zeigen";
-  const quickMapFilterHint = hasAttentionNodes
-    ? topologyFilter === "focus"
-      ? "Zeigt zusätzlich alle unauffälligen oder noch nicht bewertbaren Geräte in der Karte."
-      : "Reduziert die Karte auf Empfänger, Router sowie schwache oder zu beobachtende Geräte."
-    : topologyFilter === "infrastructure"
-      ? "Zeigt zusätzlich alle bekannten Geräte in der Karte."
-      : "Reduziert die Karte auf Gateways, Router und mögliche Router.";
-  const routeSummary = visibleEdges.length > 0
-    ? `${visibleEdges.length} belegte Funkwege aus Logs oder Parametern.`
-    : "Noch keine belegten Funkwege – gestrichelte Linien sind nur Orientierung.";
   const selectedRssi = nodeRssi(selectedNode);
   const selectedAdvice = (() => {
     if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
@@ -1081,21 +1059,6 @@ function RoutingTopologyView({
             : "Weiter außen bedeutet: Mindestens eine bekannte Messquelle sieht dieses Gerät schwächer. Prüfe danach, ob CCU, Sniffer oder beide Quellen betroffen sind."}
           {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Sie zeigt nur, dass der tatsächlich verwendete nächste Empfänger nicht aus den vorhandenen Daten abgeleitet werden konnte.
         </small>
-      </div>
-
-      <div className={`routing-map-summary ${measuredNodes.length === 0 ? "is-muted" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
-        <div>
-          <strong>{mapSummary}</strong>
-          <span>{routeSummary} Signalquelle: {rssiSourceShortLabel}.</span>
-        </div>
-        <button
-          type="button"
-          className="light-button"
-          onClick={() => setTopologyFilter(quickMapFilterTarget)}
-          title={quickMapFilterHint}
-        >
-          {quickMapFilterLabel}
-        </button>
       </div>
 
       {measuredNodes.length > 0 ? (
