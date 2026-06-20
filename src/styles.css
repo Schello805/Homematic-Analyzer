@@ -14,11 +14,22 @@
 body {
   margin: 0;
   min-width: 320px;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
+  max-width: 100%;
 }
 
 main {
@@ -5309,17 +5320,44 @@ pre {
     padding: 18px;
   }
 
+  .confirm-dialog,
+  .action-modal,
+  .backup-modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    min-width: 0;
+  }
+
+  .confirm-dialog__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-dialog__actions > button,
+  .backup-modal__actions > button {
+    width: 100%;
+  }
+
   .action-duty-donut {
     width: min(72vw, 250px);
   }
 
   .action-device-list article {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+  }
+
+  .action-device-list article span {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .action-device-list article small {
-    grid-column: 1 / -1;
     width: fit-content;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .modal-command {
@@ -6517,6 +6555,36 @@ pre {
   .sniffer-decision-grid {
     grid-template-columns: 1fr;
   }
+
+  .app-footer {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .app-footer > * {
+    min-width: 0;
+    width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .update-badge,
+  .footer-update-button {
+    width: 100%;
+  }
+
+  .evidence li,
+  .recommendation-banner,
+  .routing-truth-note,
+  .routing-technology-note,
+  .signal-improvement-plan {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .evidence-rssi-comparison {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 640px) {
@@ -6624,17 +6692,20 @@ pre {
     min-width: 620px;
   }
 
-  .routing-metrics {
-    grid-template-columns: 1fr 1fr;
+  .routing-map-wrap {
+    max-width: 100%;
+    overscroll-behavior-inline: contain;
+    touch-action: pan-x;
+  }
+
+  .routing-metrics,
+  .routing-signal-summary,
+  .routing-weak-devices > div {
+    grid-template-columns: 1fr;
   }
 
   .routing-insight small {
     padding-left: 0;
-  }
-
-  .routing-signal-summary,
-  .routing-weak-devices > div {
-    grid-template-columns: 1fr 1fr;
   }
 
   .routing-rssi-source {
