@@ -660,6 +660,7 @@ const initialNotificationSettings = {
   events: {
     critical: true,
     warning: false,
+    serviceOverheat: true,
     dutyCycle: true,
     battery: true,
     unreachable: true,
@@ -5707,9 +5708,10 @@ function App() {
                 {[
                   ["critical", "Kritische Punkte"],
                   ["warning", "Warnungen"],
+                  ["serviceOverheat", "Überhitzung am Gerät (ERROR_OVERHEAT)"],
                   ["dutyCycle", "Duty Cycle kritisch/hoch"],
                   ["battery", "Batterie niedrig"],
-                  ["unreachable", "Gerät nicht erreichbar"],
+                  ["unreachable", "Gerätekommunikation gestört / Gerät nicht erreichbar"],
                   ["configPending", "Konfiguration ausstehend"],
                   ["externalAccess", "Externe CCU-Zugriffe"],
                   ["sniffer", "Sniffer getrennt"],
@@ -5728,7 +5730,7 @@ function App() {
                   </label>
                 ))}
               </div>
-              <p className="muted">Neue Releases werden als eigener Hinweis verarbeitet, sobald der Release-Check ein Update belegt.</p>
+              <p className="muted">ERROR_OVERHEAT wird als kritische Überhitzungsmeldung behandelt. „Gerätekommunikation gestört“ wird über den Erreichbarkeits-Schalter gesteuert. Neue Releases werden als eigener Hinweis verarbeitet, sobald der Release-Check ein Update belegt.</p>
               </div>
             </details>
 

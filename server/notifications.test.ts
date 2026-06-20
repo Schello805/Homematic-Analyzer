@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTelegramMessage } from "./notifications.js";
+import { buildTelegramMessage, shouldNotifyCheck } from "./notifications.js";
 import type { AnalysisCheck, NotificationSettings } from "./types.js";
 
 const settings: NotificationSettings = {
@@ -41,4 +41,21 @@ test("maskiert dynamische Telegram-HTML-Inhalte", () => {
   const message = buildTelegramMessage(checks, settings);
   assert.match(message, /Gerät &lt;Test&gt;/);
   assert.match(message, /&amp; prüfen/);
+});
+
+test("respektiert die eigene Benachrichtigungseinstellung für ERROR_OVERHEAT", () => {
+  const check: AnalysisCheck = {
+    id: "service-messages",
+    title: "Servicemeldungen",
+    category: "Geräte",
+    status: "critical",
+    summary: "1 kritische Servicemeldung wurde gefunden.",
+    recommendation: "Überhitzung prüfen.",
+    access: ["ccu"],
+    evidence: [{ source: "CCU Servicemeldung", detail: "Windrad Osten:0: ERROR_OVERHEAT" }],
+    details: []
+  };
+
+  assert.equal(shouldNotifyCheck(check, { events: { critical: true, serviceOverheat: false } }), false);
+  assert.equal(shouldNotifyCheck(check, { events: { critical: false, serviceOverheat: true } }), true);
 });

@@ -82,6 +82,7 @@ const defaultNotificationSettings: NotificationSettings = {
   events: {
     critical: true,
     warning: false,
+    serviceOverheat: true,
     dutyCycle: true,
     battery: true,
     unreachable: true,
@@ -117,6 +118,7 @@ const notificationSettingsSchema = z.object({
   events: z.object({
     critical: z.boolean().optional(),
     warning: z.boolean().optional(),
+    serviceOverheat: z.boolean().optional(),
     dutyCycle: z.boolean().optional(),
     battery: z.boolean().optional(),
     unreachable: z.boolean().optional(),

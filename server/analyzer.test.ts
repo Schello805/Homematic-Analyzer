@@ -46,6 +46,30 @@ test("bewertet erreichbare WebUI mit gescheiterter XML-API als Hinweis statt Tot
   assert.equal(connection?.evidence.length, 2);
 });
 
+test("stuft ERROR_OVERHEAT in einer Servicemeldung als kritisch ein", () => {
+  const checks = createAnalysis(
+    { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },
+    undefined,
+    failedSnapshot({
+      reachable: true,
+      devices: [],
+      serviceMessages: [{ source: "CCU Servicemeldung", detail: "Windrad Osten:0: ERROR_OVERHEAT" }],
+      counters: {
+        devices: 1,
+        lowBattery: 0,
+        unreachable: 0,
+        configPending: 0,
+        serviceMessages: 1,
+        alarmMessages: 0
+      }
+    })
+  );
+  const serviceMessages = checks.find((check) => check.id === "service-messages");
+
+  assert.equal(serviceMessages?.status, "critical");
+  assert.match(serviceMessages?.recommendation ?? "", /Überhitzung zeitnah prüfen/);
+});
+
 test("erklärt, dass Browser und Analyzer unterschiedliche Netzwerkwege nutzen", () => {
   const checks = createAnalysis(
     { ccuHost: "192.168.1.22", ccuUser: "Admin", ccuPassword: "secret" },

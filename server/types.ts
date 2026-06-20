@@ -58,6 +58,7 @@ export type NotificationSettings = {
   events?: {
     critical?: boolean;
     warning?: boolean;
+    serviceOverheat?: boolean;
     dutyCycle?: boolean;
     battery?: boolean;
     unreachable?: boolean;

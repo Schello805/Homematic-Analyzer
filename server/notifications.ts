@@ -16,6 +16,9 @@ export type NotificationResult = {
 export function shouldNotifyCheck(check: AnalysisCheck, settings: NotificationSettings): boolean {
   const events = settings.events ?? { critical: true };
 
+  if (check.id === "service-messages" && check.evidence.some((item) => /\b(?:ERROR_)?OVERHEAT\b/i.test(item.detail))) {
+    return Boolean(events.serviceOverheat);
+  }
   if (check.status === "critical" && events.critical !== false) return true;
   if (check.status === "warning" && events.warning) return true;
   if (check.id === "duty-cycle" && events.dutyCycle && (check.status === "critical" || check.status === "warning")) return true;

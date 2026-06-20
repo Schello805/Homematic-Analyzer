@@ -307,6 +307,10 @@ function isReachabilityEvidence(evidence: Evidence): boolean {
   return /unreach|nicht erreichbar|kommunikation|communication|geratekommunikation gestort/.test(detail);
 }
 
+function isCriticalServiceEvidence(evidence: Evidence): boolean {
+  return /\b(?:ERROR_)?OVERHEAT\b/i.test(evidence.detail);
+}
+
 function isHmIpType(type?: string): boolean {
   return /^HmIP-/i.test(type ?? "");
 }
@@ -395,6 +399,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
   const lowBatteryDevices = ccu?.devices.filter((device) => device.lowBattery) ?? [];
   const unreachableDevices = ccu?.devices.filter((device) => device.unreachable) ?? [];
   const unreachableServiceMessages = ccu?.serviceMessages.filter(isReachabilityEvidence) ?? [];
+  const criticalServiceMessages = ccu?.serviceMessages.filter(isCriticalServiceEvidence) ?? [];
   const unreachableEvidence = unreachableDevices.length > 0
     ? evidenceFromDevices(ccu?.devices ?? [], (device) => device.unreachable)
     : unreachableServiceMessages.slice(0, 8);
@@ -556,15 +561,19 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       id: "service-messages",
       title: "Servicemeldungen",
       category: "Geräte",
-      status: hasCcuData ? (ccu?.counters.serviceMessages ? "warning" : "ok") : "unavailable",
+      status: hasCcuData ? (criticalServiceMessages.length > 0 ? "critical" : ccu?.counters.serviceMessages ? "warning" : "ok") : "unavailable",
       summary: hasCcuData
-        ? ccu?.counters.serviceMessages
+        ? criticalServiceMessages.length
+          ? `${criticalServiceMessages.length} kritische Servicemeldung${criticalServiceMessages.length === 1 ? "" : "en"} wurde${criticalServiceMessages.length === 1 ? "" : "n"} gefunden: ${criticalServiceMessages.slice(0, 3).map((message) => message.detail).join(", ")}.`
+          : ccu?.counters.serviceMessages
           ? `${ccu.counters.serviceMessages} Servicemeldungen wurden gefunden.`
           : "Keine Servicemeldungen gefunden."
         : "Servicemeldungen können ohne CCU-Daten nicht geprüft werden.",
       recommendation: hasCcuData
-        ? ccu?.counters.serviceMessages
-          ? "Prüfe die Meldungen in Ruhe. Kritisch werden nur echte Alarmmeldungen bewertet."
+        ? criticalServiceMessages.length
+          ? "Überhitzung zeitnah prüfen: Gerät abkühlen lassen, Stromversorgung und Einbauort kontrollieren. Bei wiederholter Meldung Herstellerhinweise beachten."
+          : ccu?.counters.serviceMessages
+          ? "Prüfe die Meldungen in Ruhe. Kommunikationsstörungen werden als Hinweis bewertet, Überhitzung dagegen kritisch."
           : "Kein Handlungsbedarf."
         : "CCU-Zugang und XML-API prüfen.",
       access: ["ccu"],
@@ -572,7 +581,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       details: [
         "Servicemeldungen sind direkte Belege der Zentrale, aber nicht automatisch kritisch.",
         "Sie helfen bei der Ursachenfindung, z. B. Batterie, Kommunikation oder Konfiguration.",
-        "Kritisch wird dieser Bereich erst über separate Alarmmeldungen oder belegte Einzelprüfungen."
+        "ERROR_OVERHEAT wird als kritische Einzelmeldung bewertet; Kommunikationsstörungen bleiben zunächst Hinweise."
       ]
     },
     {
