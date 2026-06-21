@@ -105,6 +105,15 @@ function extractAdditionalServiceTypes(evidence: Evidence[]) {
 
 type AnalysisSnifferMode = "base" | "with-sniffer";
 type SettingsSaveState = "ready" | "pending" | "saving" | "saved" | "failed";
+type AppPage = "analysis" | "dc" | "logs" | "diagnostics" | "setup" | "settings";
+
+function readSessionValue(key: string): string | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 type NotificationMonitorStatus = {
   enabled: boolean;
@@ -862,9 +871,24 @@ function RoutingTopologyView({
   onRefresh: () => void;
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState("");
-  const [includeSnifferRssi, setIncludeSnifferRssi] = useState(false);
-  const [topologyScope, setTopologyScope] = useState<"hmip" | "bidcos" | "combined">("hmip");
-  const [topologyFilter, setTopologyFilter] = useState<"focus" | "infrastructure" | "all">("focus");
+  const [includeSnifferRssi, setIncludeSnifferRssi] = useState(() => readSessionValue("homematic-analyzer-routing-rssi-source") === "with-sniffer");
+  const [topologyScope, setTopologyScope] = useState<"hmip" | "bidcos" | "combined">(() => {
+    const stored = readSessionValue("homematic-analyzer-routing-scope");
+    return stored === "bidcos" || stored === "combined" ? stored : "hmip";
+  });
+  const [topologyFilter, setTopologyFilter] = useState<"focus" | "infrastructure" | "all">(() => {
+    const stored = readSessionValue("homematic-analyzer-routing-filter");
+    return stored === "infrastructure" || stored === "all" ? stored : "focus";
+  });
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem("homematic-analyzer-routing-rssi-source", includeSnifferRssi ? "with-sniffer" : "base");
+      window.sessionStorage.setItem("homematic-analyzer-routing-scope", topologyScope);
+      window.sessionStorage.setItem("homematic-analyzer-routing-filter", topologyFilter);
+    } catch {
+    }
+  }, [includeSnifferRssi, topologyScope, topologyFilter]);
 
   if (!topology) {
     return (
@@ -1385,7 +1409,10 @@ function RoutingTopologyView({
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
-  const [currentPage, setCurrentPage] = useState<"analysis" | "dc" | "logs" | "diagnostics" | "setup" | "settings">("analysis");
+  const [currentPage, setCurrentPage] = useState<AppPage>(() => {
+    const stored = readSessionValue("homematic-analyzer-page");
+    return ["analysis", "dc", "logs", "diagnostics", "setup", "settings"].includes(stored ?? "") ? stored as AppPage : "analysis";
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const updateReloadStarted = useRef(false);
   const snifferAutoRefreshInFlight = useRef(false);
@@ -1401,7 +1428,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [analysisAutoRefreshing, setAnalysisAutoRefreshing] = useState(false);
   const [activeAnalysisStep, setActiveAnalysisStep] = useState(0);
-  const [activeCheck, setActiveCheck] = useState<string | null>(() => firstRelevantCheckId(loadSavedAnalysis()));
+  const [activeCheck, setActiveCheck] = useState<string | null>(() => readSessionValue("homematic-analyzer-active-check") ?? firstRelevantCheckId(loadSavedAnalysis()));
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<CheckStatus | null>(null);
   const [analysisSnifferMode, setAnalysisSnifferMode] = useState<AnalysisSnifferMode>("base");
   const [showHealthyChecks, setShowHealthyChecks] = useState(false);
@@ -1472,6 +1499,15 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [ccuTestLoading, ccuTestResult]);
 
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem("homematic-analyzer-page", currentPage);
+      if (activeCheck) window.sessionStorage.setItem("homematic-analyzer-active-check", activeCheck);
+      else window.sessionStorage.removeItem("homematic-analyzer-active-check");
+    } catch {
+    }
+  }, [currentPage, activeCheck]);
+
   const pageLabels = {
     analysis: "Analyse",
     dc: "DC-Analyzer",
@@ -1481,7 +1517,7 @@ function App() {
     setup: "Setup"
   } satisfies Record<typeof currentPage, string>;
 
-  function navigateTo(page: typeof currentPage) {
+  function navigateTo(page: AppPage) {
     setCurrentPage(page);
     setMobileMenuOpen(false);
   }
@@ -3063,11 +3099,6 @@ function App() {
         if (!isActive) return;
         setAnalysis(data);
         saveAnalysisSnapshot(data);
-        setActiveCheck((currentActiveCheck) => (
-          currentActiveCheck && data.checks.some((check) => check.id === currentActiveCheck)
-            ? currentActiveCheck
-            : data.checks.find((check) => check.status !== "ok")?.id ?? data.checks[0]?.id ?? null
-        ));
       } catch (caughtError) {
         console.warn("[Homematic Analyzer][Analysis] Auto-Refresh fehlgeschlagen", caughtError);
       } finally {
@@ -4728,7 +4759,7 @@ function App() {
                   <span aria-hidden="true">↻</span>
                   <div>
                     <strong>Auto-Refresh</strong>
-                    <small>in {dashboardRefreshSecondsLeft}s</small>
+                    <small>CCU-Werte in {dashboardRefreshSecondsLeft}s</small>
                   </div>
                 </div>
               )}
