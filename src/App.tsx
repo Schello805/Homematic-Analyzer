@@ -1119,7 +1119,11 @@ function RoutingTopologyView({
   };
   const selectedAdvice = (() => {
     if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
-    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Alle gemessenen Knoten liegen entsprechend ihrer Signalqualität: weiter außen bedeutet schwächer. Knoten ohne Messwert bleiben in der Warteschleife.";
+    if (selectedNode.role === "central") {
+      return routingMapMode === "paths"
+        ? "Die Zentrale ist der Bezugspunkt. Diese Ansicht zeichnet nur tatsächlich im Log belegte Gerätewege. Ohne Linie ist keine Route behauptet – nicht etwa eine fehlende Verbindung."
+        : "Die Zentrale ist der Bezugspunkt. Alle gemessenen Knoten liegen entsprechend ihrer Signalqualität: weiter außen bedeutet schwächer. Knoten ohne Messwert bleiben in der Warteschleife.";
+    }
     if (selectedNode.role === "gateway") return "Dieses Gerät ist ein eigener Funkempfänger. Es erweitert den Empfang, ist aber kein HmIP-Router.";
     if (selectedNode.role === "router") return "Dieses Gerät ist als HmIP-Router belegt. Es kann anderen HmIP-Geräten als Zwischenstation helfen.";
     const ccuState = rssiClass(selectedNode.ccuRssi);
@@ -1341,6 +1345,18 @@ function RoutingTopologyView({
               </marker>
             </defs>
             <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
+            {routingMapMode === "paths" && visibleEdges.length === 0 && (
+              <g className="routing-no-paths-panel" transform="translate(640 216)">
+                <rect width="304" height="164" rx="16" />
+                <text className="routing-no-paths-title" x="18" y="30">Noch keine Gerätewege belegt</text>
+                <text x="18" y="57">{gateways.length} Gateway{gateways.length === 1 ? "" : "s"} und {routers.length} Router sind erkannt.</text>
+                <text x="18" y="79">Ihre Konfiguration beweist aber noch nicht,</text>
+                <text x="18" y="97">welches Gerät sie gerade tatsächlich nutzt.</text>
+                <line x1="18" y1="114" x2="286" y2="114" />
+                <text className="routing-no-paths-action" x="18" y="137">Nächster Schritt: Gerät betätigen,</text>
+                <text className="routing-no-paths-action" x="18" y="154">Collector laufen lassen, Karte aktualisieren.</text>
+              </g>
+            )}
             {routingMapMode === "signals" && measuredNodes.length > 0 && (
               <>
                 <circle className="routing-zone-fill routing-zone-fill-weak" cx={center.x} cy={center.y} r="245" />

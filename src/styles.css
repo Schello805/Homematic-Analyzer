@@ -6529,6 +6529,34 @@ pre {
   stroke-width: 3px;
 }
 
+.routing-no-paths-panel rect {
+  fill: rgba(248, 251, 255, .96);
+  stroke: #cddcf0;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 5;
+}
+
+.routing-no-paths-panel text {
+  fill: #5d6f88;
+  font-size: 11px;
+}
+
+.routing-no-paths-panel line {
+  stroke: #d8e4f3;
+  stroke-width: 1;
+}
+
+.routing-no-paths-panel .routing-no-paths-title {
+  fill: #273d5e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.routing-no-paths-panel .routing-no-paths-action {
+  fill: #1550aa;
+  font-weight: 700;
+}
+
 .routing-zone-label.excellent {
   fill: #08764f;
 }
