@@ -1507,11 +1507,18 @@ function App() {
   const ccuDutyEvidence = ccuDutyCheck?.evidence.find((item) => item.source.includes("CCU"));
   const analysisSourceItems = useMemo(() => {
     if (!analysis) return [];
+    const diagnosticSource = (id: string) => diagnostics?.sources.find((source) => source.id === id);
+    const ccuDiagnostic = diagnosticSource("ccu");
+    const masterdataDiagnostic = diagnosticSource("masterdata");
+    const collectorDiagnostic = diagnosticSource("collector");
+    const snifferDiagnostic = diagnosticSource("sniffer");
     return [
       {
         id: "ccu",
         label: "CCU Live",
-        time: analysis.sources?.ccu,
+        time: diagnostics ? ccuDiagnostic?.lastSuccessAt : analysis.sources?.ccu,
+        diagnosticState: ccuDiagnostic?.status,
+        diagnosticDetail: ccuDiagnostic?.detail,
         required: true,
         purpose: "Geräte, Servicemeldungen, Batterien, Duty Cycle und RSSI der Zentrale.",
         action: "Status öffnen",
@@ -1520,7 +1527,9 @@ function App() {
       {
         id: "masterdata",
         label: "CCU-Script",
-        time: masterdataStatus?.receivedAt ?? masterdataStatus?.collectedAt ?? analysis.sources?.masterdata,
+        time: diagnostics ? masterdataDiagnostic?.lastSuccessAt : masterdataStatus?.receivedAt ?? masterdataStatus?.collectedAt ?? analysis.sources?.masterdata,
+        diagnosticState: masterdataDiagnostic?.status,
+        diagnosticDetail: masterdataDiagnostic?.detail,
         required: false,
         purpose: "Stammdaten, Gerätenamen, AskSin-Namensliste und zusätzliche CCU-Systemvariablen.",
         action: "Script anzeigen",
@@ -1529,7 +1538,9 @@ function App() {
       {
         id: "collector",
         label: "Shell-Collector",
-        time: analysis.sources?.collector,
+        time: diagnostics ? collectorDiagnostic?.lastSuccessAt : collectorStatus?.collectedAt ?? analysis.sources?.collector,
+        diagnosticState: collectorDiagnostic?.status,
+        diagnosticDetail: collectorDiagnostic?.detail,
         required: false,
         purpose: "CPU, RAM, Temperatur, Speicher, Backups, Logs und aktive Verbindungen.",
         action: "Collector öffnen",
@@ -1538,7 +1549,9 @@ function App() {
       {
         id: "sniffer",
         label: "AskSin-Sniffer",
-        time: analysis.sources?.sniffer,
+        time: diagnostics ? snifferDiagnostic?.lastSuccessAt : analysis.sources?.sniffer,
+        diagnosticState: snifferDiagnostic?.status,
+        diagnosticDetail: snifferDiagnostic?.detail,
         required: false,
         hidden: !form.snifferEnabled || analysisSnifferMode === "base",
         purpose: "Telegramme, Funklast, Rauschpegel und RSSI am Standort des Sniffers.",
@@ -1546,7 +1559,7 @@ function App() {
         actionType: "dc" as const
       }
     ].filter((item) => !item.hidden);
-  }, [analysis, form.snifferEnabled, analysisSnifferMode, masterdataStatus?.collectedAt, masterdataStatus?.receivedAt]);
+  }, [analysis, analysisSnifferMode, collectorStatus?.collectedAt, diagnostics, form.snifferEnabled, masterdataStatus?.collectedAt, masterdataStatus?.receivedAt]);
   const routingNodeByIdentifier = useMemo(() => {
     const map = new Map<string, RoutingTopologyNode>();
     for (const node of routingTopology?.nodes ?? []) {
@@ -3137,6 +3150,13 @@ function App() {
   }, [currentPage]);
 
   useEffect(() => {
+    if (currentPage !== "analysis") return;
+    void loadDiagnostics(false);
+    const interval = window.setInterval(() => void loadDiagnostics(false), 15000);
+    return () => window.clearInterval(interval);
+  }, [currentPage]);
+
+  useEffect(() => {
     if (!["settings", "analysis"].includes(currentPage) || !form.hmipRoutingEnabled) return;
     void loadRoutingStatus(false);
     const interval = window.setInterval(() => void loadRoutingStatus(false), 15000);
@@ -4709,8 +4729,10 @@ function App() {
             <div className="analysis-source-hub__grid">
               {analysisSourceItems.map((source) => {
                 const age = formatDataAge(source.time);
-                const state = source.time ? age.state : analysisDataRefreshing ? "loading" : source.required ? "missing" : "optional";
-                const statusText = source.time
+                const state = source.diagnosticState ?? (source.time ? age.state : analysisDataRefreshing ? "loading" : source.required ? "missing" : "optional");
+                const statusText = source.diagnosticState && ["error", "missing", "optional"].includes(source.diagnosticState)
+                  ? source.diagnosticDetail ?? "Serverstatus noch nicht verfügbar"
+                  : source.time
                   ? analysisDataRefreshing ? `letzter Stand ${age.label}` : age.label
                   : analysisDataRefreshing ? "wird gerade abgefragt"
                   : source.required ? "noch nicht empfangen" : "optional";
