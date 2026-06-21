@@ -226,6 +226,15 @@ function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?
     .sort((firstCandidate, secondCandidate) => secondCandidate.count - firstCandidate.count);
 }
 
+function externalAccessDisplayName(access: ExternalAccessCandidate) {
+  return access.hostname ? `${access.hostname} (${access.host})` : access.host;
+}
+
+function externalAccessSummary(access: ExternalAccessCandidate) {
+  const services = access.ports.map((port) => ccuServiceLabels[port] ?? `Port ${port}`).join(", ");
+  return `${externalAccessDisplayName(access)}: ${access.count} Verbindung${access.count === 1 ? "" : "en"} über ${services}`;
+}
+
 function findFirmwareDifferences(masterdata: CcuMasterdataPayload | undefined, ccu: CcuSnapshot | undefined): FirmwareDifference[] {
   const devices = masterdata?.devices?.length
     ? masterdata.devices
@@ -954,16 +963,16 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       summary: currentCollector
         ? publicExternalAccesses.length > 0
           ? publicExternalAccesses.length === 1
-            ? "1 öffentliche Gegenstelle ist aktiv mit CCU-Diensten verbunden."
-            : `${publicExternalAccesses.length} öffentliche Gegenstellen sind aktiv mit CCU-Diensten verbunden.`
+            ? `Öffentliche Gegenstelle mit CCU-Diensten verbunden: ${externalAccessSummary(publicExternalAccesses[0]!)}.`
+            : `${publicExternalAccesses.length} öffentliche Gegenstellen sind aktiv mit CCU-Diensten verbunden: ${publicExternalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${publicExternalAccesses.length > 2 ? " …" : ""}.`
           : busyExternalAccesses.length > 0
             ? busyExternalAccesses.length === 1
-              ? "1 lokales System hat viele gleichzeitige CCU-Verbindungen."
-              : `${busyExternalAccesses.length} lokale Systeme haben viele gleichzeitige CCU-Verbindungen.`
+              ? `Viele gleichzeitige CCU-Verbindungen: ${externalAccessSummary(busyExternalAccesses[0]!)}.`
+              : `${busyExternalAccesses.length} lokale Systeme haben viele gleichzeitige CCU-Verbindungen: ${busyExternalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${busyExternalAccesses.length > 2 ? " …" : ""}.`
             : externalAccesses.length > 0
               ? externalAccesses.length === 1
-                ? "1 lokales System greift aktuell auf CCU-Dienste zu."
-                : `${externalAccesses.length} lokale Systeme greifen aktuell auf CCU-Dienste zu.`
+                ? `Aktiver Zugriff auf CCU-Dienste: ${externalAccessSummary(externalAccesses[0]!)}.`
+                : `${externalAccesses.length} lokale Systeme greifen aktuell auf CCU-Dienste zu: ${externalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${externalAccesses.length > 2 ? " …" : ""}.`
               : "Keine aktiven Zugriffe anderer Systeme auf typische CCU-Dienste gefunden."
         : hasSsh
           ? "Der Check ist vorbereitet; es liegen aber noch keine Verbindungsdaten vom Collector vor."
@@ -982,7 +991,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       access: ["ssh", "external"],
       evidence: externalAccesses.map((access) => {
         const serviceHint = describeKnownService(access.hostname);
-        const displayName = access.hostname ? `${access.hostname} (${access.host})` : access.host;
+        const displayName = externalAccessDisplayName(access);
         const networkType = access.isPublic ? "öffentliche Adresse" : "Gerät im Heimnetz";
         const stateText = access.states.includes("ESTABLISHED")
           ? "mindestens eine Verbindung ist gerade aktiv"

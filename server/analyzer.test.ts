@@ -296,6 +296,9 @@ test("erklärt aktive CCU-Verbindungen mit lokal aufgelöstem Gerätenamen", () 
   ).find((check) => check.id === "external-access");
 
   assert.equal(externalAccess?.title, "Zugriffe anderer Systeme auf die CCU");
+  assert.match(externalAccess?.summary ?? "", /iobroker\.fritz\.box \(192\.168\.1\.78\)/);
+  assert.match(externalAccess?.summary ?? "", /2 Verbindungen/);
+  assert.match(externalAccess?.summary ?? "", /HmIP-RPC/);
   assert.match(externalAccess?.evidence[0]?.detail ?? "", /iobroker\.fritz\.box \(192\.168\.1\.78\)/);
   assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerätename deutet auf ioBroker hin/);
   assert.match(externalAccess?.evidence[0]?.detail ?? "", /HmIP-RPC/);

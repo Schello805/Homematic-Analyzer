@@ -82,3 +82,22 @@ test("benachrichtigt weitere Service-Kategorien nur nach eigener Auswahl", () =>
   assert.equal(shouldNotifyCheck(valveCheck, { events: { critical: true, serviceTypes: [] } }), false);
   assert.equal(shouldNotifyCheck(valveCheck, { events: { critical: false, serviceTypes: ["VALVE_ERROR_POSITION"] } }), true);
 });
+
+test("nennt bei externen CCU-Zugriffen die konkrete Quelle direkt in Telegram", () => {
+  const check: AnalysisCheck = {
+    id: "external-access",
+    title: "Zugriffe anderer Systeme auf die CCU",
+    category: "Anbindungen",
+    status: "warning",
+    summary: "Viele gleichzeitige CCU-Verbindungen: iobroker.fritz.box (192.168.1.78): 12 Verbindungen über HmIP-RPC, XML-API/ReGa.",
+    recommendation: "Polling reduzieren.",
+    access: ["ssh", "external"],
+    evidence: [],
+    details: []
+  };
+
+  const message = buildTelegramMessage([check], { events: { externalAccess: true } });
+  assert.match(message, /iobroker\.fritz\.box \(192\.168\.1\.78\)/);
+  assert.match(message, /12 Verbindungen/);
+  assert.match(message, /HmIP-RPC, XML-API\/ReGa/);
+});
