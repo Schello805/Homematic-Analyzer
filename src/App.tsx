@@ -1283,6 +1283,11 @@ function RoutingTopologyView({
 
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
+          {measuredNodes.length > 0 && (
+            <div className="routing-map-position-hint">
+              <strong>Signalposition:</strong> Mitte = sehr gut, weiter außen = schwächer. Die Position zeigt die RSSI-Klasse des gewählten Messorts, nicht den echten Raumplan.
+            </div>
+          )}
           <svg className="routing-map" viewBox="0 0 1000 600" role="img" aria-label="Grafische Funk-Topologie mit Signalqualität, Warteschleife und belegten Wegen">
             <defs>
               <radialGradient id="routing-map-background" cx="50%" cy="48%" r="72%">
@@ -1296,14 +1301,22 @@ function RoutingTopologyView({
             <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
             {measuredNodes.length > 0 && (
               <>
+                <circle className="routing-zone-fill routing-zone-fill-weak" cx={center.x} cy={center.y} r="245" />
+                <circle className="routing-zone-fill routing-zone-fill-medium" cx={center.x} cy={center.y} r="215" />
+                <circle className="routing-zone-fill routing-zone-fill-good" cx={center.x} cy={center.y} r="180" />
+                <circle className="routing-zone-fill routing-zone-fill-excellent" cx={center.x} cy={center.y} r="145" />
                 <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
                 <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
                 <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
                 <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
-                <text className="routing-zone-label excellent" x="608" y="163">sehr gut</text>
-                <text className="routing-zone-label good" x="640" y="136">gut</text>
-                <text className="routing-zone-label medium" x="671" y="109">beobachten</text>
-                <text className="routing-zone-label weak" x="699" y="82">schwach</text>
+                <g className="routing-zone-guide" transform="translate(52 72)">
+                  <rect width="174" height="100" rx="12" />
+                  <text className="routing-zone-guide-title" x="14" y="21">Signalposition</text>
+                  <text className="routing-zone-label excellent" x="14" y="41">innen · sehr gut</text>
+                  <text className="routing-zone-label good" x="14" y="57">danach · gut</text>
+                  <text className="routing-zone-label medium" x="14" y="73">weiter außen · beobachten</text>
+                  <text className="routing-zone-label weak" x="14" y="89">äußerer Ring · schwach</text>
+                </g>
               </>
             )}
 

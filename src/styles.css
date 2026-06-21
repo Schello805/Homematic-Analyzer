@@ -6381,6 +6381,41 @@ pre {
   stroke-dasharray: 4 8;
 }
 
+.routing-map-position-hint {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border: 1px solid #d7e4f5;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: #53657f;
+  font-size: .82rem;
+  line-height: 1.35;
+}
+
+.routing-map-position-hint strong {
+  color: #1f4c91;
+}
+
+.routing-zone-fill {
+  pointer-events: none;
+}
+
+.routing-zone-fill-excellent {
+  fill: rgba(8, 118, 79, .055);
+}
+
+.routing-zone-fill-good {
+  fill: rgba(32, 168, 120, .05);
+}
+
+.routing-zone-fill-medium {
+  fill: rgba(245, 158, 11, .055);
+}
+
+.routing-zone-fill-weak {
+  fill: rgba(227, 58, 50, .045);
+}
+
 .routing-orbit-router {
   stroke: #a9e4cd;
 }
@@ -6411,6 +6446,18 @@ pre {
   paint-order: stroke;
   stroke: #fff;
   stroke-width: 3px;
+}
+
+.routing-zone-guide rect {
+  fill: rgba(255, 255, 255, .9);
+  stroke: #dbe6f4;
+  stroke-width: 1;
+}
+
+.routing-zone-guide-title {
+  fill: #344968;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .routing-zone-label.excellent {
