@@ -1170,7 +1170,7 @@ function RoutingTopologyView({
       </div>
 
       <div className="routing-view-switch" role="group" aria-label="Ansicht der Routing-Karte auswählen">
-        <button type="button" className={routingMapMode === "paths" ? "is-active" : ""} onClick={() => setRoutingMapMode("paths")}>Funkwege <small>{visibleEdges.length} belegt</small></button>
+        <button type="button" className={routingMapMode === "paths" ? "is-active" : ""} onClick={() => setRoutingMapMode("paths")}>Funkwege <small>{visibleEdges.length > 0 ? `${visibleEdges.length} belegt` : "nicht nachweisbar"}</small></button>
         <button type="button" className={routingMapMode === "signals" ? "is-active" : ""} onClick={() => setRoutingMapMode("signals")}>Signalverteilung <small>{measuredNodes.length} Werte</small></button>
       </div>
 
@@ -1188,7 +1188,7 @@ function RoutingTopologyView({
         <span><strong>{visibleDeviceCount}</strong> Geräte</span>
         <span><strong>{gateways.length}</strong> Funk-Gateways</span>
         <span><strong>{routers.length}</strong> bestätigte HmIP-Router</span>
-        <span><strong>{visibleEdges.length}</strong> belegte Wege</span>
+        <span><strong>{visibleEdges.length > 0 ? visibleEdges.length : "–"}</strong> {visibleEdges.length > 0 ? "belegte Wege" : "aktive Wege nicht nachweisbar"}</span>
       </div>
 
       {(topologyScope === "bidcos" || topologyScope === "combined") && gateways.length === 0 ? (
@@ -1323,7 +1323,7 @@ function RoutingTopologyView({
           <strong>{visibleEdges.length > 0 ? `${visibleEdges.length} Funkweg${visibleEdges.length === 1 ? "" : "e"} sind belegt` : "Noch keine Funkwege belegt"}</strong>
           <span>{visibleEdges.length > 0
             ? "Blaue Linien zeigen ausschließlich im Log nachgewiesene Zwischenempfänger. Geräte ohne Linie sind nicht offline – ihr tatsächlich verwendeter Empfänger ist nur noch unbekannt."
-            : "Die Router- und Gateway-Rollen sind sichtbar. Betätige Geräte und lasse den HmIP-Collector laufen, damit echte Wege aus den HmIPServer-Logs ergänzt werden können."}</span>
+            : "Die CCU-Daten belegen Router- und Gateway-Rollen, liefern in dieser Installation aber keinen aktiven Gerätepfad. Das ist keine Aussage darüber, ob Routing verwendet wird. Die App zeigt deshalb keine geratenen Linien."}</span>
         </div>
       )}
 
@@ -1348,13 +1348,13 @@ function RoutingTopologyView({
             {routingMapMode === "paths" && visibleEdges.length === 0 && (
               <g className="routing-no-paths-panel" transform="translate(640 216)">
                 <rect width="304" height="164" rx="16" />
-                <text className="routing-no-paths-title" x="18" y="30">Noch keine Gerätewege belegt</text>
+                <text className="routing-no-paths-title" x="18" y="30">Aktive Wege nicht nachweisbar</text>
                 <text x="18" y="57">{gateways.length} Gateway{gateways.length === 1 ? "" : "s"} und {routers.length} Router sind erkannt.</text>
-                <text x="18" y="79">Ihre Konfiguration beweist aber noch nicht,</text>
-                <text x="18" y="97">welches Gerät sie gerade tatsächlich nutzt.</text>
+                <text x="18" y="79">Die aktuelle CCU-Schnittstelle liefert aber</text>
+                <text x="18" y="97">keinen belegbaren aktiven Gerätepfad.</text>
                 <line x1="18" y1="114" x2="286" y2="114" />
-                <text className="routing-no-paths-action" x="18" y="137">Nächster Schritt: Gerät betätigen,</text>
-                <text className="routing-no-paths-action" x="18" y="154">Collector laufen lassen, Karte aktualisieren.</text>
+                <text className="routing-no-paths-action" x="18" y="137">Für konkrete Maßnahmen nutze die</text>
+                <text className="routing-no-paths-action" x="18" y="154">Signalverteilung und den DC-Analyzer.</text>
               </g>
             )}
             {routingMapMode === "signals" && measuredNodes.length > 0 && (
