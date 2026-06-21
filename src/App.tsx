@@ -963,10 +963,14 @@ function RoutingTopologyView({
     ...routers.map((node) => node.id),
     ...candidates.map((node) => node.id)
   ]);
-  const graphNodes = visibleNodes.filter((node) => (
-    topologyFilter === "all"
-    || (topologyFilter === "infrastructure" ? infrastructureNodeIds.has(node.id) : focusNodeIds.has(node.id))
-  ));
+  const waitingNodes = visibleNodes.filter((node) => node.role !== "central" && nodeRssi(node) === undefined);
+  const waitingNodeIds = new Set(waitingNodes.map((node) => node.id));
+  const graphNodes = visibleNodes.filter((node) => {
+    if (node.role === "central") return true;
+    if (waitingNodeIds.has(node.id)) return false;
+    return topologyFilter === "all"
+      || (topologyFilter === "infrastructure" ? infrastructureNodeIds.has(node.id) : focusNodeIds.has(node.id));
+  });
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   const graphEdges = visibleEdges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
   const allTechnologyWeakNodes = topology.nodes.filter((node) => node.role !== "central" && rssiClass(nodeRssi(node)) === "weak");
@@ -975,11 +979,20 @@ function RoutingTopologyView({
   const graphRouters = graphNodes.filter((node) => node.role === "router");
   const graphCandidates = graphNodes.filter((node) => node.role === "candidate");
   const graphDevices = graphNodes.filter((node) => node.role === "device");
-  const hiddenGraphNodes = Math.max(0, visibleNodes.length - graphNodes.length);
-  const hoveredNode = graphNodes.find((node) => node.id === hoveredNodeId);
-  const center = { x: 500, y: 300 };
+  const hiddenGraphNodes = Math.max(0, visibleNodes.length - graphNodes.length - waitingNodes.length);
+  const hoveredNode = visibleNodes.find((node) => node.id === hoveredNodeId);
+  const center = { x: 380, y: 300 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
+  const waitingPositions = new Map<string, { x: number; y: number }>();
+  const visibleNonCentralNodes = visibleNodes.filter((node) => node.role !== "central");
+  const waitingPositionFor = (index: number) => ({
+    x: 730 + (index % 10) * 33,
+    y: 154 + Math.floor(Math.min(index, 29) / 10) * 33
+  });
+  visibleNonCentralNodes.forEach((node, index) => waitingPositions.set(node.id, waitingPositionFor(index)));
+  const waitingPreviewNodes = waitingNodes.slice(0, 30);
+  const allowsMotion = typeof window === "undefined" || !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const signalRadius = (node: RoutingTopologyNode, fallback: number) => {
     const rssi = nodeRssi(node);
@@ -1006,8 +1019,8 @@ function RoutingTopologyView({
   placeRing(graphCandidates, 195, -5, 195);
   placeRing(graphDevices, 270, -90);
 
-  const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
-  const hoverLabelX = hoveredPosition ? Math.max(130, Math.min(870, hoveredPosition.x)) : 0;
+  const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) ?? waitingPositions.get(hoveredNode.id) : undefined;
+  const hoverLabelX = hoveredPosition ? Math.max(130, Math.min(1050, hoveredPosition.x)) : 0;
   const hoverLabelY = hoveredPosition
     ? hoveredPosition.y < 82 ? hoveredPosition.y + 30 : hoveredPosition.y - 68
     : 0;
@@ -1219,7 +1232,7 @@ function RoutingTopologyView({
 
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
-          <svg className="routing-map" viewBox="0 0 1000 600" role="img" aria-label="Grafische Funk-Topologie mit Signalqualität und belegten Wegen">
+          <svg className="routing-map" viewBox="0 0 1180 600" role="img" aria-label="Grafische Funk-Topologie mit Signalqualität, Warteschleife und belegten Wegen">
             <defs>
               <radialGradient id="routing-map-background" cx="50%" cy="48%" r="72%">
                 <stop offset="0%" stopColor="#f5f9ff" />
@@ -1229,18 +1242,54 @@ function RoutingTopologyView({
                 <path d="M 0 0 L 8 4 L 0 8 z" fill="#3478f6" />
               </marker>
             </defs>
-            <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
+            <rect className="routing-map-background" x="1" y="1" width="1178" height="598" rx="20" />
             {measuredNodes.length > 0 && (
               <>
                 <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
                 <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
                 <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
                 <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
-                <text className="routing-zone-label excellent" x="658" y="163">sehr gut</text>
-                <text className="routing-zone-label good" x="690" y="136">gut</text>
-                <text className="routing-zone-label medium" x="722" y="109">beobachten</text>
-                <text className="routing-zone-label weak" x="753" y="82">schwach</text>
+                <text className="routing-zone-label excellent" x="538" y="163">sehr gut</text>
+                <text className="routing-zone-label good" x="570" y="136">gut</text>
+                <text className="routing-zone-label medium" x="602" y="109">beobachten</text>
+                <text className="routing-zone-label weak" x="633" y="82">schwach</text>
               </>
+            )}
+
+            {waitingNodes.length > 0 && (
+              <g className="routing-waiting-area">
+                <rect x="695" y="88" width="440" height="166" rx="18" />
+                <text className="routing-waiting-title" x="720" y="121">Warteschleife</text>
+                <text className="routing-waiting-copy" x="720" y="141">{waitingNodes.length} Geräte ohne Messwert</text>
+                {waitingPreviewNodes.map((node) => {
+                  const position = waitingPositions.get(node.id);
+                  if (!position) return null;
+                  const isSelected = selectedNode?.id === node.id;
+                  return (
+                    <g
+                      className={`routing-waiting-node ${isSelected ? "is-selected" : ""}`}
+                      key={`waiting-${node.id}`}
+                      transform={`translate(${position.x} ${position.y})`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onSelectNode(node.id)}
+                      onMouseEnter={() => setHoveredNodeId(node.id)}
+                      onMouseLeave={() => setHoveredNodeId("")}
+                      onFocus={() => setHoveredNodeId(node.id)}
+                      onBlur={() => setHoveredNodeId("")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
+                      }}
+                    >
+                      <circle r="9" />
+                      <title>{`${node.name} · noch kein Messwert`}</title>
+                    </g>
+                  );
+                })}
+                {waitingNodes.length > waitingPreviewNodes.length && (
+                  <text className="routing-waiting-more" x="1078" y="231" textAnchor="end">+{waitingNodes.length - waitingPreviewNodes.length}</text>
+                )}
+              </g>
             )}
 
             {graphEdges.map((edge) => {
@@ -1259,6 +1308,7 @@ function RoutingTopologyView({
               if (!position) return null;
               const isSelected = selectedNode?.id === node.id;
               const rssi = nodeRssi(node);
+              const waitingStart = waitingPositions.get(node.id);
               return (
                 <g
                   className={`routing-node ${nodeClass(node)} ${isSelected ? "is-selected" : ""}`}
@@ -1275,6 +1325,16 @@ function RoutingTopologyView({
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
                 >
+                  {allowsMotion && node.role !== "central" && waitingStart && (
+                    <animateTransform
+                      attributeName="transform"
+                      type="translate"
+                      from={`${waitingStart.x} ${waitingStart.y}`}
+                      to={`${position.x} ${position.y}`}
+                      dur="650ms"
+                      fill="remove"
+                    />
+                  )}
                   {rssiClass(rssi) === "weak" && <circle className="routing-weak-pulse" r={node.role === "router" ? 28 : 22} />}
                   {rssi !== undefined && (
                     <circle
@@ -1318,6 +1378,7 @@ function RoutingTopologyView({
             <span><i className="legend-signal medium" /> beobachten</span>
             <span><i className="legend-signal weak" /> schwach</span>
             <span><i className="legend-line is-confirmed" /> belegter Funkweg</span>
+            {waitingNodes.length > 0 && <span><i className="legend-dot is-waiting" /> Warteschleife: kein Messwert</span>}
           </div>
         </div>
 
