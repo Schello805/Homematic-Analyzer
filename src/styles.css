@@ -6393,29 +6393,6 @@ pre {
   fill: currentColor;
 }
 
-.routing-edge.is-unknown {
-  stroke: #cbd5e1;
-  stroke-width: 1.4;
-  stroke-dasharray: 3 7;
-  opacity: .85;
-}
-
-.routing-edge.is-router-config {
-  stroke: #22a879;
-  color: #22a879;
-  stroke-width: 2;
-  opacity: .84;
-  stroke-dasharray: 5 8;
-}
-
-.routing-edge.is-gateway {
-  stroke: #06a3a8;
-  color: #06a3a8;
-  stroke-width: 2.5;
-  opacity: .84;
-  stroke-dasharray: 7 7;
-}
-
 .routing-edge.is-confirmed {
   stroke: #3478f6;
   color: #3478f6;
@@ -6749,10 +6726,6 @@ pre {
 .legend-line {
   width: 20px;
   border-top: 2px solid #3478f6;
-}
-
-.legend-line.is-unknown {
-  border-top: 1px dashed #9aa9bd;
 }
 
 @media (prefers-reduced-motion: reduce) {

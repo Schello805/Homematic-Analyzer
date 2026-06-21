@@ -185,3 +185,11 @@ test("erfindet ohne Routingbeleg keine aktiven Pfade", () => {
   assert.equal(topology.metrics.confirmedRoutes, 0);
   assert.equal(topology.state, "partial");
 });
+
+test("leitet aus allgemeinen Router-Erwähnungen keinen Funkweg ab", () => {
+  const topology = buildRoutingTopology(masterdata, [
+    "device 000A1B2C3D4E55 ROUTER_MODULE_ENABLED true related device 0001D3C99C4EAA"
+  ]);
+
+  assert.equal(topology.edges.length, 0);
+});

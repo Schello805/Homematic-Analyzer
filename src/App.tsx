@@ -922,7 +922,6 @@ function RoutingTopologyView({
   const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? central;
   const selectedRoute = selectedNode ? visibleEdges.find((edge) => edge.source === selectedNode.id) : undefined;
   const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
-  const rssiSource = includeSnifferRssi ? "combined" : "ccu";
   const nodeRssi = (node?: RoutingTopologyNode) => {
     if (!node) return undefined;
     if (!includeSnifferRssi) return node.ccuRssi;
@@ -1021,7 +1020,6 @@ function RoutingTopologyView({
   const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
   const allDeviceCount = Math.max(0, visibleNodes.length - 1);
   const selectedRssi = nodeRssi(selectedNode);
-  const guidanceNodeId = hoveredNode?.id ?? (selectedNode?.role !== "central" ? selectedNode?.id : undefined);
   const nodeRoleLabel = (node: RoutingTopologyNode) => {
     if (node.role === "central") return "Zentrale";
     if (node.role === "gateway") return "Funk-Gateway / Access Point";
@@ -1031,7 +1029,7 @@ function RoutingTopologyView({
   };
   const selectedAdvice = (() => {
     if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
-    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Geräte weiter außen werden schwächer empfangen oder haben noch keinen Messwert.";
+    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Normale Geräte weiter außen werden schwächer empfangen oder haben noch keinen Messwert. Gateways und Router liegen für die Übersicht bewusst innen; ihr Signal zeigt der farbige Ring.";
     if (selectedNode.role === "gateway") return "Dieses Gerät ist ein eigener Funkempfänger. Es erweitert den Empfang, ist aber kein HmIP-Router.";
     if (selectedNode.role === "router") return "Dieses Gerät ist als HmIP-Router belegt. Es kann anderen HmIP-Geräten als Zwischenstation helfen.";
     const ccuState = rssiClass(selectedNode.ccuRssi);
@@ -1061,7 +1059,7 @@ function RoutingTopologyView({
           <p className="eyebrow">Routing-Karte</p>
           <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
           <InfoTooltip label="Karte lesen">
-            Gateways sind eigene Funkempfänger, nicht automatisch Router. Durchgezogen bedeutet: Der Funkweg ist belegt. Gestrichelt ist nur eine Darstellungshilfe; der tatsächlich verwendete Empfänger ist noch unbekannt.
+            Die Position normaler Geräte richtet sich nach dem gewählten RSSI-Wert. Gateways und Router liegen für die Übersicht innen; ihr Signal zeigt der farbige Ring. Eine blaue Linie erscheint ausschließlich bei einem im Log ausdrücklich belegten Funkweg.
           </InfoTooltip>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
@@ -1079,9 +1077,9 @@ function RoutingTopologyView({
         <summary>So liest du diese Karte</summary>
         <div>
           <span><b>Abstand zur Mitte:</b> weiter außen = schwächerer gemessener RSSI-Wert der gewählten Quelle.</span>
-          <span><b>Durchgezogene Linie:</b> belegter Empfänger oder konfigurierter Router. Gestrichelt ist nur Orientierung, kein Fehler.</span>
+          <span><b>Blaue Linie:</b> durch einen Logeintrag belegter Funkweg. Ohne Linie ist der tatsächliche Empfänger unbekannt.</span>
           <span><b>Grün/gelb/rot:</b> Signalbewertung. Rot bedeutet zuerst prüfen, nicht automatisch „Gerät defekt“.</span>
-          <span><b>G/R:</b> Gateway oder Router. Gateways sind Empfänger, aber nicht automatisch HmIP-Router.</span>
+          <span><b>G/R:</b> Gateway oder Router. Diese Knoten liegen für die Übersicht innen; ihr farbiger Ring zeigt die Signalqualität.</span>
         </div>
       </details>
 
@@ -1230,9 +1228,6 @@ function RoutingTopologyView({
               <marker id="routing-arrow-confirmed" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
                 <path d="M 0 0 L 8 4 L 0 8 z" fill="#3478f6" />
               </marker>
-              <marker id="routing-arrow-receiver" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
-                <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#20a878" />
-              </marker>
             </defs>
             <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
             {measuredNodes.length > 0 && (
@@ -1247,24 +1242,6 @@ function RoutingTopologyView({
                 <text className="routing-zone-label weak" x="753" y="82">schwach</text>
               </>
             )}
-
-            {graphNodes.filter((node) => node.id === guidanceNodeId && node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id) && nodeRssi(node) !== undefined).map((node) => {
-              const position = positions.get(node.id);
-              if (!position) return null;
-              return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
-            })}
-
-            {graphRouters.map((node) => {
-              const position = positions.get(node.id);
-              if (!position) return null;
-              return <line className="routing-edge is-router-config" key={`router-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} markerEnd="url(#routing-arrow-receiver)" />;
-            })}
-
-            {graphGateways.map((node) => {
-              const position = positions.get(node.id);
-              if (!position) return null;
-              return <line className="routing-edge is-gateway" key={`gateway-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} markerEnd="url(#routing-arrow-receiver)" />;
-            })}
 
             {graphEdges.map((edge) => {
               const source = positions.get(edge.source);
@@ -1340,8 +1317,7 @@ function RoutingTopologyView({
             <span><i className="legend-signal good" /> Signal gut</span>
             <span><i className="legend-signal medium" /> beobachten</span>
             <span><i className="legend-signal weak" /> schwach</span>
-            <span><i className="legend-line is-confirmed" /> Datenfluss zum Empfänger</span>
-            <span><i className="legend-line is-unknown" /> Darstellungshilfe · Funkweg unbekannt</span>
+            <span><i className="legend-line is-confirmed" /> belegter Funkweg</span>
           </div>
         </div>
 

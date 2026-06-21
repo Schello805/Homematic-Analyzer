@@ -86,9 +86,8 @@ function parseExplicitRoute(
   if (orderedIdentifiers.length < 2) return undefined;
 
   const viaMatch = normalized.match(/\b(?:VIA(?:\s+ROUTER)?|ROUTER|HOP|REPEATER)\b[^A-Z0-9]*([A-Z0-9_-]{5,24})/);
-  const targetIdentifier = viaMatch
-    ? findKnownIdentifier(viaMatch[1], identifiers)
-    : orderedIdentifiers[1];
+  if (!viaMatch) return undefined;
+  const targetIdentifier = findKnownIdentifier(viaMatch[1], identifiers);
   const sourceIdentifier = orderedIdentifiers.find((identifier) => identifier !== targetIdentifier);
 
   if (!sourceIdentifier || !targetIdentifier) return undefined;
