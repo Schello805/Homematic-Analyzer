@@ -4056,6 +4056,43 @@ pre {
   font-size: 0.84rem;
 }
 
+.ccu-test-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid #b2ddff;
+  border-radius: 16px;
+  padding: 12px;
+  background: #eff8ff;
+  color: #1849a9;
+}
+
+.ccu-test-progress > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ccu-test-progress span:not(.loading-spinner) {
+  color: #475467;
+  font-size: 0.84rem;
+}
+
+.loading-spinner {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 3px solid #b2ddff;
+  border-top-color: #2e90fa;
+  border-radius: 50%;
+  animation: ccu-test-spin 0.8s linear infinite;
+}
+
+@keyframes ccu-test-spin {
+  to { transform: rotate(360deg); }
+}
+
 .ccu-test-result {
   display: grid;
   gap: 10px;

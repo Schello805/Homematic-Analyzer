@@ -1382,6 +1382,8 @@ function App() {
   const notificationSettingsHydrated = useRef(false);
   const savedNotificationSettings = useRef(JSON.stringify(initialNotificationSettings));
   const aiLogResultRef = useRef<HTMLElement | null>(null);
+  const ccuTestProgressRef = useRef<HTMLDivElement | null>(null);
+  const ccuTestResultRef = useRef<HTMLDivElement | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(loadSavedAnalysis);
   const [loading, setLoading] = useState(false);
   const [analysisAutoRefreshing, setAnalysisAutoRefreshing] = useState(false);
@@ -1449,6 +1451,13 @@ function App() {
     url: repositoryUrl
   });
   const [centralUpdateStatus, setCentralUpdateStatus] = useState<UpdateStatus | null>(null);
+
+  useEffect(() => {
+    const target = ccuTestLoading ? ccuTestProgressRef.current : ccuTestResult ? ccuTestResultRef.current : null;
+    if (!target) return;
+    const timeout = window.setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    return () => window.clearTimeout(timeout);
+  }, [ccuTestLoading, ccuTestResult]);
 
   const pageLabels = {
     analysis: "Analyse",
@@ -3529,8 +3538,17 @@ function App() {
                 </button>
                 <span>Prüft nacheinander Netzwerk, WebUI, Anmeldung, XML-API und Geräteliste.</span>
               </div>
+              {ccuTestLoading && (
+                <div className="ccu-test-progress" ref={ccuTestProgressRef} role="status" aria-live="polite">
+                  <span className="loading-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>CCU-Live-Test läuft</strong>
+                    <span>Netzwerk, WebUI, Anmeldung, XML-API und Geräteliste werden nacheinander geprüft. Das kann bei größeren Zentralen einige Sekunden dauern.</span>
+                  </div>
+                </div>
+              )}
               {ccuTestResult && (
-                <div className={`ccu-test-result ${ccuTestResult.reachable ? "is-ok" : "has-error"}`}>
+                <div className={`ccu-test-result ${ccuTestResult.reachable ? "is-ok" : "has-error"}`} ref={ccuTestResultRef} tabIndex={-1}>
                   <div>
                     <strong>{ccuTestResult.reachable ? "CCU-Daten vollständig lesbar" : ccuTestResult.webUiReachable ? "WebUI erreichbar, XML-API noch nicht nutzbar" : "CCU vom Analyzer aus nicht erreichbar"}</strong>
                     <span>{ccuTestResult.reachable ? `${ccuTestResult.devices} Geräte gelesen.` : ccuTestResult.error ?? "Siehe Prüfschritte."}</span>
