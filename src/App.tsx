@@ -947,7 +947,7 @@ function RoutingTopologyView({
   const graphDevices = graphNodes.filter((node) => node.role === "device");
   const hiddenGraphNodes = Math.max(0, visibleNodes.length - graphNodes.length);
   const hoveredNode = graphNodes.find((node) => node.id === hoveredNodeId);
-  const center = { x: 450, y: 260 };
+  const center = { x: 500, y: 300 };
   const positions = new Map<string, { x: number; y: number }>();
   positions.set("central", center);
 
@@ -960,10 +960,10 @@ function RoutingTopologyView({
     return Math.min(245, 215 + ((-85 - rssi) / 20) * 30);
   };
 
-  const placeRing = (nodes: RoutingTopologyNode[], fallbackRadius: number, offset = -90) => {
+  const placeRing = (nodes: RoutingTopologyNode[], fallbackRadius: number, offset = -90, fixedRadius?: number) => {
     nodes.forEach((node, index) => {
       const angle = ((offset + (360 / Math.max(nodes.length, 1)) * index) * Math.PI) / 180;
-      const radius = signalRadius(node, fallbackRadius);
+      const radius = fixedRadius ?? signalRadius(node, fallbackRadius);
       positions.set(node.id, {
         x: center.x + Math.cos(angle) * radius,
         y: center.y + Math.sin(angle) * radius
@@ -971,15 +971,15 @@ function RoutingTopologyView({
     });
   };
 
-  placeRing(graphGateways, 95, -135);
-  placeRing(graphRouters, 130, -45);
-  placeRing(graphCandidates, 185, -75);
-  placeRing(graphDevices, 232, -88);
+  placeRing(graphGateways, 105, -145, 105);
+  placeRing(graphRouters, 150, -65, 150);
+  placeRing(graphCandidates, 195, -5, 195);
+  placeRing(graphDevices, 270, -90);
 
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) : undefined;
-  const hoverLabelX = hoveredPosition ? Math.max(100, Math.min(800, hoveredPosition.x)) : 0;
+  const hoverLabelX = hoveredPosition ? Math.max(130, Math.min(870, hoveredPosition.x)) : 0;
   const hoverLabelY = hoveredPosition
-    ? hoveredPosition.y < 70 ? hoveredPosition.y + 30 : hoveredPosition.y - 42
+    ? hoveredPosition.y < 82 ? hoveredPosition.y + 30 : hoveredPosition.y - 68
     : 0;
   const scopeLabel = topologyScope === "hmip"
     ? "Homematic IP"
@@ -990,6 +990,14 @@ function RoutingTopologyView({
   const infrastructureCount = Math.max(0, infrastructureNodeIds.size - 1);
   const allDeviceCount = Math.max(0, visibleNodes.length - 1);
   const selectedRssi = nodeRssi(selectedNode);
+  const guidanceNodeId = hoveredNode?.id ?? (selectedNode?.role !== "central" ? selectedNode?.id : undefined);
+  const nodeRoleLabel = (node: RoutingTopologyNode) => {
+    if (node.role === "central") return "Zentrale";
+    if (node.role === "gateway") return "Funk-Gateway / Access Point";
+    if (node.role === "router") return "Bestätigter HmIP-Router";
+    if (node.role === "candidate") return "Möglicher Router-Kandidat";
+    return node.protocol === "hmip" ? "HmIP-Gerät" : "Homematic-Gerät";
+  };
   const selectedAdvice = (() => {
     if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
     if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Geräte weiter außen werden schwächer empfangen oder haben noch keinen Messwert.";
@@ -1175,10 +1183,20 @@ function RoutingTopologyView({
         {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} unauffällige oder noch nicht bewertbare Knoten sind ausgeblendet.</small>}
       </div>
 
+      <div className="routing-map-guide" aria-label="Kurz erklärt">
+        <span><b>1</b> Mitte = Zentrale</span>
+        <span><b>2</b> Außen = schwächerer Messwert</span>
+        <span><b>3</b> Knoten anklicken für Details</span>
+      </div>
+
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
-          <svg className="routing-map" viewBox="0 0 900 520" role="img" aria-label="Grafische HmIP-Routing-Topologie">
+          <svg className="routing-map" viewBox="0 0 1000 600" role="img" aria-label="Grafische Funk-Topologie mit Signalqualität und belegten Wegen">
             <defs>
+              <radialGradient id="routing-map-background" cx="50%" cy="48%" r="72%">
+                <stop offset="0%" stopColor="#f5f9ff" />
+                <stop offset="100%" stopColor="#ffffff" />
+              </radialGradient>
               <marker id="routing-arrow-confirmed" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
                 <path d="M 0 0 L 8 4 L 0 8 z" fill="#3478f6" />
               </marker>
@@ -1186,20 +1204,21 @@ function RoutingTopologyView({
                 <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#20a878" />
               </marker>
             </defs>
+            <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
             {measuredNodes.length > 0 && (
               <>
                 <circle className="routing-orbit routing-orbit-excellent" cx={center.x} cy={center.y} r="145" />
                 <circle className="routing-orbit routing-orbit-good" cx={center.x} cy={center.y} r="180" />
                 <circle className="routing-orbit routing-orbit-medium" cx={center.x} cy={center.y} r="215" />
                 <circle className="routing-orbit routing-orbit-weak" cx={center.x} cy={center.y} r="245" />
-                <text className="routing-zone-label excellent" x="608" y="123">sehr gut</text>
-                <text className="routing-zone-label good" x="640" y="96">gut</text>
-                <text className="routing-zone-label medium" x="671" y="69">beobachten</text>
-                <text className="routing-zone-label weak" x="699" y="42">schwach</text>
+                <text className="routing-zone-label excellent" x="658" y="163">sehr gut</text>
+                <text className="routing-zone-label good" x="690" y="136">gut</text>
+                <text className="routing-zone-label medium" x="722" y="109">beobachten</text>
+                <text className="routing-zone-label weak" x="753" y="82">schwach</text>
               </>
             )}
 
-            {graphNodes.filter((node) => node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id) && nodeRssi(node) !== undefined).map((node) => {
+            {graphNodes.filter((node) => node.id === guidanceNodeId && node.role !== "central" && node.role !== "router" && node.role !== "gateway" && !confirmedSourceIds.has(node.id) && nodeRssi(node) !== undefined).map((node) => {
               const position = positions.get(node.id);
               if (!position) return null;
               return <line className="routing-edge is-unknown" key={`unknown-${node.id}`} x1={position.x} y1={position.y} x2={center.x} y2={center.y} />;
@@ -1267,19 +1286,13 @@ function RoutingTopologyView({
             })}
 
             {hoveredNode && hoveredPosition && (
-              <g className="routing-hover-label" transform={`translate(${hoverLabelX - 105} ${hoverLabelY})`} pointerEvents="none">
-                <rect width="210" height="38" rx="9" />
-                <text x="105" y="17" textAnchor="middle">{hoveredNode.name}</text>
-                <text className="routing-hover-signal" x="105" y="31" textAnchor="middle">
+              <g className="routing-hover-label" transform={`translate(${hoverLabelX - 120} ${hoverLabelY})`} pointerEvents="none">
+                <rect width="240" height="58" rx="10" />
+                <text x="120" y="17" textAnchor="middle">{hoveredNode.name}</text>
+                <text className="routing-hover-role" x="120" y="32" textAnchor="middle">{nodeRoleLabel(hoveredNode)}</text>
+                <text className="routing-hover-signal" x="120" y="47" textAnchor="middle">
                   {signalDetailForNode(hoveredNode)}
                 </text>
-              </g>
-            )}
-
-            {selectedNode && selectedNode.role !== "central" && positions.get(selectedNode.id) && (
-              <g className="routing-selected-label" transform={`translate(${Math.max(110, Math.min(790, positions.get(selectedNode.id)!.x)) - 110} ${Math.max(18, Math.min(480, positions.get(selectedNode.id)!.y + 24))})`} pointerEvents="none">
-                <rect width="220" height="30" rx="9" />
-                <text x="110" y="19" textAnchor="middle">{selectedNode.name}</text>
               </g>
             )}
           </svg>
