@@ -920,6 +920,9 @@ function RoutingTopologyView({
     const stored = readSessionValue("homematic-analyzer-routing-filter");
     return stored === "infrastructure" || stored === "all" ? stored : "focus";
   });
+  const [routingMapMode, setRoutingMapMode] = useState<"paths" | "signals">(() => (
+    readSessionValue("homematic-analyzer-routing-map-mode") === "signals" ? "signals" : "paths"
+  ));
   const previousMeasuredNodeIds = useRef<Set<string>>(new Set());
   const [arrivingNodeIds, setArrivingNodeIds] = useState<Set<string>>(new Set());
 
@@ -928,9 +931,10 @@ function RoutingTopologyView({
       window.sessionStorage.setItem("homematic-analyzer-routing-rssi-source", includeSnifferRssi ? "with-sniffer" : "base");
       window.sessionStorage.setItem("homematic-analyzer-routing-scope", topologyScope);
       window.sessionStorage.setItem("homematic-analyzer-routing-filter", topologyFilter);
+      window.sessionStorage.setItem("homematic-analyzer-routing-map-mode", routingMapMode);
     } catch {
     }
-  }, [includeSnifferRssi, topologyScope, topologyFilter]);
+  }, [includeSnifferRssi, topologyScope, topologyFilter, routingMapMode]);
 
   useEffect(() => {
     const measuredNodeIds = new Set((topology?.nodes ?? [])
@@ -1016,12 +1020,21 @@ function RoutingTopologyView({
   ]);
   const waitingNodes = visibleNodes.filter((node) => node.role !== "central" && nodeRssi(node) === undefined);
   const waitingNodeIds = new Set(waitingNodes.map((node) => node.id));
-  const graphNodes = visibleNodes.filter((node) => {
+  const signalGraphNodes = visibleNodes.filter((node) => {
     if (node.role === "central") return true;
     if (waitingNodeIds.has(node.id)) return false;
     return topologyFilter === "all"
       || (topologyFilter === "infrastructure" ? infrastructureNodeIds.has(node.id) : focusNodeIds.has(node.id));
   });
+  const pathNodeIds = new Set([
+    "central",
+    ...gateways.map((node) => node.id),
+    ...routers.map((node) => node.id),
+    ...visibleEdges.flatMap((edge) => [edge.source, edge.target])
+  ]);
+  const graphNodes = routingMapMode === "paths"
+    ? visibleNodes.filter((node) => pathNodeIds.has(node.id))
+    : signalGraphNodes;
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   const graphEdges = visibleEdges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
   const allTechnologyWeakNodes = topology.nodes.filter((node) => node.role !== "central" && rssiClass(nodeRssi(node)) === "weak");
@@ -1030,7 +1043,7 @@ function RoutingTopologyView({
   const graphRouters = graphNodes.filter((node) => node.role === "router");
   const graphCandidates = graphNodes.filter((node) => node.role === "candidate");
   const graphDevices = graphNodes.filter((node) => node.role === "device");
-  const hiddenGraphNodes = Math.max(0, visibleNodes.length - graphNodes.length - waitingNodes.length);
+  const hiddenGraphNodes = Math.max(0, visibleNodes.length - signalGraphNodes.length - waitingNodes.length);
   const hoveredNode = visibleNodes.find((node) => node.id === hoveredNodeId);
   const center = { x: 450, y: 300 };
   const positions = new Map<string, { x: number; y: number }>();
@@ -1065,10 +1078,23 @@ function RoutingTopologyView({
     });
   };
 
-  placeRing(graphGateways, 145, -145);
-  placeRing(graphRouters, 145, -65);
-  placeRing(graphCandidates, 145, -5);
-  placeRing(graphDevices, 270, -90);
+  if (routingMapMode === "paths") {
+    positions.set("central", { x: 150, y: 300 });
+    const pathReceivers = [...graphGateways, ...graphRouters];
+    const pathDevices = graphNodes.filter((node) => node.role === "device" || node.role === "candidate");
+    const placeColumn = (nodes: RoutingTopologyNode[], x: number) => {
+      const spacing = Math.min(110, 420 / Math.max(nodes.length - 1, 1));
+      const startY = 300 - ((nodes.length - 1) * spacing) / 2;
+      nodes.forEach((node, index) => positions.set(node.id, { x, y: startY + index * spacing }));
+    };
+    placeColumn(pathReceivers, 485);
+    placeColumn(pathDevices, 790);
+  } else {
+    placeRing(graphGateways, 145, -145);
+    placeRing(graphRouters, 145, -65);
+    placeRing(graphCandidates, 145, -5);
+    placeRing(graphDevices, 270, -90);
+  }
 
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) ?? waitingPositions.get(hoveredNode.id) : undefined;
   const hoverLabelX = hoveredPosition ? Math.max(130, Math.min(870, hoveredPosition.x)) : 0;
@@ -1121,9 +1147,11 @@ function RoutingTopologyView({
       <div className="routing-topology-header">
         <div>
           <p className="eyebrow">Routing-Karte</p>
-          <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
+          <h4>{routingMapMode === "paths" ? `${scopeLabel}: belegte Funkwege` : `${scopeLabel}: Signalverteilung`}</h4>
           <InfoTooltip label="Karte lesen">
-            Die Position jedes gemessenen Knotens richtet sich nach dem gewählten RSSI-Wert: weiter außen bedeutet schwächer. Knoten ohne Messwert bleiben in der Warteschleife. Eine blaue Linie erscheint ausschließlich bei einem im Log ausdrücklich belegten Funkweg.
+            {routingMapMode === "paths"
+              ? "Diese Ansicht zeigt nur explizit durch Logs belegte Gerätewege. Ohne Log-Beleg wird keine Verbindung zur Zentrale oder einem Router erfunden."
+              : "Die Position jedes gemessenen Knotens richtet sich nach dem gewählten RSSI-Wert: weiter außen bedeutet schwächer. Eine blaue Linie erscheint ausschließlich bei einem im Log ausdrücklich belegten Funkweg."}
           </InfoTooltip>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
@@ -1135,6 +1163,11 @@ function RoutingTopologyView({
         <button type="button" className={topologyScope === "hmip" ? "is-active" : ""} onClick={() => setTopologyScope("hmip")}>HmIP</button>
         <button type="button" className={topologyScope === "bidcos" ? "is-active" : ""} onClick={() => setTopologyScope("bidcos")}>Homematic</button>
         <button type="button" className={topologyScope === "combined" ? "is-active" : ""} onClick={() => setTopologyScope("combined")}>Beides</button>
+      </div>
+
+      <div className="routing-view-switch" role="group" aria-label="Ansicht der Routing-Karte auswählen">
+        <button type="button" className={routingMapMode === "paths" ? "is-active" : ""} onClick={() => setRoutingMapMode("paths")}>Funkwege <small>{visibleEdges.length} belegt</small></button>
+        <button type="button" className={routingMapMode === "signals" ? "is-active" : ""} onClick={() => setRoutingMapMode("signals")}>Signalverteilung <small>{measuredNodes.length} Werte</small></button>
       </div>
 
       <details className="routing-reading-help">
@@ -1269,7 +1302,7 @@ function RoutingTopologyView({
         </details>
       )}
 
-      <div className="routing-display-filter">
+      {routingMapMode === "signals" && <div className="routing-display-filter">
         <div>
           <strong>Anzeige <InfoTooltip label="Ansicht wählen">Auffällig zeigt Empfänger, Router und Geräte mit Handlungs- oder Beobachtungsbedarf. Empfänger zeigt nur die Infrastruktur, Alle zeigt sämtliche Knoten.</InfoTooltip></strong>
         </div>
@@ -1279,11 +1312,20 @@ function RoutingTopologyView({
           <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle <small>{allDeviceCount}</small></button>
         </div>
         {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} ausgeblendet</small>}
-      </div>
+      </div>}
+
+      {routingMapMode === "paths" && (
+        <div className={`routing-path-summary ${visibleEdges.length > 0 ? "has-paths" : ""}`}>
+          <strong>{visibleEdges.length > 0 ? `${visibleEdges.length} Funkweg${visibleEdges.length === 1 ? "" : "e"} sind belegt` : "Noch keine Funkwege belegt"}</strong>
+          <span>{visibleEdges.length > 0
+            ? "Blaue Linien zeigen ausschließlich im Log nachgewiesene Zwischenempfänger. Geräte ohne Linie sind nicht offline – ihr tatsächlich verwendeter Empfänger ist nur noch unbekannt."
+            : "Die Router- und Gateway-Rollen sind sichtbar. Betätige Geräte und lasse den HmIP-Collector laufen, damit echte Wege aus den HmIPServer-Logs ergänzt werden können."}</span>
+        </div>
+      )}
 
       <div className="routing-topology-layout">
         <div className="routing-map-wrap">
-          {measuredNodes.length > 0 && (
+          {routingMapMode === "signals" && measuredNodes.length > 0 && (
             <div className="routing-map-position-hint">
               <strong>Signalposition:</strong> Mitte = sehr gut, weiter außen = schwächer. Die Position zeigt die RSSI-Klasse des gewählten Messorts, nicht den echten Raumplan.
             </div>
@@ -1299,7 +1341,7 @@ function RoutingTopologyView({
               </marker>
             </defs>
             <rect className="routing-map-background" x="1" y="1" width="998" height="598" rx="20" />
-            {measuredNodes.length > 0 && (
+            {routingMapMode === "signals" && measuredNodes.length > 0 && (
               <>
                 <circle className="routing-zone-fill routing-zone-fill-weak" cx={center.x} cy={center.y} r="245" />
                 <circle className="routing-zone-fill routing-zone-fill-medium" cx={center.x} cy={center.y} r="215" />
@@ -1320,7 +1362,7 @@ function RoutingTopologyView({
               </>
             )}
 
-            {waitingNodes.length > 0 && (
+            {routingMapMode === "signals" && waitingNodes.length > 0 && (
               <g className="routing-waiting-area">
                 <rect x="720" y="92" width="238" height="104" rx="14" />
                 <text className="routing-waiting-title" x="738" y="116">Warteschleife</text>
@@ -1399,8 +1441,8 @@ function RoutingTopologyView({
                       fill="remove"
                     />
                   )}
-                  {rssiClass(rssi) === "weak" && <circle className="routing-weak-pulse" r={node.role === "router" ? 28 : 22} />}
-                  {rssi !== undefined && (
+                  {routingMapMode === "signals" && rssiClass(rssi) === "weak" && <circle className="routing-weak-pulse" r={node.role === "router" ? 28 : 22} />}
+                  {routingMapMode === "signals" && rssi !== undefined && (
                     <circle
                       className={`routing-signal-ring ${rssiClass(rssi)}`}
                       r={node.role === "router" ? 23 : 17}
@@ -1416,6 +1458,11 @@ function RoutingTopologyView({
                   )}
                   {node.role === "gateway" && <text className="routing-node-icon" y="5" textAnchor="middle">G</text>}
                   {node.role === "router" && <text className="routing-node-icon" y="5" textAnchor="middle">R</text>}
+                  {routingMapMode === "paths" && node.role !== "central" && (
+                    <text className="routing-path-node-label" y={node.role === "gateway" ? 35 : node.role === "router" ? 33 : 27} textAnchor="middle">
+                      {node.name.length > 24 ? `${node.name.slice(0, 23)}…` : node.name}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -1437,12 +1484,12 @@ function RoutingTopologyView({
             <span><i className="legend-dot is-gateway" /> Funk-Gateway / Access Point</span>
             <span><i className="legend-dot is-router" /> bestätigter Router</span>
             <span><i className="legend-dot is-candidate" /> möglicher netzversorgter Router</span>
-            <span><i className="legend-signal excellent" /> Signal sehr gut</span>
+            {routingMapMode === "signals" && <><span><i className="legend-signal excellent" /> Signal sehr gut</span>
             <span><i className="legend-signal good" /> Signal gut</span>
             <span><i className="legend-signal medium" /> beobachten</span>
-            <span><i className="legend-signal weak" /> schwach</span>
+            <span><i className="legend-signal weak" /> schwach</span></>}
             <span><i className="legend-line is-confirmed" /> belegter Funkweg</span>
-            {waitingNodes.length > 0 && <span><i className="legend-dot is-waiting" /> Warteschleife: kein Messwert</span>}
+            {routingMapMode === "signals" && waitingNodes.length > 0 && <span><i className="legend-dot is-waiting" /> Warteschleife: kein Messwert</span>}
           </div>
         </div>
 
