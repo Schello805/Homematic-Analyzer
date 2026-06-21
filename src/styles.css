@@ -6423,7 +6423,7 @@ pre {
 .routing-node circle {
   stroke: #fff;
   stroke-width: 3;
-  transition: transform .16s ease, stroke-width .16s ease;
+  transition: stroke-width .16s ease, filter .16s ease, opacity .16s ease;
 }
 
 .routing-node .routing-signal-ring {
@@ -6440,8 +6440,7 @@ pre {
   fill: rgba(227, 58, 50, .09);
   stroke: rgba(227, 58, 50, .42);
   stroke-width: 1.5;
-  transform-origin: center;
-  animation: routing-weak-pulse 2.4s ease-out infinite;
+  animation: routing-weak-pulse 2.4s ease-in-out infinite;
 }
 
 .routing-node .routing-status-dot {
@@ -6456,8 +6455,8 @@ pre {
 .routing-node .routing-status-dot.weak { fill: #e33a32; }
 
 @keyframes routing-weak-pulse {
-  0%, 100% { opacity: .58; transform: scale(.94); }
-  50% { opacity: 1; transform: scale(1.18); }
+  0%, 100% { opacity: .38; }
+  50% { opacity: .86; }
 }
 
 .routing-node .routing-signal-ring.good {
@@ -6479,7 +6478,6 @@ pre {
 .routing-node:hover circle,
 .routing-node:focus circle,
 .routing-node.is-selected circle {
-  transform: scale(1.2);
   stroke-width: 4;
 }
 
