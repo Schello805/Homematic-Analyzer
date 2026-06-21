@@ -956,9 +956,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       status: currentCollector
         ? publicExternalAccesses.length > 0
           ? "critical"
-          : busyExternalAccesses.length > 0
-            ? "warning"
-            : "ok"
+          : "ok"
         : "unavailable",
       summary: currentCollector
         ? publicExternalAccesses.length > 0
@@ -967,8 +965,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
             : `${publicExternalAccesses.length} öffentliche Gegenstellen sind aktiv mit CCU-Diensten verbunden: ${publicExternalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${publicExternalAccesses.length > 2 ? " …" : ""}.`
           : busyExternalAccesses.length > 0
             ? busyExternalAccesses.length === 1
-              ? `Viele gleichzeitige CCU-Verbindungen: ${externalAccessSummary(busyExternalAccesses[0]!)}.`
-              : `${busyExternalAccesses.length} lokale Systeme haben viele gleichzeitige CCU-Verbindungen: ${busyExternalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${busyExternalAccesses.length > 2 ? " …" : ""}.`
+              ? `Lokale CCU-Verbindungen werden beobachtet: ${externalAccessSummary(busyExternalAccesses[0]!)}. Die Anzahl allein ist kein Fehler.`
+              : `${busyExternalAccesses.length} lokale Systeme haben mehrere CCU-Verbindungen: ${busyExternalAccesses.slice(0, 2).map(externalAccessSummary).join("; ")}${busyExternalAccesses.length > 2 ? " …" : ""}. Die Anzahl allein ist kein Fehler.`
             : externalAccesses.length > 0
               ? externalAccesses.length === 1
                 ? `Aktiver Zugriff auf CCU-Dienste: ${externalAccessSummary(externalAccesses[0]!)}.`
@@ -981,7 +979,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? publicExternalAccesses.length > 0
           ? "CCU nicht per Portweiterleitung veröffentlichen. Verbindung sofort prüfen und künftig VPN verwenden."
           : busyExternalAccesses.length > 0
-            ? "Prüfe die genannten IPs: Häufig sind das ioBroker, Home Assistant oder eigene Scripts. Polling-Intervalle reduzieren und unnötige Schreibzugriffe vermeiden."
+            ? "Kein Handlungsbedarf allein aus der Anzahl. Erst ein belegter Lastanstieg, passende Fehler im Log oder ein öffentlicher Zugriff ergibt einen Warnhinweis."
             : externalAccesses.length > 0
               ? "Ordne die IPs den Systemen zu. Erst wenn viele Verbindungen, Logs oder Lastspitzen zusammenpassen, wird daraus ein echtes Problem."
               : "Kein Handlungsbedarf."
@@ -1009,7 +1007,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         "Die App versucht den Gerätenamen über die lokale Namensauflösung des Analyzer-Systems zu ermitteln. Das funktioniert nur, wenn Router oder DNS-Server einen Namen kennen.",
         "Nur wenn ein aufgelöster Gerätename eindeutig Begriffe wie ioBroker oder Home Assistant enthält, wird dies als vorsichtiger Hinweis genannt.",
         "Er zeigt aktive Gegenstellen zu typischen CCU-Ports wie WebUI, XML-API, BidCos-RPC und HmIP-RPC.",
-        "Viele gleichzeitige Verbindungen sind ein Hinweis, aber erst zusammen mit Logs oder hoher Last ein belastbarer Fehler.",
+        "Viele gleichzeitige lokale Verbindungen sind allein kein Fehler und lösen keine Benachrichtigung aus. Erst ein belegter Lastanstieg, passende Fehler im Log oder ein öffentlicher Zugriff ergibt einen Warnhinweis.",
         "Öffentliche Gegenstellen sind kritisch: Die CCU sollte nicht per Portforwarding erreichbar sein."
       ]
     },

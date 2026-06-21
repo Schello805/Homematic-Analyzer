@@ -306,6 +306,25 @@ test("erklärt aktive CCU-Verbindungen mit lokal aufgelöstem Gerätenamen", () 
   assert.equal(externalAccess?.evidence.some((evidence) => evidence.source === "Verbindungszeile"), false);
 });
 
+test("wertet viele lokale BidCos-RPC-Verbindungen ohne weitere Belege nicht als Warnung", () => {
+  const collector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date().toISOString(),
+    network: {
+      connections: Array.from({ length: 12 }, (_, index) => `tcp 0 0 192.168.1.22:2001 10.200.201.122:${55000 + index} ESTABLISHED 1541/lighttpd`)
+    }
+  };
+
+  const externalAccess = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    collector
+  ).find((check) => check.id === "external-access");
+
+  assert.equal(externalAccess?.status, "ok");
+  assert.match(externalAccess?.summary ?? "", /Anzahl allein ist kein Fehler/);
+  assert.match(externalAccess?.recommendation ?? "", /Kein Handlungsbedarf allein aus der Anzahl/);
+});
+
 test("kennzeichnet eine nicht auflösbare lokale IP ohne Vermutung", () => {
   const collector: CollectorPayload = {
     host: "Homematic-raspi",
