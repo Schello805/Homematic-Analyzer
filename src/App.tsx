@@ -459,6 +459,12 @@ type RoutingTopology = {
   };
 };
 
+function routingRssiForNode(node: RoutingTopologyNode, includeSnifferRssi: boolean): number | undefined {
+  if (!includeSnifferRssi) return node.ccuRssi;
+  const values = [node.ccuRssi, node.snifferRssi].filter((value): value is number => value !== undefined);
+  return values.length ? Math.min(...values) : undefined;
+}
+
 const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const setupStorageKey = "homematic-analyzer.setup.v1";
@@ -882,6 +888,8 @@ function RoutingTopologyView({
     const stored = readSessionValue("homematic-analyzer-routing-filter");
     return stored === "infrastructure" || stored === "all" ? stored : "focus";
   });
+  const previousMeasuredNodeIds = useRef<Set<string>>(new Set());
+  const [arrivingNodeIds, setArrivingNodeIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     try {
@@ -891,6 +899,19 @@ function RoutingTopologyView({
     } catch {
     }
   }, [includeSnifferRssi, topologyScope, topologyFilter]);
+
+  useEffect(() => {
+    const measuredNodeIds = new Set((topology?.nodes ?? [])
+      .filter((node) => node.role !== "central" && routingRssiForNode(node, includeSnifferRssi) !== undefined)
+      .map((node) => node.id));
+    const arrivals = [...measuredNodeIds].filter((nodeId) => !previousMeasuredNodeIds.current.has(nodeId));
+    previousMeasuredNodeIds.current = measuredNodeIds;
+
+    if (arrivals.length === 0) return;
+    setArrivingNodeIds(new Set(arrivals));
+    const timeout = window.setTimeout(() => setArrivingNodeIds(new Set()), 720);
+    return () => window.clearTimeout(timeout);
+  }, [topology?.generatedAt, includeSnifferRssi]);
 
   if (!topology) {
     return (
@@ -924,9 +945,7 @@ function RoutingTopologyView({
   const selectedReceiver = selectedRoute ? visibleNodes.find((node) => node.id === selectedRoute.target) : undefined;
   const nodeRssi = (node?: RoutingTopologyNode) => {
     if (!node) return undefined;
-    if (!includeSnifferRssi) return node.ccuRssi;
-    const values = [node.ccuRssi, node.snifferRssi].filter((value): value is number => value !== undefined);
-    return values.length ? Math.min(...values) : undefined;
+    return routingRssiForNode(node, includeSnifferRssi);
   };
   const rssiSourceLabel = includeSnifferRssi ? "mit Snifferwerten" : "ohne Snifferwerte";
   const rssiSourceShortLabel = includeSnifferRssi ? "CCU + Sniffer" : "CCU / XML-API";
@@ -1014,9 +1033,9 @@ function RoutingTopologyView({
     });
   };
 
-  placeRing(graphGateways, 105, -145, 105);
-  placeRing(graphRouters, 150, -65, 150);
-  placeRing(graphCandidates, 195, -5, 195);
+  placeRing(graphGateways, 145, -145);
+  placeRing(graphRouters, 145, -65);
+  placeRing(graphCandidates, 145, -5);
   placeRing(graphDevices, 270, -90);
 
   const hoveredPosition = hoveredNode ? positions.get(hoveredNode.id) ?? waitingPositions.get(hoveredNode.id) : undefined;
@@ -1042,7 +1061,7 @@ function RoutingTopologyView({
   };
   const selectedAdvice = (() => {
     if (!selectedNode) return "Wähle einen Knoten in der Karte, um die Bedeutung einzuordnen.";
-    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Normale Geräte weiter außen werden schwächer empfangen oder haben noch keinen Messwert. Gateways und Router liegen für die Übersicht bewusst innen; ihr Signal zeigt der farbige Ring.";
+    if (selectedNode.role === "central") return "Die Zentrale ist der Bezugspunkt. Alle gemessenen Knoten liegen entsprechend ihrer Signalqualität: weiter außen bedeutet schwächer. Knoten ohne Messwert bleiben in der Warteschleife.";
     if (selectedNode.role === "gateway") return "Dieses Gerät ist ein eigener Funkempfänger. Es erweitert den Empfang, ist aber kein HmIP-Router.";
     if (selectedNode.role === "router") return "Dieses Gerät ist als HmIP-Router belegt. Es kann anderen HmIP-Geräten als Zwischenstation helfen.";
     const ccuState = rssiClass(selectedNode.ccuRssi);
@@ -1072,7 +1091,7 @@ function RoutingTopologyView({
           <p className="eyebrow">Routing-Karte</p>
           <h4>{scopeLabel}: Empfänger, Geräte und belegte Wege</h4>
           <InfoTooltip label="Karte lesen">
-            Die Position normaler Geräte richtet sich nach dem gewählten RSSI-Wert. Gateways und Router liegen für die Übersicht innen; ihr Signal zeigt der farbige Ring. Eine blaue Linie erscheint ausschließlich bei einem im Log ausdrücklich belegten Funkweg.
+            Die Position jedes gemessenen Knotens richtet sich nach dem gewählten RSSI-Wert: weiter außen bedeutet schwächer. Knoten ohne Messwert bleiben in der Warteschleife. Eine blaue Linie erscheint ausschließlich bei einem im Log ausdrücklich belegten Funkweg.
           </InfoTooltip>
         </div>
         <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
@@ -1092,7 +1111,7 @@ function RoutingTopologyView({
           <span><b>Abstand zur Mitte:</b> weiter außen = schwächerer gemessener RSSI-Wert der gewählten Quelle.</span>
           <span><b>Blaue Linie:</b> durch einen Logeintrag belegter Funkweg. Ohne Linie ist der tatsächliche Empfänger unbekannt.</span>
           <span><b>Grün/gelb/rot:</b> Signalbewertung. Rot bedeutet zuerst prüfen, nicht automatisch „Gerät defekt“.</span>
-          <span><b>G/R:</b> Gateway oder Router. Diese Knoten liegen für die Übersicht innen; ihr farbiger Ring zeigt die Signalqualität.</span>
+          <span><b>G/R:</b> Gateway oder Router. Der Buchstabe zeigt die Rolle, der Abstand zeigt den Messwert.</span>
         </div>
       </details>
 
@@ -1325,7 +1344,7 @@ function RoutingTopologyView({
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
                 >
-                  {allowsMotion && node.role !== "central" && waitingStart && (
+                  {allowsMotion && arrivingNodeIds.has(node.id) && waitingStart && (
                     <animateTransform
                       attributeName="transform"
                       type="translate"
