@@ -4071,6 +4071,21 @@ pre {
   background: #ecfdf3;
 }
 
+.ccu-test-result > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ccu-test-result > div > span,
+.ccu-test-result > div > small {
+  color: #475467;
+}
+
+.ccu-test-result > div > small {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .ccu-test-result > span {
   color: #475467;
 }

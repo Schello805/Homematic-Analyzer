@@ -1268,6 +1268,25 @@ app.post("/api/ccu/test", async (request, response) => {
 
   const snapshot = await readCcuSnapshot(parsed.data);
   latestCcuSnapshot = snapshot;
+  const collectorVersion = stringFromRecord(latestCollector?.system, "centralVersion");
+  const masterdataVersion = stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
+  const fallbackVersion = firstNonBlankString(collectorVersion, masterdataVersion);
+  const fallbackProduct = firstNonBlankString(
+    stringFromRecord(latestCollector?.system, "centralProduct"),
+    stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+  );
+  const fallbackSource = collectorVersion ? "Shell-Collector aus /VERSION" : masterdataVersion ? "CCU-WebUI-Script" : undefined;
+  const centralVersion = firstNonBlankString(snapshot?.centralVersion, fallbackVersion);
+  const centralProduct = firstNonBlankString(snapshot?.centralProduct, fallbackProduct);
+  const diagnostics = (snapshot?.diagnostics ?? []).map((diagnostic) => (
+    diagnostic.step === "Zentralenversion" && snapshot?.reachable && !snapshot.centralVersion && fallbackVersion
+      ? {
+        step: "Zentralenversion",
+        status: "ok" as const,
+        detail: `${fallbackSource} meldet ${fallbackProduct ? `${fallbackProduct} ` : ""}${fallbackVersion}.`
+      }
+      : diagnostic
+  ));
   response.json({
     checkedAt: new Date().toISOString(),
     reachable: Boolean(snapshot?.reachable),
@@ -1275,9 +1294,11 @@ app.post("/api/ccu/test", async (request, response) => {
     xmlApiReachable: snapshot?.xmlApiReachable,
     authentication: snapshot?.authentication,
     devices: snapshot?.counters.devices ?? 0,
+    centralVersion,
+    centralProduct,
     errorCode: snapshot?.errorCode,
     error: snapshot?.error,
-    diagnostics: snapshot?.diagnostics ?? []
+    diagnostics
   });
 });
 

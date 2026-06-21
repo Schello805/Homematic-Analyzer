@@ -164,6 +164,8 @@ type CcuTestResult = {
   xmlApiReachable?: boolean;
   authentication?: "ok" | "failed" | "not-tested";
   devices: number;
+  centralVersion?: string;
+  centralProduct?: string;
   errorCode?: string;
   error?: string;
   diagnostics: Array<{
@@ -3532,6 +3534,7 @@ function App() {
                   <div>
                     <strong>{ccuTestResult.reachable ? "CCU-Daten vollständig lesbar" : ccuTestResult.webUiReachable ? "WebUI erreichbar, XML-API noch nicht nutzbar" : "CCU vom Analyzer aus nicht erreichbar"}</strong>
                     <span>{ccuTestResult.reachable ? `${ccuTestResult.devices} Geräte gelesen.` : ccuTestResult.error ?? "Siehe Prüfschritte."}</span>
+                    {ccuTestResult.centralVersion && <small>{ccuTestResult.centralProduct ? `${ccuTestResult.centralProduct} ` : ""}{ccuTestResult.centralVersion}</small>}
                   </div>
                   <ol>
                     {ccuTestResult.diagnostics.map((diagnostic) => (
