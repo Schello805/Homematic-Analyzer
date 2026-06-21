@@ -469,6 +469,7 @@ const appVersion = packageInfo.version;
 const repositoryUrl = "https://github.com/Schello805/Homematic-Analyzer";
 const setupStorageKey = "homematic-analyzer.setup.v1";
 const analysisStorageKey = "homematic-analyzer.analysis.v1";
+const routingTopologyStorageKey = "homematic-analyzer.routing-topology.v1";
 
 const statusLabel: Record<CheckStatus, string> = {
   ok: "OK",
@@ -798,6 +799,37 @@ function saveAnalysisSnapshot(nextAnalysis: AnalysisResponse) {
 
   try {
     window.localStorage.setItem(analysisStorageKey, JSON.stringify(nextAnalysis));
+  } catch {
+  }
+}
+
+function routingMeasurementCount(topology: RoutingTopology | null | undefined) {
+  return (topology?.nodes ?? []).filter((node) => node.role !== "central" && (node.ccuRssi !== undefined || node.snifferRssi !== undefined)).length;
+}
+
+function loadSavedRoutingTopology(): RoutingTopology | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const savedTopology = window.localStorage.getItem(routingTopologyStorageKey);
+    if (!savedTopology) return null;
+    const parsedTopology = JSON.parse(savedTopology) as RoutingTopology;
+    const generatedAt = new Date(parsedTopology.generatedAt).getTime();
+    if (!Number.isFinite(generatedAt) || Date.now() - generatedAt > 24 * 60 * 60 * 1000 || routingMeasurementCount(parsedTopology) === 0) {
+      window.localStorage.removeItem(routingTopologyStorageKey);
+      return null;
+    }
+    return parsedTopology;
+  } catch {
+    return null;
+  }
+}
+
+function saveRoutingTopology(nextTopology: RoutingTopology) {
+  if (typeof window === "undefined" || routingMeasurementCount(nextTopology) === 0) return;
+
+  try {
+    window.localStorage.setItem(routingTopologyStorageKey, JSON.stringify(nextTopology));
   } catch {
   }
 }
@@ -1508,7 +1540,7 @@ function App() {
   const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
   const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null>(null);
   const [routingStatusLoading, setRoutingStatusLoading] = useState(false);
-  const [routingTopology, setRoutingTopology] = useState<RoutingTopology | null>(null);
+  const [routingTopology, setRoutingTopology] = useState<RoutingTopology | null>(loadSavedRoutingTopology);
   const [routingTopologyLoading, setRoutingTopologyLoading] = useState(false);
   const [selectedRoutingNodeId, setSelectedRoutingNodeId] = useState("central");
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
@@ -2099,8 +2131,11 @@ function App() {
       const response = await fetch("/api/routing/topology");
       if (!response.ok) throw new Error("Routing-Topologie konnte nicht geladen werden.");
       const result = (await response.json()) as RoutingTopology;
-      setRoutingTopology(result);
-      setSelectedRoutingNodeId((current) => result.nodes.some((node) => node.id === current) ? current : "central");
+      const keepExistingMeasurements = routingMeasurementCount(result) === 0 && routingMeasurementCount(routingTopology) > 0;
+      const nextTopology = keepExistingMeasurements ? routingTopology : result;
+      if (!keepExistingMeasurements) saveRoutingTopology(result);
+      setRoutingTopology(nextTopology);
+      setSelectedRoutingNodeId((current) => nextTopology?.nodes.some((node) => node.id === current) ? current : "central");
       if (showResultToast) {
         showToast({
           type: result.state === "ready" ? "success" : result.state === "partial" ? "info" : "warning",
