@@ -21,7 +21,7 @@ import { checkOfficialCcu3Release, checkOpenCcuRelease, checkRepositoryRelease, 
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
-import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
+import type { AnalysisCheck, AnalysisHistoryEntry, CcuMasterdataPayload, CcuSnapshot, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint, SnifferSnapshot } from "./types.js";
 
 const app = express();
 const appVersion = packageInfo.version;
@@ -61,6 +61,23 @@ let updateRun: {
   exitCode?: number | null;
   error?: string;
 } = { running: false };
+
+function isPersistableCcuSnapshot(snapshot: CcuSnapshot | undefined): snapshot is CcuSnapshot {
+  return Boolean(snapshot?.reachable && snapshot.counters.devices > 0 && snapshot.devices.length > 0);
+}
+
+function isStoredCcuSnapshot(value: unknown): value is CcuSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Partial<CcuSnapshot>;
+  return Boolean(
+    snapshot.reachable
+    && typeof snapshot.collectedAt === "string"
+    && Array.isArray(snapshot.devices)
+    && snapshot.devices.length > 0
+    && snapshot.counters
+    && typeof snapshot.counters.devices === "number"
+  );
+}
 
 async function getRuntimeAppVersion() {
   try {
@@ -889,6 +906,13 @@ async function loadPersistedCcuMasterdata() {
   }
 }
 
+async function loadPersistedCcuSnapshot() {
+  const database = await readLocalDatabase(localDatabaseFile);
+  if (isStoredCcuSnapshot(database.latestCcuSnapshot)) {
+    latestCcuSnapshot = database.latestCcuSnapshot;
+  }
+}
+
 async function loadPersistedCollector() {
   const database = await readLocalDatabase(localDatabaseFile);
   const parsed = collectorSchema.safeParse(database.latestCollector);
@@ -907,6 +931,15 @@ async function persistCcuMasterdata(payload: CcuMasterdataPayload) {
   await updateLocalDatabase(localDatabaseFile, (currentDatabase) => ({
     ...currentDatabase,
     ccuMasterdata: payload
+  }));
+}
+
+async function persistCcuSnapshot(snapshot: CcuSnapshot | undefined) {
+  if (!isPersistableCcuSnapshot(snapshot)) return;
+  latestCcuSnapshot = snapshot;
+  await updateLocalDatabase(localDatabaseFile, (currentDatabase) => ({
+    ...currentDatabase,
+    latestCcuSnapshot: snapshot
   }));
 }
 
@@ -1037,7 +1070,9 @@ async function runNotificationMonitor() {
       notificationSettings: settings
     };
     const ccuSnapshot = await readCcuSnapshot(config);
-    latestCcuSnapshot = ccuSnapshot;
+    if (isPersistableCcuSnapshot(ccuSnapshot)) {
+      await persistCcuSnapshot(ccuSnapshot);
+    }
     const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
     const checks = createAnalysis(config, latestCollector, ccuSnapshot, latestCcuMasterdata, undefined, latestSnifferSnapshot, networkHostnames);
     const selection = selectNewNotificationChecks(checks, settings, notificationMonitorState);
@@ -1279,7 +1314,9 @@ app.post("/api/ccu/test", async (request, response) => {
   }
 
   const snapshot = await readCcuSnapshot(parsed.data);
-  latestCcuSnapshot = snapshot;
+  if (isPersistableCcuSnapshot(snapshot)) {
+    await persistCcuSnapshot(snapshot);
+  }
   const collectorVersion = centralVersionFromSystem(latestCollector?.system);
   const masterdataVersion = centralVersionFromSystem(latestCcuMasterdata?.system);
   const fallbackVersion = firstNonBlankString(collectorVersion, masterdataVersion);
@@ -1368,7 +1405,9 @@ app.post("/api/analyze", async (request, response) => {
     }
 
     const ccuSnapshot = await readCcuSnapshot(parsed.data);
-    latestCcuSnapshot = ccuSnapshot;
+    if (isPersistableCcuSnapshot(ccuSnapshot)) {
+      await persistCcuSnapshot(ccuSnapshot);
+    }
     const notificationSettings = mergeNotificationSettings(parsed.data.notificationSettings ?? persistedNotificationSettings ?? {
       telegram: { enabled: parsed.data.telegramEnabled },
       events: { critical: true }
@@ -1942,6 +1981,7 @@ app.use((request, response, next) => {
 
 await loadPersistedCcuMasterdata();
 await loadPersistedCollector();
+await loadPersistedCcuSnapshot();
 await loadPersistedNotificationSettings();
 await ensureLocalDatabaseEncryption(localDatabaseFile);
 

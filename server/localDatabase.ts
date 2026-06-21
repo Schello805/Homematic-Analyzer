@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AnalysisHistoryEntry, CcuMasterdataPayload, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint } from "./types.js";
+import type { AnalysisHistoryEntry, CcuMasterdataPayload, CcuSnapshot, CollectorHistoryPoint, CollectorPayload, NotificationSettings, SnifferHistoryPoint } from "./types.js";
 import type { NotificationMonitorState } from "./notificationMonitor.js";
 import { decryptSecret, encryptSecret } from "./secretStore.js";
 
@@ -25,6 +25,7 @@ export type LocalDatabase = {
   notificationSettings?: NotificationSettings;
   notificationMonitor?: NotificationMonitorState;
   ccuMasterdata?: CcuMasterdataPayload;
+  latestCcuSnapshot?: CcuSnapshot;
   latestCollector?: CollectorPayload;
   collectorHistory?: CollectorHistoryPoint[];
   analysisHistory?: AnalysisHistoryEntry[];
