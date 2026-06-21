@@ -320,6 +320,7 @@ test("kennzeichnet eine nicht auflösbare lokale IP ohne Vermutung", () => {
     collector
   ).find((check) => check.id === "external-access");
 
+  assert.match(externalAccess?.summary ?? "", /DNS-Name nicht auflösbar/);
   assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerät im Heimnetz/);
   assert.match(externalAccess?.evidence[0]?.detail ?? "", /Gerätename konnte im lokalen Netz nicht aufgelöst werden/);
   assert.doesNotMatch(externalAccess?.evidence[0]?.detail ?? "", /ioBroker|Home Assistant/);

@@ -85,6 +85,14 @@ function dutyCycleChart(check: AnalysisCheck) {
   return `📊 Funklast: <b>${Math.round(clamped)}%</b> <code>${"█".repeat(filled)}${"░".repeat(10 - filled)}</code>`;
 }
 
+function notificationRecommendation(check: AnalysisCheck) {
+  if (check.id === "external-access") {
+    const target = check.evidence[0]?.detail.match(/^(.+?):\s+\d+ Verbindung/)?.[1];
+    return `Prüfe ${target ?? "die genannte Gegenstelle"}: Polling-Intervalle verlängern und unnötige Schreibzugriffe vermeiden.`;
+  }
+  return shorten(check.recommendation, 150);
+}
+
 function statusOverview(checks: AnalysisCheck[]) {
   const counts = {
     critical: checks.filter((check) => check.status === "critical").length,
@@ -110,7 +118,7 @@ export function buildTelegramMessage(checks: AnalysisCheck[], settings: Notifica
       `${statusIcon(check)} <b>${escapeTelegramHtml(check.title)}</b>`,
       escapeTelegramHtml(shorten(check.summary, 220)),
       dutyCycleChart(check),
-      `➡️ ${escapeTelegramHtml(shorten(check.recommendation, 150))}`,
+      `➡️ ${escapeTelegramHtml(notificationRecommendation(check))}`,
       ""
     ]).filter(Boolean),
     selectedChecks.length > visibleChecks.length ? `… und ${selectedChecks.length - visibleChecks.length} weitere Meldung${selectedChecks.length - visibleChecks.length === 1 ? "" : "en"}.` : undefined,

@@ -227,7 +227,7 @@ function parseExternalAccesses(collector: CollectorPayload | undefined, ccuHost?
 }
 
 function externalAccessDisplayName(access: ExternalAccessCandidate) {
-  return access.hostname ? `${access.hostname} (${access.host})` : access.host;
+  return access.hostname ? `${access.hostname} (${access.host})` : `${access.host} (DNS-Name nicht auflösbar)`;
 }
 
 function externalAccessSummary(access: ExternalAccessCandidate) {

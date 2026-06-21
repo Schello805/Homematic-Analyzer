@@ -92,7 +92,7 @@ test("nennt bei externen CCU-Zugriffen die konkrete Quelle direkt in Telegram", 
     summary: "Viele gleichzeitige CCU-Verbindungen: iobroker.fritz.box (192.168.1.78): 12 Verbindungen über HmIP-RPC, XML-API/ReGa.",
     recommendation: "Polling reduzieren.",
     access: ["ssh", "external"],
-    evidence: [],
+    evidence: [{ source: "Gerät im Heimnetz", detail: "iobroker.fritz.box (192.168.1.78): 12 Verbindung(en) zu HmIP-RPC, XML-API/ReGa" }],
     details: []
   };
 
@@ -100,4 +100,6 @@ test("nennt bei externen CCU-Zugriffen die konkrete Quelle direkt in Telegram", 
   assert.match(message, /iobroker\.fritz\.box \(192\.168\.1\.78\)/);
   assert.match(message, /12 Verbindungen/);
   assert.match(message, /HmIP-RPC, XML-API\/ReGa/);
+  assert.match(message, /Prüfe iobroker\.fritz\.box \(192\.168\.1\.78\): Polling-Intervalle verlängern/);
+  assert.doesNotMatch(message, /ver…/);
 });

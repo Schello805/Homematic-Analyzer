@@ -303,6 +303,15 @@ function recordArrayFromRecord(record: Record<string, unknown> | undefined, key:
   return value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry));
 }
 
+function collectorRemoteAddresses(collector?: CollectorPayload) {
+  return collector?.network?.connections
+    ?.flatMap((line) => {
+      const endpoints = [...line.matchAll(/((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})/g)];
+      const remoteAddress = endpoints[1]?.[1];
+      return remoteAddress ? [remoteAddress] : [];
+    }) ?? [];
+}
+
 function isRealCcuBackupPath(value: string | undefined) {
   if (!value) return false;
   const filename = value.split(/[\\/]/).pop()?.toLowerCase() ?? value.toLowerCase();
@@ -1017,7 +1026,8 @@ async function runNotificationMonitor() {
     };
     const ccuSnapshot = await readCcuSnapshot(config);
     latestCcuSnapshot = ccuSnapshot;
-    const checks = createAnalysis(config, latestCollector, ccuSnapshot, latestCcuMasterdata, undefined, latestSnifferSnapshot);
+    const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
+    const checks = createAnalysis(config, latestCollector, ccuSnapshot, latestCcuMasterdata, undefined, latestSnifferSnapshot, networkHostnames);
     const selection = selectNewNotificationChecks(checks, settings, notificationMonitorState);
 
     if (selection.newChecks.length > 0) {
@@ -1354,13 +1364,7 @@ app.post("/api/analyze", async (request, response) => {
         : latestSnifferSnapshot;
     latestSnifferSnapshot = snifferSnapshot;
 
-    const remoteAddresses = latestCollector?.network?.connections
-      ?.flatMap((line) => {
-        const endpoints = [...line.matchAll(/((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})/g)];
-        const remoteAddress = endpoints[1]?.[1];
-        return remoteAddress ? [remoteAddress] : [];
-      }) ?? [];
-    const networkHostnames = await resolveNetworkHostnames(remoteAddresses);
+    const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
     const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames, centralReleaseCheck);
     const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
     const notificationResult = parsed.data.notify === false
