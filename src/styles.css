@@ -6065,9 +6065,10 @@ pre {
   gap: 4px;
 }
 
-.routing-rssi-source span {
+.routing-rssi-source > div > small {
   color: #65738a;
   font-size: .8rem;
+  font-weight: 650;
 }
 
 .routing-rssi-source label {

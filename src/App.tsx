@@ -860,12 +860,14 @@ function donutSegmentPath(startPercent: number, endPercent: number, outerRadius 
 function RoutingTopologyView({
   topology,
   loading,
+  dataRefreshing,
   selectedNodeId,
   onSelectNode,
   onRefresh
 }: {
   topology: RoutingTopology | null;
   loading: boolean;
+  dataRefreshing: boolean;
   selectedNodeId: string;
   onSelectNode: (nodeId: string) => void;
   onRefresh: () => void;
@@ -910,6 +912,9 @@ function RoutingTopologyView({
     || node.protocol === topologyScope
   ));
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const centralRssiCount = visibleNodes.filter((node) => node.ccuRssi !== undefined).length;
+  const snifferRssiCount = visibleNodes.filter((node) => node.snifferRssi !== undefined).length;
+  const ccuRssiLoading = !includeSnifferRssi && dataRefreshing && centralRssiCount === 0;
   const visibleEdges = topology.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
   const gateways = visibleNodes.filter((node) => node.role === "gateway");
   const routers = visibleNodes.filter((node) => node.role === "router");
@@ -1096,37 +1101,44 @@ function RoutingTopologyView({
 
       <div className="routing-rssi-source">
         <div>
-          <strong><SourceBadge source={includeSnifferRssi ? "Sniffer" : "CCU"} />Signalquelle</strong>
-          <span>
-            {!includeSnifferRssi
-              ? "Von der CCU gemeldete Signalwerte. Für den Empfang an der Zentrale wird RSSI_PEER bevorzugt; RSSI_DEVICE dient nur als Rückfallwert."
-              : "Zentralenwerte plus vorhandene Snifferwerte. Für die Position wird der schwächere bekannte Wert verwendet."}
-          </span>
+          <strong>
+            <SourceBadge source={includeSnifferRssi ? "Sniffer" : "CCU"} />Signalquelle
+            <InfoTooltip label="Signalquelle erklärt">
+              {!includeSnifferRssi
+                ? "Die Karte verwendet von der Zentrale gemeldete RSSI-Werte. RSSI_PEER wird bevorzugt, RSSI_DEVICE dient nur als Rückfallwert."
+                : "Die Karte berücksichtigt Zentralenwerte und vorhandene Snifferwerte. Für die Position wird der schwächere bekannte Wert verwendet."}
+            </InfoTooltip>
+          </strong>
+          <small>{includeSnifferRssi ? "Zentrale + Sniffer" : ccuRssiLoading ? "CCU-Werte werden geladen …" : "Zentrale / XML-API"}</small>
         </div>
         <label>
           Signalwerte anzeigen von
           <select value={includeSnifferRssi ? "with-sniffer" : "base"} onChange={(event) => setIncludeSnifferRssi(event.target.value === "with-sniffer")}>
             <option value="base">
-              Ohne Snifferwerte ({visibleNodes.filter((node) => node.ccuRssi !== undefined).length} Zentralenwerte)
+              {ccuRssiLoading ? "Ohne Snifferwerte (wird geladen …)" : `Ohne Snifferwerte (${centralRssiCount} Zentralenwerte)`}
             </option>
             <option value="with-sniffer">
-              Mit Snifferwerten ({visibleNodes.filter((node) => node.snifferRssi !== undefined).length} Snifferwerte)
+              Mit Snifferwerten ({snifferRssiCount} Snifferwerte)
             </option>
           </select>
         </label>
       </div>
 
-      <div className={`routing-insight ${measuredNodes.length === 0 ? "is-unavailable" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
+      <div className={`routing-insight ${ccuRssiLoading || measuredNodes.length === 0 ? "is-unavailable" : weakNodes.length > 0 ? "has-warning" : "is-good"}`}>
         <div>
-          <span className="routing-insight-icon" aria-hidden="true">{measuredNodes.length === 0 ? "?" : weakNodes.length > 0 ? "!" : "✓"}</span>
+          <span className="routing-insight-icon" aria-hidden="true">{ccuRssiLoading ? "↻" : measuredNodes.length === 0 ? "?" : weakNodes.length > 0 ? "!" : "✓"}</span>
           <div>
             <strong>
-              {measuredNodes.length === 0
+              {ccuRssiLoading
+                ? "CCU-Signalwerte werden geladen"
+                : measuredNodes.length === 0
                 ? "Signalqualität noch nicht bewertbar"
                 : weakNodes.length > 0 ? `${weakNodes.length} schwach empfangene Geräte prüfen` : "Keine klaren Signalschwächen erkannt"}
             </strong>
             <p>
-              {measuredNodes.length === 0
+              {ccuRssiLoading
+                ? "Die Infrastruktur ist schon sichtbar. Die Signalbewertung folgt automatisch, sobald die CCU-Antwort vollständig eingetroffen ist."
+                : measuredNodes.length === 0
                 ? `Für die Ansicht „${rssiSourceLabel}“ liegen im aktuellen Snapshot keine RSSI-Werte vor. Erkannte Geräte, Gateways und Router werden trotzdem angezeigt – aber nicht als gut oder schlecht bewertet.`
                 : weakNodes.length > 0
                 ? `${weakNodes.slice(0, 4).map(signalSummaryForNode).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
@@ -1137,12 +1149,12 @@ function RoutingTopologyView({
             )}
           </div>
         </div>
-        <small>
+        {!ccuRssiLoading && <InfoTooltip label="Bewertung erklärt">
           {!includeSnifferRssi
             ? "Weiter außen bedeutet: Die Zentrale sieht dieses Gerät schwächer. Das heißt nicht automatisch „keine Verbindung“, sondern zeigt zuerst Prüfbedarf für Standort, Abstand, Hindernisse oder passenden Empfänger."
             : "Weiter außen bedeutet: Mindestens eine bekannte Messquelle sieht dieses Gerät schwächer. Prüfe danach, ob CCU, Sniffer oder beide Quellen betroffen sind."}
-          {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Sie zeigt nur, dass der tatsächlich verwendete nächste Empfänger nicht aus den vorhandenen Daten abgeleitet werden konnte.
-        </small>
+          {" "}Eine gestrichelte Linie bedeutet nicht „offline“: Der tatsächlich verwendete nächste Empfänger ist noch nicht belegt.
+        </InfoTooltip>}
       </div>
 
       {measuredNodes.length > 0 ? (
@@ -1158,7 +1170,7 @@ function RoutingTopologyView({
             <strong>{gateways.length + routers.length} bestätigte Funkempfänger und Router</strong>
             <span>{gateways.length} Gateway{gateways.length === 1 ? "" : "s"} · {routers.length} bestätigte HmIP-Router · {candidates.length} mögliche Router-Kandidaten</span>
           </div>
-          <p>Die Karte zeigt zunächst nur die Infrastruktur. Alle Geräte kannst du bei Bedarf über „Alle Geräte“ einblenden.</p>
+          <p>Signalwerte folgen automatisch.</p>
         </div>
       )}
 
@@ -1197,25 +1209,14 @@ function RoutingTopologyView({
 
       <div className="routing-display-filter">
         <div>
-          <strong>In der Grafik anzeigen</strong>
-          <span>
-            {topologyFilter === "focus"
-              ? "Empfänger, Router sowie alle schwachen und zu beobachtenden Geräte"
-              : topologyFilter === "infrastructure" ? "Nur Gateways, Router und mögliche Router" : "Alle erkannten Geräte"}
-          </span>
+          <strong>Anzeige <InfoTooltip label="Ansicht wählen">Auffällig zeigt Empfänger, Router und Geräte mit Handlungs- oder Beobachtungsbedarf. Empfänger zeigt nur die Infrastruktur, Alle zeigt sämtliche Knoten.</InfoTooltip></strong>
         </div>
         <div role="group" aria-label="Umfang der Routing-Grafik">
           <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Auffällig <small>{focusCount}</small></button>
           <button type="button" className={topologyFilter === "infrastructure" ? "is-active" : ""} onClick={() => setTopologyFilter("infrastructure")}>Empfänger <small>{infrastructureCount}</small></button>
           <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle <small>{allDeviceCount}</small></button>
         </div>
-        {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} unauffällige oder noch nicht bewertbare Knoten sind ausgeblendet.</small>}
-      </div>
-
-      <div className="routing-map-guide" aria-label="Kurz erklärt">
-        <span><b>1</b> Mitte = Zentrale</span>
-        <span><b>2</b> Außen = schwächerer Messwert</span>
-        <span><b>3</b> Knoten anklicken für Details</span>
+        {hiddenGraphNodes > 0 && <small>{hiddenGraphNodes} ausgeblendet</small>}
       </div>
 
       <div className="routing-topology-layout">
@@ -5358,6 +5359,7 @@ function App() {
                       <RoutingTopologyView
                         topology={routingTopology}
                         loading={routingTopologyLoading}
+                        dataRefreshing={analysisDataRefreshing}
                         selectedNodeId={selectedRoutingNodeId}
                         onSelectNode={setSelectedRoutingNodeId}
                         onRefresh={() => void loadRoutingTopology(true)}
