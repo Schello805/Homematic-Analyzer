@@ -290,7 +290,7 @@ export function extractCentralVersionFromText(text: string): string | undefined 
   return readableText.match(/\b\d+\.\d+\.\d+(?:\.\d+)?\b/)?.[0];
 }
 
-function extractCentralProductFromText(text: string): string | undefined {
+export function extractCentralProductFromText(text: string): string | undefined {
   const productFromVersionFile = text.match(/(?:^|\n)\s*(?:PRODUCT|PRODUCT_NAME|NAME|PRETTY_NAME)\s*=\s*["']?([^"'\n\r]+)/im)?.[1]?.trim();
   const haystack = `${productFromVersionFile ?? ""}\n${text}`;
   if (/\bOpenCCU\b/i.test(haystack)) return "OpenCCU";

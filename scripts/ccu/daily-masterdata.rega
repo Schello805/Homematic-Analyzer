@@ -130,6 +130,7 @@ string ramValue;
 string diskValue;
 string tempValue;
 string backupCount;
+string centralVersionValue;
 string execError;
 string askSinDevListValue;
 
@@ -141,6 +142,7 @@ system.Exec("free -m 2>/dev/null | grep '^Mem:'", &ramValue, &execError);
 system.Exec("df -h /usr/local 2>/dev/null | tail -n 1", &diskValue, &execError);
 system.Exec("/usr/bin/vcgencmd measure_temp 2>/dev/null | sed 's/[^0-9.]//g'", &tempValue, &execError);
 system.Exec("find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)' | grep -Eiv '(^|/)BackupUSBStorage\\.tar\\.gz$' | wc -l", &backupCount, &execError);
+system.Exec("cat /VERSION 2>/dev/null", &centralVersionValue, &execError);
 
 hostValue = hostValue.Replace("\\", "\\\\");
 hostValue = hostValue.Replace("\"", "\\\"");
@@ -183,6 +185,12 @@ backupCount = backupCount.Replace("\"", "\\\"");
 backupCount = backupCount.Replace("'", " ");
 backupCount = backupCount.Replace("\n", " ");
 backupCount = backupCount.Replace("\r", " ");
+
+centralVersionValue = centralVersionValue.Replace("\\", "\\\\");
+centralVersionValue = centralVersionValue.Replace("\"", "\\\"");
+centralVersionValue = centralVersionValue.Replace("'", " ");
+centralVersionValue = centralVersionValue.Replace("\n", " ");
+centralVersionValue = centralVersionValue.Replace("\r", " ");
 
 askSinDevListValue = "";
 if (askSinDevList) {
@@ -256,7 +264,8 @@ payload = payload # "\"uptime\":\"" # uptimeValue # "\",";
 payload = payload # "\"cpu\":\"" # cpuValue # "\",";
 payload = payload # "\"memory\":\"" # ramValue # "\",";
 payload = payload # "\"disk\":\"" # diskValue # "\",";
-payload = payload # "\"temperatureRaw\":\"" # tempValue # "\"";
+payload = payload # "\"temperatureRaw\":\"" # tempValue # "\",";
+payload = payload # "\"centralVersion\":\"" # centralVersionValue # "\"";
 payload = payload # "},";
 payload = payload # "\"backups\":{\"count\":\"" # backupCount # "\"},";
 if (askSinDevListValue.Length() > 0) {

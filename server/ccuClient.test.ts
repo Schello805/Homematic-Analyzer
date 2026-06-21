@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyCcuConnectionError, collectDevices, extractCentralVersionFromText, xmlApiTimeoutForPath } from "./ccuClient.js";
+import { classifyCcuConnectionError, collectDevices, extractCentralProductFromText, extractCentralVersionFromText, xmlApiTimeoutForPath } from "./ccuClient.js";
 
 test("erkennt DNS-Fehler des Analyzer-Servers", () => {
   const error = new Error("fetch failed", { cause: { code: "ENOTFOUND" } });
@@ -38,6 +38,12 @@ test("liest Zentralenversion aus VERSION-Datei und WebUI-HTML", () => {
     extractCentralVersionFromText("<td>Aktuelle Firmwareversion:</td><td><strong>3.87.6.20260614</strong></td>"),
     "3.87.6.20260614"
   );
+});
+
+test("liest auch Produkt und Version aus dem CCU-Script-Fallback", () => {
+  const versionFile = "PRODUCT=OpenCCU\\nVERSION=3.87.6.20260614\\n";
+  assert.equal(extractCentralVersionFromText(versionFile), "3.87.6.20260614");
+  assert.equal(extractCentralProductFromText(versionFile), "OpenCCU");
 });
 
 test("liest Zentralenversion aus VERSION-Datei mit Anführungszeichen", () => {

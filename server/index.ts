@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
 import { createAnalysis } from "./analyzer.js";
-import { readCcuSnapshot } from "./ccuClient.js";
+import { extractCentralProductFromText, extractCentralVersionFromText, readCcuSnapshot } from "./ccuClient.js";
 import { decodeBase64Lines } from "./collectorPayload.js";
 import { createConfigurationBackup, restoreConfigurationBackup } from "./configurationBackup.js";
 import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
@@ -289,6 +289,18 @@ function stringFromRecord(record: Record<string, unknown> | undefined, key: stri
 
 function firstNonBlankString(...values: Array<string | undefined>): string | undefined {
   return values.map((value) => value?.trim()).find((value): value is string => Boolean(value));
+}
+
+function centralVersionFromSystem(record: Record<string, unknown> | undefined): string | undefined {
+  const rawVersion = stringFromRecord(record, "centralVersion");
+  return rawVersion ? extractCentralVersionFromText(rawVersion) : undefined;
+}
+
+function centralProductFromSystem(record: Record<string, unknown> | undefined): string | undefined {
+  const explicitProduct = stringFromRecord(record, "centralProduct");
+  if (explicitProduct) return explicitProduct;
+  const rawVersion = stringFromRecord(record, "centralVersion");
+  return rawVersion ? extractCentralProductFromText(rawVersion) : undefined;
 }
 
 function stringArrayFromRecord(record: Record<string, unknown> | undefined, key: string): string[] | undefined {
@@ -1268,12 +1280,12 @@ app.post("/api/ccu/test", async (request, response) => {
 
   const snapshot = await readCcuSnapshot(parsed.data);
   latestCcuSnapshot = snapshot;
-  const collectorVersion = stringFromRecord(latestCollector?.system, "centralVersion");
-  const masterdataVersion = stringFromRecord(latestCcuMasterdata?.system, "centralVersion");
+  const collectorVersion = centralVersionFromSystem(latestCollector?.system);
+  const masterdataVersion = centralVersionFromSystem(latestCcuMasterdata?.system);
   const fallbackVersion = firstNonBlankString(collectorVersion, masterdataVersion);
   const fallbackProduct = firstNonBlankString(
-    stringFromRecord(latestCollector?.system, "centralProduct"),
-    stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+    centralProductFromSystem(latestCollector?.system),
+    centralProductFromSystem(latestCcuMasterdata?.system)
   );
   const fallbackSource = collectorVersion ? "Shell-Collector aus /VERSION" : masterdataVersion ? "CCU-WebUI-Script" : undefined;
   const centralVersion = firstNonBlankString(snapshot?.centralVersion, fallbackVersion);
@@ -1365,13 +1377,13 @@ app.post("/api/analyze", async (request, response) => {
     const releaseCheck = await checkRepositoryRelease(runtimeVersion);
     const installedCentralVersion = firstNonBlankString(
       ccuSnapshot?.centralVersion,
-      stringFromRecord(latestCollector?.system, "centralVersion"),
-      stringFromRecord(latestCcuMasterdata?.system, "centralVersion")
+      centralVersionFromSystem(latestCollector?.system),
+      centralVersionFromSystem(latestCcuMasterdata?.system)
     );
     const centralProduct = firstNonBlankString(
       ccuSnapshot?.centralProduct,
-      stringFromRecord(latestCollector?.system, "centralProduct"),
-      stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+      centralProductFromSystem(latestCollector?.system),
+      centralProductFromSystem(latestCcuMasterdata?.system)
     );
     const centralReleaseCheck = isOfficialCcu3Product(centralProduct)
       ? await checkOfficialCcu3Release(installedCentralVersion, centralProduct)
@@ -1677,13 +1689,13 @@ app.get("/api/system/central-update-status", async (_request, response) => {
   preventHttpCaching(response);
   const installedVersion = firstNonBlankString(
     latestCcuSnapshot?.centralVersion,
-    stringFromRecord(latestCollector?.system, "centralVersion"),
-    stringFromRecord(latestCcuMasterdata?.system, "centralVersion")
+    centralVersionFromSystem(latestCollector?.system),
+    centralVersionFromSystem(latestCcuMasterdata?.system)
   );
   const product = firstNonBlankString(
     latestCcuSnapshot?.centralProduct,
-    stringFromRecord(latestCollector?.system, "centralProduct"),
-    stringFromRecord(latestCcuMasterdata?.system, "centralProduct")
+    centralProductFromSystem(latestCollector?.system),
+    centralProductFromSystem(latestCcuMasterdata?.system)
   );
 
   if (!isOpenCcuFamilyProduct(product) && !isOfficialCcu3Product(product)) {
