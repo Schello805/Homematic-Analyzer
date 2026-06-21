@@ -965,6 +965,8 @@ function RoutingTopologyView({
   ));
   const graphNodeIds = new Set(graphNodes.map((node) => node.id));
   const graphEdges = visibleEdges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
+  const allTechnologyWeakNodes = topology.nodes.filter((node) => node.role !== "central" && rssiClass(nodeRssi(node)) === "weak");
+  const weakNodesOutsideScope = allTechnologyWeakNodes.filter((node) => !visibleNodeIds.has(node.id));
   const graphGateways = graphNodes.filter((node) => node.role === "gateway");
   const graphRouters = graphNodes.filter((node) => node.role === "router");
   const graphCandidates = graphNodes.filter((node) => node.role === "candidate");
@@ -1130,6 +1132,9 @@ function RoutingTopologyView({
                 ? `${weakNodes.slice(0, 4).map(signalSummaryForNode).join(", ")}${weakNodes.length > 4 ? " …" : ""}`
                 : `${measuredNodes.length} Geräte wurden bewertet${observedNodes.length > 0 ? `, ${observedNodes.length} davon sollten beobachtet werden` : ""}.`}
             </p>
+            {weakNodesOutsideScope.length > 0 && (
+              <small className="routing-scope-hint">{weakNodesOutsideScope.length} weitere schwache Geräte gehören zur anderen Funktechnik. Wähle „Beides“, um sie ebenfalls zu sehen.</small>
+            )}
           </div>
         </div>
         <small>
@@ -1195,12 +1200,12 @@ function RoutingTopologyView({
           <strong>In der Grafik anzeigen</strong>
           <span>
             {topologyFilter === "focus"
-              ? "Empfänger, Router und auffällige oder beobachtete Geräte"
+              ? "Empfänger, Router sowie alle schwachen und zu beobachtenden Geräte"
               : topologyFilter === "infrastructure" ? "Nur Gateways, Router und mögliche Router" : "Alle erkannten Geräte"}
           </span>
         </div>
         <div role="group" aria-label="Umfang der Routing-Grafik">
-          <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Fokus <small>{focusCount}</small></button>
+          <button type="button" className={topologyFilter === "focus" ? "is-active" : ""} onClick={() => setTopologyFilter("focus")}>Auffällig <small>{focusCount}</small></button>
           <button type="button" className={topologyFilter === "infrastructure" ? "is-active" : ""} onClick={() => setTopologyFilter("infrastructure")}>Empfänger <small>{infrastructureCount}</small></button>
           <button type="button" className={topologyFilter === "all" ? "is-active" : ""} onClick={() => setTopologyFilter("all")}>Alle <small>{allDeviceCount}</small></button>
         </div>
@@ -1292,6 +1297,7 @@ function RoutingTopologyView({
                     if (event.key === "Enter" || event.key === " ") onSelectNode(node.id);
                   }}
                 >
+                  {rssiClass(rssi) === "weak" && <circle className="routing-weak-pulse" r={node.role === "router" ? 28 : 22} />}
                   {rssi !== undefined && (
                     <circle
                       className={`routing-signal-ring ${rssiClass(rssi)}`}
@@ -1299,6 +1305,9 @@ function RoutingTopologyView({
                     />
                   )}
                   <circle r={node.role === "central" ? 31 : node.role === "gateway" ? 20 : node.role === "router" ? 18 : 12} />
+                  {rssi !== undefined && node.role !== "central" && (
+                    <circle className={`routing-status-dot ${rssiClass(rssi)}`} cx={node.role === "router" ? 15 : 11} cy={node.role === "router" ? -15 : -11} r="4" />
+                  )}
                   <title>{`${node.name}${node.type ? ` · ${node.type}` : ""} · ${signalDetailForNode(node)}`}</title>
                   {node.role === "central" && (
                     <text className="routing-central-label" y="47" textAnchor="middle">{node.name}</text>

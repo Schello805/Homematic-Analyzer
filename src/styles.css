@@ -6423,6 +6423,14 @@ pre {
   animation: routing-flow 1.25s linear infinite;
 }
 
+.routing-scope-hint {
+  display: block;
+  margin-top: 6px;
+  color: #8a4b00;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
 @keyframes routing-flow {
   to {
     stroke-dashoffset: -34;
@@ -6444,6 +6452,34 @@ pre {
   fill: none;
   stroke-width: 4;
   pointer-events: none;
+}
+
+.routing-node .routing-signal-ring.weak {
+  stroke-width: 5.5;
+}
+
+.routing-node .routing-weak-pulse {
+  fill: rgba(227, 58, 50, .09);
+  stroke: rgba(227, 58, 50, .42);
+  stroke-width: 1.5;
+  transform-origin: center;
+  animation: routing-weak-pulse 2.4s ease-out infinite;
+}
+
+.routing-node .routing-status-dot {
+  stroke: #fff;
+  stroke-width: 1.6;
+  transform: none;
+}
+
+.routing-node .routing-status-dot.excellent { fill: #08764f; }
+.routing-node .routing-status-dot.good { fill: #20a878; }
+.routing-node .routing-status-dot.medium { fill: #f59e0b; }
+.routing-node .routing-status-dot.weak { fill: #e33a32; }
+
+@keyframes routing-weak-pulse {
+  0%, 100% { opacity: .58; transform: scale(.94); }
+  50% { opacity: 1; transform: scale(1.18); }
 }
 
 .routing-node .routing-signal-ring.good {
@@ -6588,6 +6624,16 @@ pre {
   fill: #173e78;
 }
 
+.routing-node.is-central > circle:not(.routing-signal-ring) {
+  filter: drop-shadow(0 0 9px rgba(23, 62, 120, .26));
+  animation: routing-central-breathe 4s ease-in-out infinite;
+}
+
+@keyframes routing-central-breathe {
+  0%, 100% { filter: drop-shadow(0 0 7px rgba(23, 62, 120, .22)); }
+  50% { filter: drop-shadow(0 0 15px rgba(46, 144, 250, .38)); }
+}
+
 .routing-node.is-router circle {
   fill: #20a878;
 }
@@ -6709,7 +6755,9 @@ pre {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .routing-edge {
+  .routing-edge,
+  .routing-node .routing-weak-pulse,
+  .routing-node.is-central > circle:not(.routing-signal-ring) {
     animation: none !important;
   }
 }
