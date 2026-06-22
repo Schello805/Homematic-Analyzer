@@ -502,8 +502,8 @@ const checkThemes = [
   },
   {
     id: "radio",
-    title: "Funk & Routing",
-    description: "Duty Cycle, Signalqualität und HmIP-Routing",
+    title: "Funk",
+    description: "Duty Cycle, Signalqualität und Funk-Infrastruktur",
     checkIds: ["duty-cycle", "signal-strength", "routing-topology"]
   },
   {
@@ -1580,6 +1580,75 @@ function RoutingTopologyView({
   );
 }
 
+function RadioInfrastructureView({
+  topology,
+  loading,
+  onRefresh
+}: {
+  topology: RoutingTopology | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (!topology) {
+    return (
+      <section className="radio-infrastructure-card">
+        <div className="radio-infrastructure-empty">
+          <strong>{loading ? "Funk-Infrastruktur wird gelesen …" : "Noch keine Infrastruktur-Daten geladen"}</strong>
+          <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
+            {loading ? "Lädt …" : "Jetzt laden"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const gateways = topology.nodes.filter((node) => node.role === "gateway");
+  const routers = topology.nodes.filter((node) => node.role === "router");
+  const candidates = topology.nodes.filter((node) => node.role === "candidate");
+  const visibleNodes = [...gateways, ...routers, ...candidates];
+
+  return (
+    <section className="radio-infrastructure-card">
+      <div className="radio-infrastructure-header">
+        <div>
+          <p className="eyebrow">Funk-Infrastruktur</p>
+          <h4>Router und Funk-Gateways</h4>
+          <p>Die CCU meldet Rollen und Konfigurationen, aber keine Live-Tabelle des aktuell verwendeten Funkwegs.</p>
+        </div>
+        <button type="button" className="light-button" onClick={onRefresh} disabled={loading}>
+          {loading ? "Aktualisiert …" : "Infrastruktur aktualisieren"}
+        </button>
+      </div>
+
+      <div className="radio-infrastructure-metrics">
+        <span><strong>{gateways.length}</strong> Funk-Gateways</span>
+        <span><strong>{routers.length}</strong> bestätigte HmIP-Router</span>
+        <span><strong>{candidates.length}</strong> mögliche Router-Kandidaten</span>
+      </div>
+
+      <div className="radio-infrastructure-note">
+        <strong>Wichtig</strong>
+        <span>Welchen Empfänger ein einzelnes Gerät gerade nutzt, stellt die CCU nicht als belastbaren Datenpunkt bereit. Für schwachen Empfang öffne „Signalqualität“; Funkzeit pro Gerät zeigt der DC-Analyzer mit Sniffer.</span>
+      </div>
+
+      {visibleNodes.length > 0 ? (
+        <div className="radio-infrastructure-list">
+          {visibleNodes.map((node) => (
+            <article key={node.id}>
+              <span className={`radio-infrastructure-role ${node.role}`}>
+                {node.role === "gateway" ? "Gateway" : node.role === "router" ? "Router" : "Kandidat"}
+              </span>
+              <strong>{node.name}</strong>
+              <small>{node.type ?? "Typ nicht gemeldet"}</small>
+              {node.role === "router" && <small>{node.routingEnabled ? "Routing aktiviert" : "Router belegt"}</small>}
+            </article>
+          ))}
+        </div>
+      ) : <p className="muted">Keine Router oder Gateways in den verfügbaren Daten erkannt.</p>}
+    </section>
+  );
+}
+
 function App() {
   const [form, setForm] = useState<SetupForm>(loadSavedSetup);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(initialNotificationSettings);
@@ -1618,7 +1687,6 @@ function App() {
   const [routingStatusLoading, setRoutingStatusLoading] = useState(false);
   const [routingTopology, setRoutingTopology] = useState<RoutingTopology | null>(loadSavedRoutingTopology);
   const [routingTopologyLoading, setRoutingTopologyLoading] = useState(false);
-  const [selectedRoutingNodeId, setSelectedRoutingNodeId] = useState("central");
   const [collectorMode, setCollectorMode] = useState<"once" | "install" | "uninstall">("once");
   const [collectorInterval, setCollectorInterval] = useState<"daily" | "hourly" | "minute">("minute");
   const [settingsSaveState, setSettingsSaveState] = useState<SettingsSaveState>("ready");
@@ -2211,14 +2279,11 @@ function App() {
       const nextTopology = keepExistingMeasurements ? routingTopology : result;
       if (!keepExistingMeasurements) saveRoutingTopology(result);
       setRoutingTopology(nextTopology);
-      setSelectedRoutingNodeId((current) => nextTopology?.nodes.some((node) => node.id === current) ? current : "central");
       if (showResultToast) {
         showToast({
           type: result.state === "ready" ? "success" : result.state === "partial" ? "info" : "warning",
-          title: result.state === "ready" ? "Routing-Topologie aktualisiert" : "Routing-Daten aktualisiert",
-          message: result.metrics.confirmedRoutes > 0
-            ? `${result.metrics.confirmedRoutes} belegte Pfade und ${result.metrics.confirmedRouters} bestätigte Router gefunden.`
-            : `${result.metrics.hmipDevices} HmIP- und ${result.metrics.bidcosDevices} klassische Homematic-Geräte gefunden; aktive Pfade sind im aktuellen Log noch nicht belegt.`
+          title: result.state === "ready" ? "Funk-Infrastruktur aktualisiert" : "Funk-Infrastruktur geladen",
+          message: `${result.metrics.gateways} Gateway${result.metrics.gateways === 1 ? "" : "s"}, ${result.metrics.confirmedRouters} bestätigte HmIP-Router und ${result.metrics.routerCandidates} mögliche Router-Kandidaten erkannt.`
         });
       }
     } catch (caughtError) {
@@ -2718,7 +2783,7 @@ function App() {
           ? allChecks.filter((check) => check.status === selectedStatusFilter)
           : showHealthyChecks
             ? allChecks
-            : allChecks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
+            : allChecks.filter((check) => check.status !== "ok");
         const counts = allChecks.reduce<Record<CheckStatus, number>>(
           (accumulator, check) => {
             accumulator[check.status] += 1;
@@ -2751,7 +2816,7 @@ function App() {
       { ok: 0, improvement: 0, warning: 0, critical: 0, unavailable: 0 }
     );
   }, [displayedAnalysis]);
-  const healthyCheckCount = displayedAnalysis?.checks.filter((check) => check.status === "ok" && check.id !== "routing-topology").length ?? 0;
+  const healthyCheckCount = displayedAnalysis?.checks.filter((check) => check.status === "ok").length ?? 0;
 
   useEffect(() => {
     if (!displayedAnalysis) {
@@ -2917,7 +2982,7 @@ function App() {
       ? displayedAnalysis.checks.filter((check) => check.status === selectedStatusFilter)
       : showHealthyChecks
         ? displayedAnalysis.checks
-        : displayedAnalysis.checks.filter((check) => check.status !== "ok" || check.id === "routing-topology");
+        : displayedAnalysis.checks.filter((check) => check.status !== "ok");
 
     if (visibleChecks.length > 0) {
       const isActiveVisible = visibleChecks.some((check) => check.id === activeCheck);
@@ -3516,23 +3581,6 @@ function App() {
     }
   }
 
-  async function openRoutingGraphic(refreshAnalysis = false) {
-    setCurrentPage("analysis");
-    setSelectedStatusFilter(null);
-
-    if (refreshAnalysis || !analysis?.checks.some((check) => check.id === "routing-topology")) {
-      await runAnalysis(undefined, "routing-topology");
-      await loadRoutingTopology();
-    } else {
-      setActiveCheck("routing-topology");
-      await loadRoutingTopology();
-    }
-
-    window.setTimeout(() => {
-      document.querySelector(".routing-topology-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
-  }
-
   async function copyCollectorCommand() {
     const copied = await copyText(collectorCommand);
     setCollectorCommandPreview(copied ? "" : collectorCommand);
@@ -3835,7 +3883,7 @@ function App() {
               <details className="inline-help">
                 <summary>Brauche ich den AskSin-Sniffer überhaupt?</summary>
                 <ul>
-                  <li><strong>Ohne Sniffer:</strong> Geräte- und Alarmmeldungen, Batterien, Erreichbarkeit, Konfiguration, CCU-Duty-Cycle, RSSI der Zentrale und Funk-Topologie aus CCU-Daten.</li>
+                  <li><strong>Ohne Sniffer:</strong> Geräte- und Alarmmeldungen, Batterien, Erreichbarkeit, Konfiguration, CCU-Duty-Cycle, RSSI der Zentrale sowie Router- und Gateway-Konfiguration.</li>
                   <li><strong>Mit Sniffer:</strong> einzelne Telegramme, Funklast pro Gerät, Carrier Sense und Empfang am Sniffer-Standort.</li>
                   <li>Gateways und Access Points sind zusätzliche Funkempfänger. Sie werden nicht pauschal als Router behandelt.</li>
                 </ul>
@@ -4920,17 +4968,6 @@ function App() {
               </span>
             </div>
             <div className="results__header-actions">
-              {form.hmipRoutingEnabled && displayedAnalysis?.checks.some((check) => check.id === "routing-topology") && (
-                <button
-                  type="button"
-                  className="routing-entry-button"
-                  onClick={() => void openRoutingGraphic(false)}
-                  disabled={loading || routingTopologyLoading}
-                >
-                  <span aria-hidden="true">↗</span>
-                  <strong>Routing-Grafik</strong>
-                </button>
-              )}
               {!analysisDataRefreshing && (
                 <div className="auto-refresh-pill" aria-live="polite">
                   <span aria-hidden="true">↻</span>
@@ -5511,9 +5548,6 @@ function App() {
                       {check.id === "signal-strength" && (
                         <button type="button" onClick={() => openSignalImprovement()}>Empfang verbessern</button>
                       )}
-                      {check.id === "routing-topology" && (
-                        <button type="button" onClick={() => void openRoutingGraphic(false)}>Routing-Grafik öffnen</button>
-                      )}
                       {check.id === "logs" && (
                         <button type="button" onClick={() => setCurrentPage("logs")}>Logs und KI-Auswertung öffnen</button>
                       )}
@@ -5523,12 +5557,9 @@ function App() {
                     </div>
 
                     {check.id === "routing-topology" && (
-                      <RoutingTopologyView
+                      <RadioInfrastructureView
                         topology={routingTopology}
                         loading={routingTopologyLoading}
-                        dataRefreshing={analysisDataRefreshing}
-                        selectedNodeId={selectedRoutingNodeId}
-                        onSelectNode={setSelectedRoutingNodeId}
                         onRefresh={() => void loadRoutingTopology(true)}
                       />
                     )}
@@ -5653,8 +5684,8 @@ function App() {
 
             <details className="setup-card settings-block routing-settings" open>
               <summary>
-                <span>HmIP-Routing-Analyse</span>
-                <small>{form.hmipRoutingEnabled ? "Aktiv · Einrichtung prüfen" : "Optional · ausgeschaltet"}</small>
+                <span>Funk-Infrastruktur</span>
+                <small>{form.hmipRoutingEnabled ? "Aktiv · Router und Gateways" : "Optional · ausgeschaltet"}</small>
               </summary>
               <div className="settings-block__body">
                 <label className="toggle routing-master-toggle">
@@ -5663,23 +5694,23 @@ function App() {
                     checked={form.hmipRoutingEnabled}
                     onChange={(event) => updateForm({ ...form, hmipRoutingEnabled: event.target.checked })}
                   />
-                  <span>HmIP-Routing analysieren</span>
+                  <span>Router und Funk-Gateways erfassen</span>
                 </label>
 
                 {!form.hmipRoutingEnabled ? (
                   <div className="routing-disabled-note">
-                    <strong>Der Routing-Prüfpunkt ist ausgeblendet.</strong>
-                    <span>Aktiviere ihn nur, wenn du Router, Routing-Aktivität und später echte Verbindungswege untersuchen möchtest.</span>
+                    <strong>Der Infrastruktur-Prüfpunkt ist ausgeblendet.</strong>
+                    <span>Aktiviere ihn, wenn Router-Schalter und klassische Funk-Gateways ausgewertet werden sollen.</span>
                   </div>
                 ) : (
                   <div className="routing-guide">
                     <div className="routing-guide__intro">
                       <div>
-                        <strong>Einmal einrichten, danach direkt zur Grafik</strong>
-                        <span>Arbeite die Schritte von oben nach unten ab. Sobald der letzte Haken automatisch grün wird, öffnet der Abschlussbutton die fertige Routing-Karte.</span>
+                        <strong>Router und Gateways aus der CCU lesen</strong>
+                        <span>Der Collector überträgt die Konfiguration der bekannten Funkgeräte. Einen live verwendeten nächsten Empfänger pro Gerät stellt die CCU nicht als Tabelle bereit.</span>
                       </div>
-                      <span className={`routing-readiness ${routingStatus?.hmipLogReceived ? "is-ready" : ""}`}>
-                        {routingStatus?.hmipLogReceived ? "Empfang bereit" : "Noch nicht vollständig"}
+                      <span className={`routing-readiness ${routingStatus?.collectorState === "fresh" ? "is-ready" : ""}`}>
+                        {routingStatus?.collectorState === "fresh" ? "Collector bereit" : "Collector prüfen"}
                       </span>
                     </div>
 
@@ -5687,41 +5718,8 @@ function App() {
                       <li className="is-complete">
                         <input type="checkbox" checked readOnly aria-label="Routing-Analyse aktiviert" />
                         <div>
-                          <strong>Routing-Analyse aktiviert</strong>
+                          <strong>Funk-Infrastruktur aktiviert</strong>
                           <span>Der Prüfpunkt erscheint ab der nächsten Analyse.</span>
-                        </div>
-                      </li>
-                      <li className={form.hmipRoutingLogLevelSet ? "is-complete" : ""}>
-                        <input
-                          type="checkbox"
-                          checked={form.hmipRoutingLogLevelSet}
-                          onChange={(event) => updateForm({ ...form, hmipRoutingLogLevelSet: event.target.checked })}
-                          aria-label="Homematic IP auf Alles loggen gestellt"
-                        />
-                        <div>
-                          <strong>Homematic IP auf „Alles loggen“ stellen</strong>
-                          <span>
-                            In der CCU WebUI unter Einstellungen → Systemsteuerung → Zentralen-Wartung → Fehlerprotokoll.
-                            {ccuUiUrl && <> <a href={ccuUiUrl} target="_blank" rel="noreferrer">CCU WebUI öffnen</a></>}
-                          </span>
-                          <figure className="routing-help-image">
-                            <a href="/docs/hmip-routing-loglevel.png" target="_blank" rel="noreferrer">
-                              <img src="/docs/hmip-routing-loglevel.png" alt="OpenCCU Zentralen-Wartung mit Fehlerprotokoll und Auswahl Alles loggen für Homematic IP" />
-                            </a>
-                            <figcaption>Bei „Homematic IP“ → „Alles loggen“ auswählen und „Einstellungen übernehmen“ klicken.</figcaption>
-                          </figure>
-                        </div>
-                      </li>
-                      <li className={form.hmipRoutingRestarted ? "is-complete" : ""}>
-                        <input
-                          type="checkbox"
-                          checked={form.hmipRoutingRestarted}
-                          onChange={(event) => updateForm({ ...form, hmipRoutingRestarted: event.target.checked })}
-                          aria-label="Zentrale nach Änderung neu gestartet"
-                        />
-                        <div>
-                          <strong>Zentrale danach neu starten</strong>
-                          <span>Die Änderung des HmIPServer-Loglevels wird erst nach dem Neustart zuverlässig aktiv.</span>
                         </div>
                       </li>
                       <li className={routingStatus?.collectorState === "fresh" ? "is-complete" : ""}>
@@ -5731,7 +5729,7 @@ function App() {
                           <span>
                             {routingStatus?.collectorState === "fresh"
                               ? `Letzte Daten: ${routingStatus.collectedAt ? new Date(routingStatus.collectedAt).toLocaleString("de-DE") : "soeben"}.`
-                              : "Der Collector muss auch /var/log/hmserver.log übertragen. Kopiere den Befehl per SSH auf die CCU."}
+                              : "Führe den Collector auf der CCU aus oder warte auf seine nächste regelmäßige Übertragung."}
                           </span>
                           {routingStatus?.collectorState !== "fresh" && (
                             <div className="routing-command">
@@ -5741,53 +5739,23 @@ function App() {
                           )}
                         </div>
                       </li>
-                      <li className={routingStatus?.hmipLogReceived ? "is-complete is-automatic" : "is-automatic"}>
-                        <input type="checkbox" checked={Boolean(routingStatus?.hmipLogReceived)} readOnly aria-label="HmIPServer-Log wird empfangen" />
-                        <div>
-                          <strong>HmIPServer-Daten werden empfangen</strong>
-                          <span>
-                            {routingStatus?.hmipLogReceived
-                              ? `${routingStatus.hmipLogLines} aktuelle Logzeilen von ${routingStatus.host ?? "der CCU"} erkannt.`
-                              : "Dieser Haken wird automatisch gesetzt, sobald nach dem Neustart passende Daten eintreffen."}
-                          </span>
-                        </div>
-                      </li>
                     </ol>
 
-                    <div className={`routing-finish ${routingStatus?.hmipLogReceived ? "is-ready" : ""}`}>
+                    <div className={`routing-finish ${routingStatus?.collectorState === "fresh" ? "is-ready" : ""}`}>
                       <div>
-                        <strong>{routingStatus?.hmipLogReceived ? "Einrichtung abgeschlossen" : "Letzter Schritt: Empfang bestätigen"}</strong>
+                        <strong>{routingStatus?.collectorState === "fresh" ? "Infrastruktur wird übertragen" : "Collector-Verbindung prüfen"}</strong>
                         <span>
-                          {routingStatus?.hmipLogReceived
-                            ? "Die Routing-Daten kommen an. Öffne jetzt direkt die grafische Topologie."
-                            : "Prüfe den Empfang. Sobald HmIPServer-Daten erkannt werden, wird die Routing-Grafik freigeschaltet."}
+                          {routingStatus?.collectorState === "fresh"
+                            ? "Die Router- und Gateway-Konfiguration erscheint in der Analyse unter „Funk-Infrastruktur“."
+                            : "Sobald der Collector Daten liefert, wird die Übersicht automatisch aktualisiert."}
                         </span>
                       </div>
                       <div className="routing-actions">
                         <button type="button" className="light-button" onClick={() => void loadRoutingStatus(true)} disabled={routingStatusLoading}>
-                          {routingStatusLoading ? "Empfang wird geprüft …" : "Empfang erneut prüfen"}
-                        </button>
-                        <button
-                          type="button"
-                          className="routing-result-button"
-                          onClick={() => void openRoutingGraphic(true)}
-                          disabled={!routingStatus?.hmipLogReceived || loading}
-                        >
-                          {loading ? "Analyse läuft …" : "Routing-Grafik öffnen"}
+                          {routingStatusLoading ? "Status wird geprüft …" : "Status aktualisieren"}
                         </button>
                       </div>
                     </div>
-
-                    {routingStatus?.sample.length ? (
-                      <details className="routing-log-sample">
-                        <summary>Empfangene HmIPServer-Zeilen ansehen</summary>
-                        <pre>{routingStatus.sample.join("\n")}</pre>
-                      </details>
-                    ) : null}
-
-                    <p className="routing-warning">
-                      Nach erfolgreicher Datenerfassung „Homematic IP“ wieder auf „Nur Fehler protokollieren“ oder den vorherigen Wert stellen. „Alles loggen“ erzeugt deutlich mehr Logdaten.
-                    </p>
 
                     <details className="routing-remove">
                       <summary>Collector später rückstandslos entfernen</summary>

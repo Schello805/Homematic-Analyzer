@@ -5881,6 +5881,123 @@ pre {
   background: linear-gradient(145deg, #fbfdff, #f5f9ff);
 }
 
+.radio-infrastructure-card {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid #d9e4f3;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.radio-infrastructure-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.radio-infrastructure-header h4 {
+  margin: 2px 0 5px;
+}
+
+.radio-infrastructure-header p {
+  max-width: 760px;
+  margin: 0;
+  color: #5c6e87;
+}
+
+.radio-infrastructure-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.radio-infrastructure-metrics span,
+.radio-infrastructure-list article {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid #dce6f4;
+  border-radius: 12px;
+  background: #fff;
+  color: #61728b;
+}
+
+.radio-infrastructure-metrics strong {
+  color: #1d2d48;
+  font-size: 1.25rem;
+}
+
+.radio-infrastructure-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-left: 4px solid #3b82f6;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #425876;
+}
+
+.radio-infrastructure-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.radio-infrastructure-list article strong {
+  color: #1d2d48;
+}
+
+.radio-infrastructure-list article small {
+  color: #667892;
+}
+
+.radio-infrastructure-role {
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.radio-infrastructure-role.gateway {
+  color: #087f8f;
+  background: #e4f8fb;
+}
+
+.radio-infrastructure-role.router {
+  color: #08764f;
+  background: #e8f9ef;
+}
+
+.radio-infrastructure-role.candidate {
+  color: #a55e00;
+  background: #fff4d8;
+}
+
+.radio-infrastructure-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .radio-infrastructure-header,
+  .radio-infrastructure-empty {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .radio-infrastructure-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
 .routing-topology-header {
   display: flex;
   align-items: flex-start;
