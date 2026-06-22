@@ -3831,6 +3831,11 @@ function App() {
                       </li>
                     ))}
                   </ol>
+                  {ccuTestResult.reachable && (
+                    <button type="button" className="light-button" onClick={() => void runAnalysis(undefined, "ccu-connection")}>
+                      Analyse mit CCU-Daten starten
+                    </button>
+                  )}
                 </div>
               )}
             </fieldset>
@@ -4897,18 +4902,24 @@ function App() {
       {!analysis && <form className="analysis-start panel" onSubmit={runAnalysis}>
         <div>
           <p className="eyebrow">Analyse</p>
-          <h2>Analyse starten</h2>
+          <h2>{form.ccuHost.trim() ? "Analyse starten" : "Zuerst die CCU verbinden"}</h2>
           <p>
-            Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse.
+            {form.ccuHost.trim()
+              ? "Ein Klick prüft die verfügbaren Datenquellen. Fehlende Setup-Punkte begrenzen nur die Tiefe der Analyse."
+              : "Für eine aussagekräftige Analyse brauchst du CCU-Adresse, Login und XML-API-Token. Das dauert nur wenige Minuten."}
           </p>
           {!setupProgress.complete && (
             <p className="setup-note">Setup {setupProgress.percent}% eingerichtet · fehlende Punkte bei Bedarf ergänzen.</p>
           )}
         </div>
         <div className="analysis-start__actions">
-          <button className="analyze-button analyze-button-compact" disabled={loading}>
-            {loading ? "Analyse läuft ..." : "Analyse starten"}
-          </button>
+          {!form.ccuHost.trim() ? (
+            <button type="button" className="analyze-button analyze-button-compact" onClick={() => setCurrentPage("setup")}>Setup beginnen</button>
+          ) : (
+            <button className="analyze-button analyze-button-compact" disabled={loading}>
+              {loading ? "Analyse läuft ..." : "Analyse starten"}
+            </button>
+          )}
         </div>
         {error && <p className="error">{error}</p>}
       </form>}
@@ -5486,7 +5497,7 @@ function App() {
                       .filter((item): item is AnalysisCheck => Boolean(item))
                     : [];
                   return (
-                  <article key={check.id}>
+                  <article key={check.id} data-check-id={check.id}>
                     <div className="detail-title">
                       <span className={`pill status-${check.status}`}>
                         {getStatusIcon(check.status, "status-icon-inline")}
@@ -6321,6 +6332,14 @@ function App() {
                   onSourceChange={setSignalSourceFilter}
                   receiverOptions={signalReceiverOptions}
                   focusDeviceName={signalFocusDeviceName}
+                  onOpenInfrastructure={() => {
+                    closeActionModal();
+                    setCurrentPage("analysis");
+                    setActiveCheck("routing-topology");
+                    window.setTimeout(() => {
+                      document.querySelector('[data-check-id="routing-topology"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 80);
+                  }}
                 />
               </>
             )}

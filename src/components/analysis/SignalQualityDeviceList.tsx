@@ -54,12 +54,13 @@ function receiverStatus(receiver: SignalReceiverOption) {
   return "Möglicher netzversorgter Router-Kandidat";
 }
 
-export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions, focusDeviceName }: {
+export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions, focusDeviceName, onOpenInfrastructure }: {
   devices: SignalDevice[];
   source: SignalSource;
   onSourceChange: (source: SignalSource) => void;
   receiverOptions: SignalReceiverOption[];
   focusDeviceName?: string;
+  onOpenInfrastructure?: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
@@ -148,6 +149,7 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
             <ul>{actionableReceivers.slice(0, 6).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}.</li>)}</ul>
           </> : !existingReceivers.length ? <p>Im aktuellen Snapshot ist kein passender vorhandener Empfänger oder Router-Kandidat belegt. Prüfe einen zusätzlichen, zur Funktechnik passenden Empfänger.</p> : <p>Weitere passende Router-Kandidaten sind aktuell nicht belegt. Ein bestehender Empfänger hilft nur, wenn er räumlich günstig positioniert ist.</p>}
           {isHmIpDevice(selectedDevice) ? <p><b>Für Homematic IP:</b> „Gerät dient als Router“ beschreibt die Router-Fähigkeit. „Routing aktiv“ erlaubt die Nutzung für Weiterleitungen. Beides ist nicht dasselbe. Änderungen nur in der CCU-WebUI und nur an unterstützten, netzversorgten Geräten vornehmen.</p> : <p><b>Für klassisches Homematic:</b> Ein LAN-Gateway ist ein zusätzlicher Funkempfänger, kein HmIP-Router. Es muss am passenden Standort stehen; eine automatische Zuordnung zu diesem Gerät ist ohne Routing-Beleg nicht möglich.</p>}
+          {onOpenInfrastructure && <button type="button" className="light-button signal-infrastructure-button" onClick={onOpenInfrastructure}>Router und Gateways ansehen</button>}
         </section>
       )}
       <div className="action-device-list">
