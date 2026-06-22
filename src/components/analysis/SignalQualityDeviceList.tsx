@@ -54,17 +54,17 @@ function receiverStatus(receiver: SignalReceiverOption) {
   return "Möglicher netzversorgter Router-Kandidat";
 }
 
-export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions, focusDeviceName, onOpenInfrastructure }: {
+export function SignalQualityDeviceList({ devices, source, onSourceChange, receiverOptions, focusDeviceName }: {
   devices: SignalDevice[];
   source: SignalSource;
   onSourceChange: (source: SignalSource) => void;
   receiverOptions: SignalReceiverOption[];
   focusDeviceName?: string;
-  onOpenInfrastructure?: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [selectedKey, setSelectedKey] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showReceiverOptions, setShowReceiverOptions] = useState(false);
   const improvementPlanRef = useRef<HTMLElement>(null);
   const sourceDevices = devices.filter((device) => source === "both"
     ? device.ccuRssi !== undefined || device.snifferRssi !== undefined
@@ -100,6 +100,7 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
     setShowAll(false);
     setSearchQuery(focusedDevice.name);
     setSelectedKey(focusedDevice.key);
+    setShowReceiverOptions(false);
   }, [devices, focusDeviceName, source]);
 
   useEffect(() => {
@@ -138,18 +139,30 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
       {selectedDevice && (
         <section ref={improvementPlanRef} className="signal-improvement-plan" tabIndex={-1}>
           <p className="eyebrow">Nächster Schritt für {selectedDevice.name}</p>
-          <h3>Empfang verbessern, ohne das Gerät zu versetzen</h3>
-          <p>Die Zentrale empfängt dieses Gerät schwach. Das kann Telegramme verzögern oder störanfälliger machen. Die App kennt jedoch keine Raumpositionen und kann deshalb keine echte Nähe behaupten.</p>
-          {existingReceivers.length > 0 && <>
-            <strong>Bereits vorhanden – kein neuer Vorschlag:</strong>
-            <ul>{existingReceivers.slice(0, 4).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}. Prüfe nur den Standort, falls dieser Empfänger nicht günstig liegt.</li>)}</ul>
-          </>}
-          {actionableReceivers.length > 0 ? <>
-            <strong>Mögliche zusätzliche Option – nur prüfen, wenn sie räumlich zwischen Zentrale und Gerät liegt:</strong>
-            <ul>{actionableReceivers.slice(0, 6).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}.</li>)}</ul>
-          </> : !existingReceivers.length ? <p>Im aktuellen Snapshot ist kein passender vorhandener Empfänger oder Router-Kandidat belegt. Prüfe einen zusätzlichen, zur Funktechnik passenden Empfänger.</p> : <p>Weitere passende Router-Kandidaten sind aktuell nicht belegt. Ein bestehender Empfänger hilft nur, wenn er räumlich günstig positioniert ist.</p>}
-          {isHmIpDevice(selectedDevice) ? <p><b>Für Homematic IP:</b> „Gerät dient als Router“ beschreibt die Router-Fähigkeit. „Routing aktiv“ erlaubt die Nutzung für Weiterleitungen. Beides ist nicht dasselbe. Änderungen nur in der CCU-WebUI und nur an unterstützten, netzversorgten Geräten vornehmen.</p> : <p><b>Für klassisches Homematic:</b> Ein LAN-Gateway ist ein zusätzlicher Funkempfänger, kein HmIP-Router. Es muss am passenden Standort stehen; eine automatische Zuordnung zu diesem Gerät ist ohne Routing-Beleg nicht möglich.</p>}
-          {onOpenInfrastructure && <button type="button" className="light-button signal-infrastructure-button" onClick={onOpenInfrastructure}>Router und Gateways ansehen</button>}
+          <h3>Empfang gezielt verbessern</h3>
+          <p>Die Zentrale empfängt dieses Gerät schwach. Die App kennt keine Raumpositionen und kann daher keinen bestimmten Router als „nächsten“ Empfänger behaupten.</p>
+          <ol className="signal-improvement-steps">
+            <li><strong>Vor Ort prüfen:</strong> Liegt ein vorhandenes Gateway oder ein netzversorgtes HmIP-Gerät ungefähr zwischen Zentrale und diesem Gerät?</li>
+            <li><strong>Nur bei HmIP:</strong> Prüfe bei einem passenden, netzversorgten Gerät in der CCU-WebUI, ob „Gerät dient als Router“ und „Routing aktiv“ gesetzt sind.</li>
+            <li><strong>Danach beobachten:</strong> Gerät mehrfach auslösen und prüfen, ob sich RSSI und Erreichbarkeit in der nächsten Analyse verbessern.</li>
+          </ol>
+          {isHmIpDevice(selectedDevice)
+            ? <p className="signal-improvement-note"><b>Hinweis für Homematic IP:</b> Router-Fähigkeit und „Routing aktiv“ sind unterschiedliche Schalter. Ändere nur unterstützte, netzversorgte Geräte.</p>
+            : <p className="signal-improvement-note"><b>Hinweis für klassisches Homematic:</b> Ein LAN-Gateway ist ein zusätzlicher Funkempfänger, kein HmIP-Router.</p>}
+          {(existingReceivers.length > 0 || actionableReceivers.length > 0) && (
+            <details className="signal-receiver-options" open={showReceiverOptions} onToggle={(event) => setShowReceiverOptions(event.currentTarget.open)}>
+              <summary>Vorhandene Optionen ansehen ({existingReceivers.length} aktiv, {actionableReceivers.length} Kandidaten)</summary>
+              <p>Diese Liste ist keine Orts- oder Routing-Zuordnung. Berücksichtige nur Geräte, die räumlich sinnvoll liegen.</p>
+              {existingReceivers.length > 0 && <>
+                <strong>Bereits aktiv</strong>
+                <ul>{existingReceivers.slice(0, 4).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}</li>)}</ul>
+              </>}
+              {actionableReceivers.length > 0 && <>
+                <strong>Weitere Kandidaten</strong>
+                <ul>{actionableReceivers.slice(0, 6).map((receiver) => <li key={receiver.id}><b>{receiver.name}</b>{receiver.type ? ` (${receiver.type})` : ""} – {receiverStatus(receiver)}</li>)}</ul>
+              </>}
+            </details>
+          )}
         </section>
       )}
       <div className="action-device-list">
@@ -158,7 +171,7 @@ export function SignalQualityDeviceList({ devices, source, onSourceChange, recei
             <div><strong>{device.name}</strong><span>{device.type ?? device.serial ?? device.address ?? device.key}</span></div>
             {source === "both" ? <DualRssiAssessment ccu={device.ccuRssi} sniffer={device.snifferRssi} /> : <span className="single-rssi"><small>Zentrale</small><RssiAssessment value={device.ccuRssi} /></span>}
             {source === "both" && device.telegrams !== undefined ? <small className={device.telegrams >= 3 ? "measurement-good" : "measurement-provisional"}>{device.telegrams} Telegramm{device.telegrams === 1 ? "" : "e"} · {device.telegrams >= 3 ? "belastbar" : "vorläufig"}</small> : <small className="measurement-central">Zentralenwert</small>}
-            {!showAll && <button type="button" className="signal-improve-button" onClick={() => setSelectedKey((current) => current === device.key ? "" : device.key)}>Empfang verbessern</button>}
+            {!showAll && <button type="button" className="signal-improve-button" onClick={() => { setShowReceiverOptions(false); setSelectedKey((current) => current === device.key ? "" : device.key); }}>Empfang verbessern</button>}
           </article>
         ))}
         {visibleDevices.length === 0 && <div className="modal-empty"><strong>{showAll ? "Noch keine passenden RSSI-Gerätedaten" : "Keine auffälligen Signalwerte"}</strong><span>{showAll ? "Analyse automatisch aktualisieren lassen und prüfen, ob die XML-API RSSI-Werte der Zentrale liefert." : "Die vorhandenen Werte liegen im guten Bereich. Über „Alle“ kannst du sie trotzdem ansehen."}</span></div>}

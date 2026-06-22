@@ -9,6 +9,14 @@
 .signal-improvement-plan { display: grid; gap: 10px; margin-top: 16px; padding: 16px; border: 1px solid #bdd6ff; border-left: 4px solid #3478f6; border-radius: 14px; background: #f4f8ff; }
 .signal-improvement-plan .eyebrow, .signal-improvement-plan h3, .signal-improvement-plan p { margin: 0; }
 .signal-improvement-plan ul { display: grid; gap: 6px; margin: 0; padding-left: 18px; }
+.signal-improvement-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: signal-step; }
+.signal-improvement-steps li { position: relative; min-height: 34px; padding: 8px 10px 8px 42px; border: 1px solid #d5e3f7; border-radius: 10px; background: #fff; color: #425776; }
+.signal-improvement-steps li::before { content: counter(signal-step); counter-increment: signal-step; position: absolute; top: 8px; left: 10px; display: grid; width: 23px; height: 23px; place-items: center; border-radius: 50%; background: #3478f6; color: #fff; font-size: .75rem; font-weight: 800; }
+.signal-improvement-note { color: #536883; font-size: .92rem; }
+.signal-receiver-options { padding: 10px 12px; border: 1px solid #d5e3f7; border-radius: 10px; background: rgba(255, 255, 255, .7); }
+.signal-receiver-options summary { color: #1d56ab; font-weight: 760; cursor: pointer; }
+.signal-receiver-options p { margin-top: 10px; color: #5b6e88; font-size: .88rem; }
+.signal-receiver-options strong { display: block; margin-top: 10px; color: #263852; font-size: .88rem; }
 @media (max-width: 640px) {
   .signal-list-toolbar { align-items: stretch; flex-direction: column; }
   .signal-list-toolbar .light-button { width: 100%; }

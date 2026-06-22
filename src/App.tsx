@@ -6332,14 +6332,6 @@ function App() {
                   onSourceChange={setSignalSourceFilter}
                   receiverOptions={signalReceiverOptions}
                   focusDeviceName={signalFocusDeviceName}
-                  onOpenInfrastructure={() => {
-                    closeActionModal();
-                    setCurrentPage("analysis");
-                    setActiveCheck("routing-topology");
-                    window.setTimeout(() => {
-                      document.querySelector('[data-check-id="routing-topology"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }, 80);
-                  }}
                 />
               </>
             )}
