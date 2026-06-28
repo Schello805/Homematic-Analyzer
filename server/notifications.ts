@@ -230,7 +230,7 @@ export async function sendNotificationSummaries(settings: NotificationSettings, 
   return { telegram, email };
 }
 
-export async function sendTestNotification(channel: "telegram" | "email", settings: NotificationSettings): Promise<NotificationChannelResult> {
+export async function sendTestNotification(channel: "telegram" | "email", settings: NotificationSettings, analyzerUrl?: string): Promise<NotificationChannelResult> {
   const testSettings: NotificationSettings = {
     ...settings,
     telegram: { ...settings.telegram, enabled: channel === "telegram" },
@@ -249,6 +249,6 @@ export async function sendTestNotification(channel: "telegram" | "email", settin
     details: ["Dieser Test verändert keine Homematic-Daten."]
   }];
 
-  const result = await sendNotificationSummaries(testSettings, testChecks);
+  const result = await sendNotificationSummaries(testSettings, testChecks, analyzerUrl);
   return channel === "telegram" ? result.telegram : result.email;
 }

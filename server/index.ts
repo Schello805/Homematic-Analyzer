@@ -1,8 +1,10 @@
 import cors from "cors";
 import express from "express";
+import type { Request } from "express";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -64,6 +66,43 @@ let updateRun: {
 
 function isPersistableCcuSnapshot(snapshot: CcuSnapshot | undefined): snapshot is CcuSnapshot {
   return Boolean(snapshot?.reachable && snapshot.counters.devices > 0 && snapshot.devices.length > 0);
+}
+
+function normalizeAnalyzerUrl(value: string | undefined) {
+  const trimmed = value?.trim().replace(/\/+$/, "");
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
+function localNetworkAnalyzerUrl() {
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) {
+        return `http://${address.address}:${port}`;
+      }
+    }
+  }
+  return `http://127.0.0.1:${port}`;
+}
+
+function configuredAnalyzerUrl() {
+  return normalizeAnalyzerUrl(process.env.ANALYZER_PUBLIC_URL) ?? localNetworkAnalyzerUrl();
+}
+
+function analyzerUrlFromRequest(request: Request) {
+  const configured = normalizeAnalyzerUrl(process.env.ANALYZER_PUBLIC_URL);
+  if (configured) return configured;
+
+  const forwardedHost = typeof request.headers["x-forwarded-host"] === "string"
+    ? request.headers["x-forwarded-host"].split(",")[0]?.trim()
+    : undefined;
+  const forwardedProto = typeof request.headers["x-forwarded-proto"] === "string"
+    ? request.headers["x-forwarded-proto"].split(",")[0]?.trim()
+    : undefined;
+  const host = forwardedHost || request.get("host");
+  if (!host) return configuredAnalyzerUrl();
+
+  return `${forwardedProto || request.protocol || "http"}://${host}`.replace(/\/+$/, "");
 }
 
 function isStoredCcuSnapshot(value: unknown): value is CcuSnapshot {
@@ -1078,8 +1117,7 @@ async function runNotificationMonitor() {
     const selection = selectNewNotificationChecks(checks, settings, notificationMonitorState);
 
     if (selection.newChecks.length > 0) {
-      const publicUrl = process.env.ANALYZER_PUBLIC_URL?.trim();
-      const notificationResult = await sendNotificationSummaries(settings, selection.newChecks, publicUrl || undefined);
+      const notificationResult = await sendNotificationSummaries(settings, selection.newChecks, configuredAnalyzerUrl());
       const delivered = [notificationResult.telegram, notificationResult.email].some((result) => result.state === "sent");
       if (!delivered) {
         throw new Error("Ereignis erkannt, aber Telegram oder E-Mail konnte nicht versendet werden. Einstellungen prüfen.");
@@ -1438,7 +1476,7 @@ app.post("/api/analyze", async (request, response) => {
 
     const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
     const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames, centralReleaseCheck);
-    const analyzerUrl = `${request.protocol}://${request.get("host") ?? `127.0.0.1:${port}`}`;
+    const analyzerUrl = analyzerUrlFromRequest(request);
     const notificationResult = parsed.data.notify === false
       ? {
         telegram: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." },
@@ -1801,7 +1839,7 @@ app.post("/api/settings/notifications/test", async (request, response) => {
   }
 
   const settings = mergeNotificationSettings(parsed.data.settings ?? persistedNotificationSettings);
-  const result = await sendTestNotification(parsed.data.channel, settings);
+  const result = await sendTestNotification(parsed.data.channel, settings, analyzerUrlFromRequest(request));
   response.json(result);
 });
 
