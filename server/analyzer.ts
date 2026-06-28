@@ -612,13 +612,17 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         ? ccu?.dutyCycle === undefined
           ? "Kein Fehler wird behauptet. Der Analyzer zeigt Duty Cycle erst, wenn ein echter Wert oder eine passende Servicemeldung vorliegt."
           : ccu.dutyCycle >= 90
-            ? "Kritisch: häufig sendende Programme, externe Systeme und Geräte mit Kommunikationsproblemen prüfen."
+            ? hasSniffer
+              ? "Kritisch: CCU-Wert ernst nehmen und im DC-Analyzer die gemessene Funkzeit nach Geräten aufteilen. Zusätzlich Kommunikationsstörungen, ausstehende Konfigurationen und externe Abfragen prüfen."
+              : "Kritisch: Die CCU meldet nur den Gesamtwert, keinen Geräte-Verursacher. Prüfe zuerst Kommunikationsstörungen, ausstehende Konfigurationen, Servicemeldungen und stark abfragende externe Systeme. Für eine echte Geräte-Aufteilung ist der DC-Analyzer mit Sniffer nötig."
             : ccu.dutyCycle >= 70
-              ? "Beobachten: Wenn der Wert länger hoch bleibt, Funklast und externe Abfragen prüfen."
+              ? hasSniffer
+                ? "Beobachten: Im DC-Analyzer prüfen, welche Geräte am Sniffer-Standort den größten Anteil an der gemessenen Funkzeit haben. Ohne längeren Verlauf nicht vorschnell Geräte ändern."
+                : "Beobachten: Ohne Sniffer ist der Verursacher nicht belegbar. Prüfe als Nächstes Erreichbarkeit, Konfiguration ausstehend, Servicemeldungen, Signalqualität und externe Zugriffe."
               : ccu.dutyCycle >= 50
                 ? hasSniffer
                   ? "Erhöht: Den CCU-Wert beobachten und im DC-Analyzer zusätzlich prüfen, welche Geräte beim Sniffer den größten Anteil an der gemessenen Funkzeit haben."
-                  : "Erhöht: Den CCU-Wert beobachten. Häufige Programme, Kommunikationsstörungen und stark abfragende externe Systeme prüfen."
+                  : "Erhöht: Den CCU-Wert beobachten. Eine Geräte-Aufteilung ist ohne Sniffer nicht belegbar; prüfe stattdessen Kommunikationsstörungen, ausstehende Konfigurationen und externe Zugriffe."
                 : "Kein akuter Handlungsbedarf."
         : "CCU-Zugang einrichten, damit der echte Duty-Cycle-Wert gelesen werden kann.",
       access: ["ccu"],
@@ -627,6 +631,9 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : [],
       details: [
         "Quelle dieses Prüfpunkts ist der von der CCU/XML-API gemeldete Duty-Cycle-Wert der Zentrale.",
+        "Die CCU liefert hier nur den Gesamtwert der Funk-Schnittstelle. Sie liefert keine belegbare Aufteilung, welches Gerät wie viel Duty Cycle verursacht.",
+        "Nächste Schritte ohne Sniffer: Erreichbarkeit, Konfiguration ausstehend, Servicemeldungen, Signalqualität und externe Zugriffe prüfen.",
+        "Nächster Schritt mit Sniffer: DC-Analyzer öffnen und die gemessene Funkzeit der letzten 60 Minuten nach Geräten sortieren.",
         "Der AskSin-Sniffer misst zusätzlich Funktelegramme am Standort des Sniffers. Das ist eine zweite Quelle und keine 1:1-Aufteilung des CCU-Werts.",
         "Schwellwerte: ab 50% Optimierung, ab 70% Hinweis, ab 90% kritisch.",
         "Ein Problem wird nur markiert, wenn ein echter Wert oder eine aktive Servicemeldung vorliegt."

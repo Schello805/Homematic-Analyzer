@@ -2908,10 +2908,10 @@ function App() {
         eyebrow: "Funk",
         title: radioAttentionChecks.length > 1 ? "Funkzustand gemeinsam einordnen" : primaryRadioCheck.title,
         detail: `${radioAttentionChecks.map((check) => check.summary).join(" ")}${form.snifferEnabled && analysisSnifferMode === "with-sniffer" ? " Snifferdaten ergänzen bei Bedarf die Verursacheranalyse." : ""}`,
-        button: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled && analysisSnifferMode === "with-sniffer"
-          ? "Funklast aufteilen"
+        button: primaryRadioCheck.id === "duty-cycle"
+          ? "Verursacher prüfen"
           : primaryRadioCheck.id === "signal-strength" ? "Signalwerte öffnen" : "Funkdetails öffnen",
-        modal: primaryRadioCheck.id === "duty-cycle" && form.snifferEnabled && analysisSnifferMode === "with-sniffer"
+        modal: primaryRadioCheck.id === "duty-cycle"
           ? "duty"
           : primaryRadioCheck.id === "signal-strength" ? "signal" : "check",
         checkId: primaryRadioCheck.id
@@ -5553,7 +5553,10 @@ function App() {
                       {["system-health", "logs", "external-access"].includes(check.id) && (
                         <button type="button" onClick={() => openActionModal("collector")}>Collector-Script anzeigen</button>
                       )}
-                      {["duty-cycle", "signal-strength"].includes(check.id) && form.snifferEnabled && analysisSnifferMode === "with-sniffer" && (
+                      {check.id === "duty-cycle" && (
+                        <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
+                      )}
+                      {check.id === "signal-strength" && form.snifferEnabled && analysisSnifferMode === "with-sniffer" && (
                         <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
                       )}
                       {check.id === "signal-strength" && (
@@ -6313,7 +6316,7 @@ function App() {
                 })() : (
                   <div className="modal-empty">
                     <strong>Noch keine Sniffer-Aufteilung vorhanden</strong>
-                    <span>Sniffer mindestens einige Minuten verbunden lassen und anschließend erneut analysieren.</span>
+                    <span>Die CCU liefert nur den Gesamt-Duty-Cycle. Geräte-Verursacher werden erst sichtbar, wenn ein AskSin-Sniffer einige Minuten Funktelegramme gemessen hat.</span>
                   </div>
                 )}
               </>
