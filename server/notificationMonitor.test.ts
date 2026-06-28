@@ -21,6 +21,20 @@ function overheatCheck(): AnalysisCheck {
   };
 }
 
+function dutyCycleCheck(value: number, status: AnalysisCheck["status"] = "warning"): AnalysisCheck {
+  return {
+    id: "duty-cycle",
+    title: "Duty Cycle",
+    category: "Funk",
+    status,
+    summary: `Die CCU meldet einen belegten Duty-Cycle-Wert von ${value}%.`,
+    recommendation: "Beobachten.",
+    access: ["ccu"],
+    evidence: [{ source: "CCU XML-API Duty Cycle", detail: `Zentrale meldet Duty Cycle: ${value}%.` }],
+    details: []
+  };
+}
+
 test("benachrichtigt erst bei neuem Ereignis nach stiller Basisprüfung", () => {
   const firstRun = selectNewNotificationChecks([overheatCheck()], settings);
   assert.equal(firstRun.newChecks.length, 0);
@@ -47,4 +61,17 @@ test("benachrichtigt ein zusätzliches Ereignis, aber nicht den bestehenden Fehl
   }, firstRun.state);
   assert.equal(nextRun.newChecks.length, 1);
   assert.match(nextRun.newChecks[0]?.evidence[0]?.detail ?? "", /SABOTAGE/);
+});
+
+test("sendet Duty-Cycle-Änderungen innerhalb derselben Statusstufe nicht minütlich erneut", () => {
+  const dutySettings: NotificationSettings = {
+    events: { warning: true, critical: true, dutyCycle: true }
+  };
+  const firstRun = selectNewNotificationChecks([dutyCycleCheck(76)], dutySettings);
+  const changedButSameStatus = selectNewNotificationChecks([dutyCycleCheck(80)], dutySettings, firstRun.state);
+  assert.equal(changedButSameStatus.newChecks.length, 0);
+
+  const escalated = selectNewNotificationChecks([dutyCycleCheck(92, "critical")], dutySettings, changedButSameStatus.state);
+  assert.equal(escalated.newChecks.length, 1);
+  assert.match(escalated.newChecks[0]?.summary ?? "", /92%/);
 });

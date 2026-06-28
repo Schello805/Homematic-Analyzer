@@ -11,6 +11,10 @@ export type NotificationMonitorState = {
 };
 
 function fingerprint(check: AnalysisCheck) {
+  if (check.id === "duty-cycle") {
+    return `${check.id}:${check.status}`;
+  }
+
   const evidence = check.evidence
     .map((item) => item.detail.replace(/\s+/g, " ").trim())
     .filter(Boolean)
