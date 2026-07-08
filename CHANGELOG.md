@@ -10,3 +10,9 @@ Alle wichtigen Änderungen an Homematic Analyzer werden hier dokumentiert.
 - Express-API für Analyse und Collector-Daten.
 - Copy-Paste-Collector-Script für Systemwerte, Backup-Anzahl und relevante Logzeilen.
 - Footer mit GitHub-Link und Update-Hinweis.
+
+## Unreleased - 2026-07-08
+
+- Refactor: Extract routing and radio UI from `src/App.tsx` into dedicated components under `src/components/routing/`.
+- Consolidate shared frontend types into `src/types.ts` to reduce duplication and improve maintainability.
+
