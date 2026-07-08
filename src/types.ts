@@ -279,7 +279,29 @@ export type SnifferSnapshot = {
   diagnostics: string[];
 };
 
+
+export type SetupForm = {
+  ccuHost: string;
+  ccuUser: string;
+  ccuPassword: string;
+  xmlApiToken?: string | null;
+  sshUser: string;
+  sshPassword: string;
+  snifferEnabled: boolean;
+  snifferPort: string;
+  hmipRoutingEnabled: boolean;
+  hmipRoutingLogLevelSet: boolean;
+  hmipRoutingRestarted: boolean;
+};
+
 export type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "ccuPassword" | "xmlApiToken" | "sshUser" | "sshPassword" | "snifferEnabled" | "snifferPort" | "hmipRoutingEnabled" | "hmipRoutingLogLevelSet" | "hmipRoutingRestarted">>;
+
+export type NotificationSettings = {
+  telegram: { enabled: boolean; [key: string]: any };
+  email: { enabled: boolean; [key: string]: any };
+  events: { enabled: boolean; serviceTypes?: string[]; [key: string]: any };
+  ai: { enabled: boolean; [key: string]: any };
+};
 
 export type CollectorStatus = {
   available: boolean;
