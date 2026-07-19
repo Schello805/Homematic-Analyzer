@@ -77,6 +77,7 @@ import {
   firstRelevantCheckId,
   filterSnifferFromCheck,
   checkUsesSniffer,
+  getAnalyzerBaseUrl,
   getApiBaseUrl,
   getCcuUiUrl,
   setupStorageKey,
@@ -425,55 +426,61 @@ function App() {
     : "Rauschpegel-Messwerte des Sniffers (`:xx;`) in dBm, nicht in Prozent.";
 
   const scriptUrl = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl,
+      url: analyzerUrl,
       mode: collectorMode,
       interval: collectorInterval
     });
-    return `${baseUrl}/api/collector/script?${params.toString()}`;
+    return `${analyzerUrl}${apiBaseUrl}/collector/script?${params.toString()}`;
   }, [collectorMode, collectorInterval]);
 
   const addonDownloadUrl = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
-    const params = new URLSearchParams({ url: baseUrl });
-    return `${baseUrl}/api/addon/download?${params.toString()}`;
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
+    const params = new URLSearchParams({ url: analyzerUrl });
+    return `${apiBaseUrl}/addon/download?${params.toString()}`;
   }, []);
 
   const ccuMasterdataScriptUrl = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl
+      url: analyzerUrl
     });
-    return `${baseUrl}/api/ccu-masterdata/script?${params.toString()}`;
+    return `${apiBaseUrl}/ccu-masterdata/script?${params.toString()}`;
   }, []);
 
   const askSinDevListScriptUrl = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl
+      url: analyzerUrl
     });
-    return `${baseUrl}/api/asksin-devlist/script?${params.toString()}`;
+    return `${apiBaseUrl}/asksin-devlist/script?${params.toString()}`;
   }, []);
 
   const collectorCommand = useMemo(() => `curl -fsSL "${scriptUrl}" | sh`, [scriptUrl]);
   const recommendedCollectorCommand = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl,
+      url: analyzerUrl,
       mode: "install",
       interval: "minute"
     });
-    return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
+    return `curl -fsSL "${analyzerUrl}${apiBaseUrl}/collector/script?${params.toString()}" | sh`;
   }, []);
   const collectorUninstallCommand = useMemo(() => {
-    const baseUrl = getApiBaseUrl();
+    const apiBaseUrl = getApiBaseUrl();
+    const analyzerUrl = getAnalyzerBaseUrl();
     const params = new URLSearchParams({
-      url: baseUrl,
+      url: analyzerUrl,
       mode: "uninstall",
       interval: "minute"
     });
-    return `curl -fsSL "${baseUrl}/api/collector/script?${params.toString()}" | sh`;
+    return `curl -fsSL "${analyzerUrl}${apiBaseUrl}/collector/script?${params.toString()}" | sh`;
   }, []);
   const ccuUiUrl = useMemo(() => getCcuUiUrl(form.ccuHost), [form.ccuHost]);
 
@@ -1986,7 +1993,10 @@ function App() {
     });
 
     if (!response.ok) {
-      throw new Error("Die Analyse konnte nicht gestartet werden.");
+      const payload = await response.json().catch(() => null) as { error?: string; issues?: Array<{ path?: Array<string | number>; message?: string }> } | null;
+      const issue = payload?.issues?.[0];
+      const issuePath = issue?.path?.length ? ` (${issue.path.join(".")})` : "";
+      throw new Error(`${payload?.error ?? "Die Analyse konnte nicht gestartet werden."}${issue?.message ? `: ${issue.message}${issuePath}` : ""}`);
     }
 
     return (await response.json()) as AnalysisResponse;

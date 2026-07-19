@@ -330,7 +330,7 @@ const notificationSettingsSchema = z.object({
   email: z.object({
     enabled: z.boolean().optional(),
     host: z.string().max(200).optional(),
-    port: z.number().int().positive().max(65535).optional(),
+    port: z.preprocess((value) => value === 0 || value === "" ? undefined : value, z.number().int().positive().max(65535).optional()),
     secure: z.boolean().optional(),
     user: z.string().max(200).optional(),
     password: z.string().max(300).optional(),

@@ -24,7 +24,7 @@ export const initialForm = loadSavedSetup();
 export type NotificationSettings = any;
 export const initialNotificationSettings: NotificationSettings = {
   telegram: { enabled: false, token: "", chatId: "", botToken: "" },
-  email: { enabled: false, to: "", host: "", port: 0, user: "" },
+  email: { enabled: false, to: "", host: "", port: undefined, user: "" },
   events: { enabled: false },
   ai: { enabled: false, apiKey: "" }
 };
@@ -55,6 +55,10 @@ export function filterSnifferFromCheck(check: any, _mode: any) { return check; }
 export function checkUsesSniffer(_check: any) { return false; }
 
 export function getApiBaseUrl() { return "/api"; }
+export function getAnalyzerBaseUrl() {
+  if (typeof window === "undefined") return "http://127.0.0.1:3001";
+  return window.location.origin.replace(/\/+$/, "");
+}
 export function getCcuUiUrl(host?: string) { return host ? `http://${host}` : ""; }
 
 export const setupStorageKey = "homematic-analyzer-setup";
