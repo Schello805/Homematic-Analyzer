@@ -210,10 +210,22 @@ exit 1
     const rcPath = join(rcDir, addonName);
     await writeFile(rcPath, `#!/bin/sh
 ADDON_NAME="Homematic Analyzer Bridge"
-RUNNER="/usr/local/addons/${addonName}/bin/homematic-analyzer-bridge.sh"
+ADDON_ID="${addonName}"
+VERSION="${appVersion}"
+WWW_DIR="/etc/config/addons/www/$ADDON_ID"
+CONFIG_URL="/addons/$ADDON_ID/index.cgi"
+RUNNER="/etc/config/addons/$ADDON_ID/bin/homematic-analyzer-bridge.sh"
 CRON_FILE="/usr/local/crontabs/root"
 CRON_MARKER="# Homematic Analyzer Add-on Bridge"
 CRON_LINE="* * * * * $RUNNER >/tmp/homematic-analyzer-addon.log 2>&1 $CRON_MARKER"
+
+ensure_web_link() {
+  if [ ! -e "/www/config/$ADDON_ID" ]; then
+    mount -o remount,rw / >/dev/null 2>&1 || true
+    ln -s "$WWW_DIR" "/www/config/$ADDON_ID" >/dev/null 2>&1 || true
+    mount -o remount,ro / >/dev/null 2>&1 || true
+  fi
+}
 
 ensure_cron_file() {
   mkdir -p "$(dirname "$CRON_FILE")"
@@ -231,6 +243,7 @@ remove_cron() {
 }
 
 start_bridge() {
+  ensure_web_link
   ensure_cron_file
   remove_cron
   echo "$CRON_LINE" >> "$CRON_FILE"
@@ -238,19 +251,46 @@ start_bridge() {
   sh "$RUNNER" >/tmp/homematic-analyzer-addon.log 2>&1 || true
 }
 
+show_info() {
+  echo "Info: <b>Homematic Analyzer Bridge</b><br>"
+  echo "Info: Sendet CCU-Systemwerte, Backups und Logs an den Homematic Analyzer."
+  echo "Version: $VERSION"
+  echo "Name: Homematic Analyzer Bridge"
+  echo "Operations: uninstall"
+  echo "Config-Url: $CONFIG_URL"
+}
+
+uninstall_bridge() {
+  remove_cron
+  restart_cron
+  if [ -e "/www/config/$ADDON_ID" ]; then
+    mount -o remount,rw / >/dev/null 2>&1 || true
+    rm -f "/www/config/$ADDON_ID"
+    mount -o remount,ro / >/dev/null 2>&1 || true
+  fi
+  rm -rf "/etc/config/addons/$ADDON_ID" "$WWW_DIR"
+  rm -f "/etc/config/addons/$ADDON_ID.cfg"
+}
+
 case "$1" in
-  start|install)
+  ""|start|install)
     start_bridge
     ;;
-  stop|uninstall)
+  info)
+    show_info
+    ;;
+  stop)
     remove_cron
     restart_cron
+    ;;
+  uninstall)
+    uninstall_bridge
     ;;
   restart)
     start_bridge
     ;;
   *)
-    echo "Usage: $0 {start|stop|restart|install|uninstall}"
+    echo "Usage: $0 {start|stop|restart|install|info|uninstall}"
     exit 1
     ;;
 esac
@@ -285,7 +325,7 @@ HTML
 ADDON_NAME="homematic-analyzer-bridge"
 PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$PACKAGE_DIR/$ADDON_NAME"
-RUNTIME_DIR="/usr/local/addons/$ADDON_NAME"
+RUNTIME_DIR="/usr/local/etc/config/addons/$ADDON_NAME"
 CONFIG_DIR="/usr/local/etc/config/addons"
 WWW_DIR="$CONFIG_DIR/www/$ADDON_NAME"
 RCD_DIR="/usr/local/etc/config/rc.d"
