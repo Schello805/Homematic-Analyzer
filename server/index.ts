@@ -105,6 +105,26 @@ function analyzerUrlFromRequest(request: Request) {
   return `${forwardedProto || request.protocol || "http"}://${host}`.replace(/\/+$/, "");
 }
 
+function analyzerUrlFromDownloadRequest(request: Request) {
+  const queryUrl = typeof request.query.url === "string" ? request.query.url.trim() : "";
+  const looksLikeRelativeUrl = queryUrl.startsWith("/") || queryUrl.startsWith(".") || queryUrl.toLowerCase() === "api";
+
+  if (queryUrl && !looksLikeRelativeUrl) {
+    const normalized = normalizeAnalyzerUrl(queryUrl);
+    if (normalized) {
+      try {
+        const parsed = new URL(normalized);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          return parsed.toString().replace(/\/+$/, "");
+        }
+      } catch {
+      }
+    }
+  }
+
+  return analyzerUrlFromRequest(request);
+}
+
 function shellSingleQuote(value: string) {
   return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
@@ -2123,10 +2143,9 @@ app.get("/api/collector/script", async (request, response) => {
   );
 });
 
-app.get("/api/addon/download", async (request, response) => {
+app.get(["/api/addon/download", "/api/api/addon/download"], async (request, response) => {
   try {
-    const analyzerUrl = normalizeAnalyzerUrl(typeof request.query.url === "string" ? request.query.url : undefined)
-      ?? analyzerUrlFromRequest(request);
+    const analyzerUrl = analyzerUrlFromDownloadRequest(request);
     const token = typeof request.query.token === "string" && request.query.token.trim()
       ? request.query.token.trim()
       : await getInstallationCollectorToken();
@@ -2134,6 +2153,7 @@ app.get("/api/addon/download", async (request, response) => {
 
     response.setHeader("Content-Type", "application/gzip");
     response.setHeader("Content-Disposition", `attachment; filename="homematic-analyzer-bridge-${appVersion}.tar.gz"`);
+    response.setHeader("X-Content-Type-Options", "nosniff");
     response.send(archive);
   } catch (error) {
     response.status(500).json({
