@@ -155,8 +155,9 @@ async function runArchiveCommand(args: string[]) {
 
 async function createHomematicAddonPackage(analyzerUrl: string, token: string) {
   const tempRoot = await mkdtemp(join(tmpdir(), "homematic-analyzer-addon-"));
+  const packageRoot = join(tempRoot, "package");
   const addonName = "homematic-analyzer-bridge";
-  const addonDir = join(tempRoot, addonName);
+  const addonDir = join(packageRoot, addonName);
   const binDir = join(addonDir, "bin");
   const rcDir = join(addonDir, "rc.d");
   const wwwDir = join(addonDir, "www", addonName);
@@ -172,11 +173,12 @@ async function createHomematicAddonPackage(analyzerUrl: string, token: string) {
   const collectorScriptUrl = `${cleanAnalyzerUrl}/api/collector/script?${collectorParams.toString()}`;
 
   try {
+    await mkdir(packageRoot, { recursive: true });
     await mkdir(binDir, { recursive: true });
     await mkdir(rcDir, { recursive: true });
     await mkdir(wwwDir, { recursive: true });
 
-    await writeFile(join(addonDir, "addon.cfg"), [
+    const addonConfig = [
       "ADDON_NAME=Homematic Analyzer Bridge",
       `ADDON_VERSION=${appVersion}`,
       "ADDON_DESCRIPTION=Sendet CCU-Systemdaten an den Homematic Analyzer",
@@ -184,7 +186,9 @@ async function createHomematicAddonPackage(analyzerUrl: string, token: string) {
       `ADDON_URL=/addons/${addonName}/index.cgi`,
       `CONFIG_URL=/addons/${addonName}/index.cgi`,
       ""
-    ].join("\n"));
+    ].join("\n");
+    await writeFile(join(addonDir, "addon.cfg"), addonConfig);
+    await writeFile(join(packageRoot, "addon.cfg"), addonConfig);
 
     const runnerPath = join(binDir, "homematic-analyzer-bridge.sh");
     await writeFile(runnerPath, `#!/bin/sh
@@ -276,7 +280,42 @@ HTML
 `);
     await chmod(indexPath, 0o755);
 
-    await runArchiveCommand(["-czf", archivePath, "-C", tempRoot, addonName]);
+    const updateScriptPath = join(packageRoot, "update_script");
+    await writeFile(updateScriptPath, `#!/bin/sh
+ADDON_NAME="homematic-analyzer-bridge"
+PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
+SOURCE_DIR="$PACKAGE_DIR/$ADDON_NAME"
+RUNTIME_DIR="/usr/local/addons/$ADDON_NAME"
+CONFIG_DIR="/usr/local/etc/config/addons"
+WWW_DIR="$CONFIG_DIR/www/$ADDON_NAME"
+RCD_DIR="/usr/local/etc/config/rc.d"
+CFG_FILE="$CONFIG_DIR/$ADDON_NAME.cfg"
+RC_FILE="$RCD_DIR/$ADDON_NAME"
+
+echo "Homematic Analyzer Bridge: Installation startet"
+
+if [ ! -d "$SOURCE_DIR" ]; then
+  echo "Homematic Analyzer Bridge: Paketinhalt fehlt: $SOURCE_DIR"
+  exit 1
+fi
+
+mkdir -p "$RUNTIME_DIR" "$CONFIG_DIR" "$WWW_DIR" "$RCD_DIR"
+rm -rf "$RUNTIME_DIR/bin" "$WWW_DIR"
+cp -R "$SOURCE_DIR/bin" "$RUNTIME_DIR/"
+cp -R "$SOURCE_DIR/www/$ADDON_NAME" "$WWW_DIR"
+cp "$SOURCE_DIR/rc.d/$ADDON_NAME" "$RC_FILE"
+cp "$SOURCE_DIR/addon.cfg" "$CFG_FILE"
+chmod 755 "$RUNTIME_DIR/bin/homematic-analyzer-bridge.sh" "$RC_FILE" "$WWW_DIR/index.cgi"
+
+"$RC_FILE" install || true
+
+echo "Homematic Analyzer Bridge: Installation abgeschlossen"
+exit 0
+`);
+    await chmod(updateScriptPath, 0o755);
+    await writeFile(join(packageRoot, "VERSION"), `${appVersion}\n`);
+
+    await runArchiveCommand(["-czf", archivePath, "-C", packageRoot, "update_script", "VERSION", "addon.cfg", addonName]);
     return await readFile(archivePath);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
