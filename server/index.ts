@@ -3,8 +3,8 @@ import express from "express";
 import type { Request } from "express";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
-import { networkInterfaces } from "node:os";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { networkInterfaces, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -103,6 +103,164 @@ function analyzerUrlFromRequest(request: Request) {
   if (!host) return configuredAnalyzerUrl();
 
   return `${forwardedProto || request.protocol || "http"}://${host}`.replace(/\/+$/, "");
+}
+
+function shellSingleQuote(value: string) {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function safeAddonValue(value: string) {
+  return value.replace(/[\r\n]/g, " ").trim();
+}
+
+async function runArchiveCommand(args: string[]) {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("tar", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on("error", reject);
+    child.on("close", (exitCode) => {
+      if (exitCode === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderr.trim() || `tar beendet mit Code ${exitCode}`));
+    });
+  });
+}
+
+async function createHomematicAddonPackage(analyzerUrl: string, token: string) {
+  const tempRoot = await mkdtemp(join(tmpdir(), "homematic-analyzer-addon-"));
+  const addonName = "homematic-analyzer-bridge";
+  const addonDir = join(tempRoot, addonName);
+  const binDir = join(addonDir, "bin");
+  const rcDir = join(addonDir, "rc.d");
+  const wwwDir = join(addonDir, "www", addonName);
+  const archivePath = join(tempRoot, `${addonName}-${appVersion}.tar.gz`);
+  const cleanAnalyzerUrl = safeAddonValue(analyzerUrl);
+  const cleanToken = safeAddonValue(token);
+  const collectorParams = new URLSearchParams({
+    url: cleanAnalyzerUrl,
+    token: cleanToken,
+    mode: "once",
+    interval: "minute"
+  });
+  const collectorScriptUrl = `${cleanAnalyzerUrl}/api/collector/script?${collectorParams.toString()}`;
+
+  try {
+    await mkdir(binDir, { recursive: true });
+    await mkdir(rcDir, { recursive: true });
+    await mkdir(wwwDir, { recursive: true });
+
+    await writeFile(join(addonDir, "addon.cfg"), [
+      "ADDON_NAME=Homematic Analyzer Bridge",
+      `ADDON_VERSION=${appVersion}`,
+      "ADDON_DESCRIPTION=Sendet CCU-Systemdaten an den Homematic Analyzer",
+      "ADDON_AUTHOR=Homematic Analyzer",
+      `ADDON_URL=/addons/${addonName}/index.cgi`,
+      `CONFIG_URL=/addons/${addonName}/index.cgi`,
+      ""
+    ].join("\n"));
+
+    const runnerPath = join(binDir, "homematic-analyzer-bridge.sh");
+    await writeFile(runnerPath, `#!/bin/sh
+ANALYZER_URL=${shellSingleQuote(cleanAnalyzerUrl)}
+COLLECTOR_URL=${shellSingleQuote(collectorScriptUrl)}
+LOG_FILE="/tmp/homematic-analyzer-addon.log"
+
+echo "Homematic Analyzer Add-on: Snapshot wird übertragen an $ANALYZER_URL" > "$LOG_FILE"
+if curl -fsSL "$COLLECTOR_URL" | sh >> "$LOG_FILE" 2>&1; then
+  echo "Homematic Analyzer Add-on: Übertragung erfolgreich" >> "$LOG_FILE"
+  exit 0
+fi
+
+echo "Homematic Analyzer Add-on: Übertragung fehlgeschlagen" >> "$LOG_FILE"
+exit 1
+`);
+    await chmod(runnerPath, 0o755);
+
+    const rcPath = join(rcDir, addonName);
+    await writeFile(rcPath, `#!/bin/sh
+ADDON_NAME="Homematic Analyzer Bridge"
+RUNNER="/usr/local/addons/${addonName}/bin/homematic-analyzer-bridge.sh"
+CRON_FILE="/usr/local/crontabs/root"
+CRON_MARKER="# Homematic Analyzer Add-on Bridge"
+CRON_LINE="* * * * * $RUNNER >/tmp/homematic-analyzer-addon.log 2>&1 $CRON_MARKER"
+
+ensure_cron_file() {
+  mkdir -p "$(dirname "$CRON_FILE")"
+  touch "$CRON_FILE"
+}
+
+restart_cron() {
+  /etc/init.d/S48crond restart >/dev/null 2>&1 || /etc/init.d/crond restart >/dev/null 2>&1 || true
+}
+
+remove_cron() {
+  ensure_cron_file
+  grep -v "$CRON_MARKER" "$CRON_FILE" > "$CRON_FILE.tmp" || true
+  mv "$CRON_FILE.tmp" "$CRON_FILE"
+}
+
+start_bridge() {
+  ensure_cron_file
+  remove_cron
+  echo "$CRON_LINE" >> "$CRON_FILE"
+  restart_cron
+  sh "$RUNNER" >/tmp/homematic-analyzer-addon.log 2>&1 || true
+}
+
+case "$1" in
+  start|install)
+    start_bridge
+    ;;
+  stop|uninstall)
+    remove_cron
+    restart_cron
+    ;;
+  restart)
+    start_bridge
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|install|uninstall}"
+    exit 1
+    ;;
+esac
+`);
+    await chmod(rcPath, 0o755);
+
+    const indexPath = join(wwwDir, "index.cgi");
+    await writeFile(indexPath, `#!/bin/sh
+echo "Content-Type: text/html"
+echo ""
+cat <<'HTML'
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Homematic Analyzer Bridge</title>
+  <style>body{font-family:sans-serif;margin:2rem;line-height:1.45}code{background:#eef2f7;padding:.15rem .35rem;border-radius:.35rem}</style>
+</head>
+<body>
+  <h1>Homematic Analyzer Bridge</h1>
+  <p>Das Add-on sendet Systemwerte, Backups, Logs und vorbereitete Gerätedaten an den Homematic Analyzer.</p>
+  <p>Statuslog: <code>/tmp/homematic-analyzer-addon.log</code></p>
+  <p>Zum rückstandslosen Entfernen das Add-on über <strong>Systemsteuerung → Zusatzsoftware</strong> deinstallieren.</p>
+</body>
+</html>
+HTML
+`);
+    await chmod(indexPath, 0o755);
+
+    await runArchiveCommand(["-czf", archivePath, "-C", tempRoot, addonName]);
+    return await readFile(archivePath);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function isStoredCcuSnapshot(value: unknown): value is CcuSnapshot {
@@ -1216,7 +1374,7 @@ app.use((error: unknown, request: express.Request, response: express.Response, n
 
   response.status(400).json({
     error: "Ungültige Anfrage",
-    hint: "Die gesendeten Daten konnten nicht als JSON gelesen werden. Bitte Shell-Collector-Script aktualisieren und erneut ausführen.",
+    hint: "Die gesendeten Daten konnten nicht als JSON gelesen werden. Bitte CCU Add-on aktualisieren oder Fallback-Collector erneut ausführen.",
     message: error instanceof Error ? error.message : "Bad Request"
   });
 });
@@ -1362,7 +1520,7 @@ app.post("/api/ccu/test", async (request, response) => {
     centralProductFromSystem(latestCollector?.system),
     centralProductFromSystem(latestCcuMasterdata?.system)
   );
-  const fallbackSource = collectorVersion ? "Shell-Collector aus /VERSION" : masterdataVersion ? "CCU-WebUI-Script" : undefined;
+  const fallbackSource = collectorVersion ? "CCU Add-on Collector aus /VERSION" : masterdataVersion ? "CCU Add-on" : undefined;
   const centralVersion = firstNonBlankString(snapshot?.centralVersion, fallbackVersion);
   const centralProduct = firstNonBlankString(snapshot?.centralProduct, fallbackProduct);
   const diagnostics = (snapshot?.diagnostics ?? []).map((diagnostic) => (
@@ -1534,7 +1692,7 @@ app.post("/api/collector", async (request, response) => {
     console.warn("Ungültige Collector-Daten", JSON.stringify(parsed.error.issues));
     response.status(400).json({
       error: "Ungültige Collector-Daten",
-      hint: "Bitte aktualisiere das Shell-Collector-Script in der Web-App und führe es erneut auf der CCU aus.",
+      hint: "Bitte aktualisiere das CCU Add-on und warte den nächsten Lauf ab.",
       issues: parsed.error.issues.map((issue) => ({
         path: issue.path.join("."),
         message: issue.message
@@ -1963,6 +2121,27 @@ app.get("/api/collector/script", async (request, response) => {
       .replaceAll("__COLLECTOR_INTERVAL__", interval)
       .replaceAll("__COLLECTOR_SCRIPT_URL__", collectorScriptUrl)
   );
+});
+
+app.get("/api/addon/download", async (request, response) => {
+  try {
+    const analyzerUrl = normalizeAnalyzerUrl(typeof request.query.url === "string" ? request.query.url : undefined)
+      ?? analyzerUrlFromRequest(request);
+    const token = typeof request.query.token === "string" && request.query.token.trim()
+      ? request.query.token.trim()
+      : await getInstallationCollectorToken();
+    const archive = await createHomematicAddonPackage(analyzerUrl, token);
+
+    response.setHeader("Content-Type", "application/gzip");
+    response.setHeader("Content-Disposition", `attachment; filename="homematic-analyzer-bridge-${appVersion}.tar.gz"`);
+    response.send(archive);
+  } catch (error) {
+    response.status(500).json({
+      error: "Add-on konnte nicht erstellt werden.",
+      message: error instanceof Error ? error.message : String(error),
+      hint: "Bitte prüfe, ob das Systemprogramm tar verfügbar ist. Alternativ kann der Analyzer weiterhin ohne Add-on mit Live-Daten arbeiten."
+    });
+  }
 });
 
 app.get("/api/ccu-masterdata/script", async (request, response) => {

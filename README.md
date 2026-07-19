@@ -11,7 +11,7 @@ Der Analyzer arbeitet modular:
 
 - **CCU-Zugang**: Basisanalyse für Geräte, Batterien, Servicemeldungen, Duty Cycle, Firmware und HmIP-Routing.
 - **XML-API**: Erste echte CCU-Datenquelle für Geräte, Datenpunkte und Servicemeldungen.
-- **SSH oder Collector-Script**: Systemwerte, Logs, Temperatur, Speicher, Backups, aktive CCU-Verbindungen und belegbare Systemauffälligkeiten.
+- **CCU Add-on**: optionale Bridge für Systemwerte, Logs, Temperatur, Speicher, Backups, aktive CCU-Verbindungen und vorbereitete Gerätenamen.
 - **KI-Logauswertung**: optional OpenAI oder Google Gemini nutzen, um vorhandene Logzeilen verständlich erklären zu lassen.
 - **AskSin Analyzer XS**: optionale Funk-Tiefenanalyse für User mit vorhandenem Sniffer.
 - **Telegram**: optionale Benachrichtigungen für kritische Events.
@@ -26,11 +26,11 @@ Messwerte werden in der Oberfläche nach Quelle getrennt angezeigt:
 
 - **CCU/XML-API**: bekannte Zentralenwerte wie Duty Cycle, Servicemeldungen, Batterien, Gerätezustände und RSSI aus Sicht der CCU.
 - **AskSin-Sniffer**: optionale Zusatzmessung am Standort des Sniffers, z. B. einzelne Telegramme, geschätzte Funkzeit pro Gerät, Rauschpegel/Carrier Sense und Sniffer-RSSI.
-- **Collector-Script**: Systemzustand der Zentrale, Logs, Speicher, Backups und aktive Verbindungen.
+- **CCU Add-on**: Systemzustand der Zentrale, Logs, Speicher, Backups und aktive Verbindungen.
 
 Der Sniffer erklärt mögliche Verursacher und Funkumgebung, ersetzt aber nicht den bekannten CCU-WebUI-Duty-Cycle.
 
-In der Analyse zeigt der Bereich **Datenquellen / Woher kommen die Ergebnisse?**, welche Quelle welchen Teil beiträgt und ob sie aktuell ist. So ist sichtbar, ob ein Hinweis aus der CCU, vom WebUI-Script, vom Shell-Collector oder optional vom Sniffer stammt.
+In der Analyse zeigt der Bereich **Datenquellen / Woher kommen die Ergebnisse?**, welche Quelle welchen Teil beiträgt und ob sie aktuell ist. So ist sichtbar, ob ein Hinweis aus der CCU, vom CCU Add-on oder optional vom Sniffer stammt.
 
 ## Installation auf Raspberry / Debian / Ubuntu / Proxmox LXC
 
@@ -55,12 +55,11 @@ Während der Installation fragt das Script optional nach:
 - CCU-Benutzer
 - XML-API Token-ID / `sid`
 - AskSin Analyzer XS USB-Port
-- ob Systemdaten per Collector gar nicht, einmalig oder regelmäßig an den Analyzer gesendet werden sollen
 
 Alle Fragen können übersprungen und später in der Web-App ausgefüllt werden. Gefundene USB-Ports werden automatisch angezeigt, bevorzugt als stabile Pfade unter `/dev/serial/by-id/`.
 Auch in der Web-App kann der Sniffer-Port später per Dropdown neu gesucht und ausgewählt werden. Falls der Port nicht sichtbar ist, kann er weiterhin manuell eingetragen werden.
 
-Wenn der Collector während der Installation aktiviert wird, wartet das Script auf die lokale Analyzer-API und sendet direkt einen ersten System-Snapshot. Bei regelmäßiger Übertragung wird zusätzlich ein Cronjob auf dem System angelegt. Für Verlaufsgrafiken und aktuelle Systemwerte wird die minütliche Übertragung empfohlen.
+Systemwerte, Logs, Backups und vorbereitete Gerätenamen kommen künftig über das **Homematic Analyzer CCU Add-on**. Das Add-on wird nach der Analyzer-Installation in der Web-App heruntergeladen und anschließend in der CCU unter **Einstellungen → Systemsteuerung → Zusatzsoftware** installiert.
 
 Nach der Installation ist die Web-App unter `http://SERVER-IP:3001` erreichbar.
 
@@ -163,29 +162,23 @@ Für Telegram können alternativ weiterhin `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CH
 
 In den Settings kann ein OpenAI- oder Gemini-API-Key hinterlegt werden. Die KI-Auswertung ist bewusst auf Logzeilen beschränkt; CCU-, SSH-, Telegram- und SMTP-Zugangsdaten werden dafür nicht an den KI-Anbieter gesendet.
 
-## Collector-Script
+## CCU Add-on Bridge
 
-In der App wird ein Copy-Paste-Befehl angezeigt. Das Script sammelt Systemwerte, relevante Logzeilen und aktive Verbindungen zu typischen CCU-Diensten auf der Zentrale und sendet sie an den Analyzer.
+Nach der Analyzer-Installation kann in der Web-App ein Homematic-Add-on heruntergeladen werden. Dieses Add-on wird auf der CCU/OpenCCU/RaspberryMatic unter **Einstellungen → Systemsteuerung → Zusatzsoftware** installiert und erledigt die regelmäßige Übergabe automatisch.
 
-Beispiel:
+Das Add-on liefert:
 
-```bash
-curl -fsSL "http://127.0.0.1:3001/api/collector/script?url=http://127.0.0.1:3001" | sh
-```
+- CCU-Systemwerte wie CPU, RAM, Temperatur, Speicher und Uptime
+- Backup-Ordner, Backup-Zeitpunkte und Backup-Speicher
+- Logauszüge für die Loganalyse
+- aktive Verbindungen zu typischen CCU-Diensten
+- vorbereitete Gerätenamen und AskSin-kompatible Namensliste
 
-Bei regelmäßiger Ausführung legt das Script ausschließlich einen mit `Homematic Analyzer system snapshot` markierten Cronjob an. Es ersetzt keine bestehenden Cronjobs.
+Damit entfällt im normalen Workflow das manuelle Copy-Paste von CCU- oder Shell-Scripts. Die alten Script-Endpunkte bleiben vorerst als Fallback für Sonderfälle erhalten, werden aber nicht mehr als Standardweg empfohlen.
 
-Der aktuelle Collector sendet zusätzlich seine eigene Script-Version, Ausführungsart und Intervall mit. Wenn nach einem CCU-Update keine Systemwerte oder keine Zentralenversion mehr ankommen, in der App die Collector-Karte öffnen und den dort gezeigten Befehl einmal neu ausführen.
+Entfernen: Das Add-on kann über **Systemsteuerung → Zusatzsoftware** wieder deinstalliert werden. Es entfernt dabei nur eigene Cron-/Bridge-Einträge.
 
-Vollständig entfernen:
-
-```bash
-curl -fsSL "http://ANALYZER-IP:3001/api/collector/script?url=http%3A%2F%2FANALYZER-IP%3A3001&mode=uninstall&interval=minute" | sh
-```
-
-Der Entfernen-Modus löscht nur den Analyzer-Cronjob sowie `/tmp/homematic-analyzer-collector.log` und `/tmp/homematic-analyzer-last-payload.json`. Andere CCU-Dateien, Backups und Cronjobs bleiben unberührt.
-
-Empfangene CCU-Stammdaten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
+Empfangene CCU-Daten werden lokal unter `.data/` gespeichert, damit sie nach einem Neustart des Analyzers erhalten bleiben.
 
 ## Funk-Topologie und Routing
 
@@ -209,15 +202,14 @@ Unter **Einstellungen → AskSin-Sniffer** lässt sich die Erweiterung vollstän
 
 Der Sniffer-Verlauf wird in echten Minutenwerten dargestellt. Hover oder Antippen zeigt Uhrzeit, Telegrammzahl, geschätzte Funkzeit und den gemessenen Rauschpegel in dBm. Überzählige Rohschätzungen werden proportional auf maximal 100 Prozent der verfügbaren Funkstunde normiert.
 
-Für verständliche Gerätenamen braucht der Analyzer die kompatible CCU-Systemvariable `AskSinAnalyzerDevList`. Wer AskSinAnalyzerXS bereits nutzt, hat diese Variable oft schon. Dann sendet das normale CCU-Stammdaten-Script sie automatisch mit. Falls sie fehlt, zeigt der DC-Analyzer einen Hinweis und bietet ein Copy-Paste-WebUI-Script an, das `AskSinAnalyzerDevList` erstellt oder aktualisiert.
+Für verständliche Gerätenamen nutzt der Analyzer die kompatible CCU-Systemvariable `AskSinAnalyzerDevList`, falls sie bereits vom AskSinAnalyzerXS vorhanden ist. Das CCU Add-on bereitet diese Namensliste zusätzlich vor, damit neue Nutzer kein separates WebUI-Script kopieren müssen.
 
 ## Aktueller Funktionsstand
 
 Bereits umgesetzt:
 
 - CCU/XML-API-Anbindung mit Token-ID/`sid`, Geräteauswertung und Servicemeldungen.
-- CCU-WebUI/ReGa-Script für tägliche Stammdatenmeldung.
-- Collector-Script für Systemwerte, Logs, Backups und aktive CCU-Verbindungen; einmalig oder per Cronjob.
+- CCU Add-on Bridge für Stammdaten, Gerätenamen, Systemwerte, Logs, Backups und aktive CCU-Verbindungen.
 - Lokale Datenbank unter `.data/homematic-analyzer-db.json`.
 - Telegram- und E-Mail-Benachrichtigungen inklusive auswählbarer Events.
 - KI-Logauswertung mit OpenAI oder Google Gemini.
@@ -241,8 +233,9 @@ Noch offen bzw. bewusst nur vorbereitet:
 
 ## Dokumentation
 
-- CCU-Stammdaten-Script: `docs/CCU_MASTERDATA_SCRIPT.md`
-- Optionaler System-Snapshot: `docs/COLLECTOR_SCRIPT.md`
+- CCU Add-on Bridge: `docs/CCU_ADDON.md`
+- Legacy CCU-Stammdaten-Script: `docs/CCU_MASTERDATA_SCRIPT.md`
+- Legacy System-Snapshot: `docs/COLLECTOR_SCRIPT.md`
 - XML-API Add-on: `docs/XML_API.md`
 - AskSin Analyzer XS: `docs/ASKSIN_ANALYZER_XS.md`
 - Proxmox USB-Durchreichung: `docs/PROXMOX_USB.md`

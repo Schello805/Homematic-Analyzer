@@ -526,18 +526,18 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       category: "Grundlage",
       status: masterdataDeviceCount > 0 || hasCcuData ? "ok" : "unavailable",
       summary: masterdataDeviceCount > 0
-        ? `${masterdataDeviceCount} Geräte wurden vom täglichen CCU-Script gemeldet.`
+        ? `${masterdataDeviceCount} Geräte wurden vom CCU Add-on gemeldet.`
         : hasCcuData
-          ? "Live-Gerätedaten wurden gelesen; das tägliche CCU-Script ist optional."
-          : "Das tägliche CCU-Script wurde noch nicht empfangen.",
+          ? "Live-Gerätedaten wurden gelesen; das CCU Add-on ist optional, aber für Zusatzdaten empfohlen."
+          : "Das CCU Add-on wurde noch nicht empfangen.",
       recommendation: masterdataDeviceCount > 0
         ? "Gut: Gerätenamen und CCU-Systemwerte stehen unabhängig von Live-Abfragen bereit."
         : hasCcuData
-          ? "Kein akuter Handlungsbedarf. Das Script verbessert nur die Stabilität der Stammdaten."
-          : "CCU-Script einmal aus der App kopieren, in der WebUI ausführen und danach täglich laufen lassen.",
+          ? "Kein akuter Handlungsbedarf. Das Add-on ergänzt stabile Stammdaten und Systemwerte."
+          : "CCU Add-on aus der App herunterladen und unter Zusatzsoftware installieren.",
       access: ["ccu"],
       evidence: masterdataDeviceCount > 0
-        ? [{ source: "CCU WebUI-Script", detail: `${masterdataDeviceCount} Geräte gemeldet.`, timestamp: masterdata?.collectedAt ?? now() }]
+        ? [{ source: "CCU Add-on", detail: `${masterdataDeviceCount} Geräte gemeldet.`, timestamp: masterdata?.collectedAt ?? now() }]
         : hasCcuData
           ? [{ source: "CCU XML-API", detail: `${ccu?.counters.devices ?? 0} Geräte wurden live gelesen.`, timestamp: ccu?.collectedAt }]
         : [],
@@ -855,30 +855,30 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
       category: "System",
       status: hasCcuSystemData || collector ? "ok" : "unavailable",
       summary: hasCcuSystemData
-        ? `CCU-Systemwerte wurden vom WebUI-Script gelesen (${systemSourceHost}).`
+        ? `CCU-Systemwerte wurden vom CCU Add-on gelesen (${systemSourceHost}).`
         : collector
-          ? `Systemwerte stammen vom Shell-Collector (${systemSourceHost}).`
+          ? `Systemwerte stammen vom CCU Add-on Collector (${systemSourceHost}).`
         : hasSsh
           ? "SSH-Zugang ist eingetragen, aber es liegen noch keine Systemwerte vor."
-        : "Systemwerte brauchen SSH oder das Copy-Paste-Collector-Script.",
+        : "Systemwerte brauchen das CCU Add-on.",
       recommendation: hasCcuSystemData || collector
         ? systemMissingTemperature || systemMissingBackups
-          ? "Wenn Temperatur oder Backups fehlen, das CCU-WebUI-Script einmal aktualisiert ausführen und prüfen, ob Backup-Dateien unter /usr/local/backup, /media oder /mnt liegen."
+          ? "Wenn Temperatur oder Backups fehlen, das CCU Add-on einmal aktualisieren und prüfen, ob Backup-Dateien unter /usr/local/backup, /media oder /mnt liegen."
           : "Behalte Temperatur, freien Speicher und Backup-Anzahl im Blick."
         : hasSsh
-          ? "CCU-WebUI-Script oder Shell-Collector ausführen, bevor Systemwerte bewertet werden."
-        : "CCU-WebUI-Script einrichten. Das ist der bevorzugte Weg für CCU3/RaspberryMatic-Systemwerte.",
+          ? "CCU Add-on oder Add-on Collector ausführen, bevor Systemwerte bewertet werden."
+        : "CCU Add-on einrichten. Das ist der bevorzugte Weg für CCU3/RaspberryMatic-Systemwerte.",
       access: ["ssh"],
       evidence: hasCcuSystemData
-        ? [{ source: "CCU WebUI-Script", detail: `Systemvariablen der Zentrale gelesen. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: masterdata?.collectedAt ?? now() }]
+        ? [{ source: "CCU Add-on", detail: `Systemvariablen der Zentrale gelesen. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.`, timestamp: masterdata?.collectedAt ?? now() }]
         : collector
-          ? [{ source: "Shell-Collector", detail: `Fallback-Daten von ${systemSourceHost}. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.${collectorScriptVersion ? ` Collector-Version: ${collectorScriptVersion}.` : " Collector-Version wurde noch nicht mitgeliefert; bitte den aktuellen Installationsbefehl einmal neu ausführen."}${collectorInterval ? ` Intervall: ${collectorInterval}.` : ""}`, timestamp: collector.collectedAt ?? now() }]
+          ? [{ source: "CCU Add-on Collector", detail: `Fallback-Daten von ${systemSourceHost}. Temperatur: ${systemMissingTemperature ? "nicht verfügbar" : "vorhanden"}. Backups: ${systemBackupCount} gefunden.${collectorScriptVersion ? ` Collector-Version: ${collectorScriptVersion}.` : " Collector-Version wurde noch nicht mitgeliefert; bitte den aktuellen Installationsbefehl einmal neu ausführen."}${collectorInterval ? ` Intervall: ${collectorInterval}.` : ""}`, timestamp: collector.collectedAt ?? now() }]
         : hasSsh
           ? [{ source: "SSH-Setup", detail: `SSH-Ziel ${config.sshHost ?? config.ccuHost} wurde angegeben.`, timestamp: now() }]
           : [],
       details: [
-        "Bevorzugte Quelle sind die HomematicAnalyzer-Systemvariablen, die das CCU-WebUI-Script auf der Zentrale erstellt.",
-        "Der Shell-Collector ist nur Fallback oder Ergänzung für Logs und aktive Verbindungen.",
+        "Bevorzugte Quelle ist das CCU Add-on auf der Zentrale.",
+        "Der CCU Add-on Collector ist nur Fallback oder Ergänzung für Logs und aktive Verbindungen.",
         "Bewertet werden nur Werte, die von der CCU/RaspberryMatic selbst geliefert wurden."
       ]
     },
@@ -895,14 +895,14 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
           ? `Der Collector wurde früher erkannt, aber der letzte Snapshot ist ${collectorAgeMinutes ?? "viele"} Minuten alt.`
         : hasSsh
           ? "Loganalyse ist vorbereitet, aber es liegen noch keine Logdaten vor."
-          : "Loganalyse ist ohne SSH oder Collector-Script nicht möglich.",
+          : "Loganalyse ist ohne SSH oder CCU Add-on nicht möglich.",
       recommendation: currentCollector?.logs?.length
         ? logAnalysis.relevantLines.length > 0
           ? "Prüfe die genannten Logzeilen. Nur diese werden als Auffälligkeit gewertet."
           : "Kein Handlungsbedarf aus diesen Logzeilen. Debug/Verbose-Ausgaben sind normale technische Protokolleinträge."
         : collector && !collectorIsFresh
-          ? "Der Collector war bereits eingerichtet. Prüfe den Cronjob und führe den aktuellen Installationsbefehl erneut aus; auf OpenCCU wird er danach dauerhaft gespeichert."
-        : "Collector-Script ausführen, damit echte Logbelege in die Analyse einfließen.",
+          ? "Das Add-on war bereits eingerichtet. Prüfe es in der CCU-Zusatzsoftware oder installiere es erneut."
+        : "CCU Add-on ausführen, damit echte Logbelege in die Analyse einfließen.",
       access: ["ssh"],
       evidence: currentCollector?.logs?.length
         ? (logAnalysis.relevantLines.length > 0 ? logAnalysis.relevantLines : logAnalysis.noisyLines).slice(0, 5).map((line) => ({
@@ -958,8 +958,8 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
               ? "Ordne die IPs den Systemen zu. Erst wenn viele Verbindungen, Logs oder Lastspitzen zusammenpassen, wird daraus ein echtes Problem."
               : "Kein Handlungsbedarf."
         : collector && !collectorIsFresh
-          ? "Collector-Verbindung erneuern. Veraltete Verbindungsdaten werden bewusst nicht bewertet."
-          : "Collector-Script ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
+          ? "Add-on-Verbindung erneuern. Veraltete Verbindungsdaten werden bewusst nicht bewertet."
+          : "CCU Add-on ausführen, damit aktive CCU-Verbindungen sichtbar werden.",
       access: ["ssh", "external"],
       evidence: externalAccesses.map((access) => {
         const serviceHint = describeKnownService(access.hostname);
@@ -1060,7 +1060,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         : centralRelease.error
           ? "Internetverbindung des Analyzer-Systems prüfen. Die App versucht den Online-Check im Hintergrund erneut."
           : !hasInstalledVersion
-            ? "Den aktuellen Shell-Collector einmal neu ausführen oder den nächsten Collector-Lauf abwarten. Erst wenn die installierte Version gelesen wurde, vergleicht die App sie mit dem Online-Release."
+            ? "Den aktuellen CCU Add-on Collector einmal neu ausführen oder den nächsten Collector-Lauf abwarten. Erst wenn die installierte Version gelesen wurde, vergleicht die App sie mit dem Online-Release."
             : "Kein Handlungsbedarf.",
       access: ["ccu", "ssh"],
       evidence: [
@@ -1079,7 +1079,7 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         }] : [])
       ],
       details: [
-        "Die installierte Version wird bevorzugt live aus der CCU-WebUI gelesen; der Shell-Collector liefert zusätzlich `/VERSION` der Zentrale.",
+        "Die installierte Version wird bevorzugt live aus der CCU-WebUI gelesen; der CCU Add-on Collector liefert zusätzlich `/VERSION` der Zentrale.",
         centralRelease.source === "ccu3"
           ? "Der verfügbare Stand kommt aus dem offiziellen eQ-3-Update-Dienst, den auch die CCU3-WebUI verwendet."
           : "Der verfügbare Stand kommt aus dem offiziellen OpenCCU-Repository.",

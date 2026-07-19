@@ -295,24 +295,24 @@ function App() {
       },
       {
         id: "masterdata",
-        label: "CCU-Script",
+        label: "CCU Add-on",
         time: diagnostics ? masterdataDiagnostic?.lastSuccessAt : masterdataStatus?.receivedAt ?? masterdataStatus?.collectedAt ?? analysis.sources?.masterdata,
         diagnosticState: masterdataDiagnostic?.status,
         diagnosticDetail: masterdataDiagnostic?.detail,
         required: false,
-        purpose: "Stammdaten, Gerätenamen, AskSin-Namensliste und zusätzliche CCU-Systemvariablen.",
-        action: "Script anzeigen",
+        purpose: "Stammdaten, Gerätenamen, Systemwerte, Backups, Logs und Verbindungen.",
+        action: "Add-on laden",
         actionType: "masterdata" as const
       },
       {
         id: "collector",
-        label: "Shell-Collector",
+        label: "Add-on Collector",
         time: diagnostics ? collectorDiagnostic?.lastSuccessAt : collectorStatus?.collectedAt ?? analysis.sources?.collector,
         diagnosticState: collectorDiagnostic?.status,
         diagnosticDetail: collectorDiagnostic?.detail,
         required: false,
-        purpose: "CPU, RAM, Temperatur, Speicher, Backups, Logs und aktive Verbindungen.",
-        action: "Collector öffnen",
+        purpose: "Automatische Übertragung aus dem CCU Add-on.",
+        action: "Add-on öffnen",
         actionType: "collector" as const
       },
       {
@@ -434,6 +434,12 @@ function App() {
     return `${baseUrl}/api/collector/script?${params.toString()}`;
   }, [collectorMode, collectorInterval]);
 
+  const addonDownloadUrl = useMemo(() => {
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({ url: baseUrl });
+    return `${baseUrl}/api/addon/download?${params.toString()}`;
+  }, []);
+
   const ccuMasterdataScriptUrl = useMemo(() => {
     const baseUrl = getApiBaseUrl();
     const params = new URLSearchParams({
@@ -506,7 +512,6 @@ function App() {
       collectorStatus?.available
       || collectorStatus?.collectedAt
       || masterdataStatus?.available
-      || (form.sshUser.trim() && form.sshPassword)
     );
     const snifferDone = !form.snifferEnabled || Boolean(form.snifferPort.trim());
     const notificationDone = notificationSettings.telegram.enabled || notificationSettings.email.enabled;
@@ -520,7 +525,7 @@ function App() {
       },
       {
         label: "System",
-        text: "Collector, Logs oder SSH",
+        text: "CCU Add-on",
         done: systemDone,
         optional: true,
         hint: systemDone ? "Systemdaten können ergänzt werden." : "Optional für Logs, Backups und Systemwerte."
@@ -940,8 +945,8 @@ function App() {
   function diagnosticActionLabel(sourceId: string) {
     if (sourceId === "setup") return "Setup öffnen";
     if (sourceId === "ccu") return "CCU Live-Test starten";
-    if (sourceId === "masterdata") return "CCU-Script öffnen";
-    if (sourceId === "collector") return "Collector-Script öffnen";
+    if (sourceId === "masterdata") return "CCU Add-on öffnen";
+    if (sourceId === "collector") return "Add-on Collector öffnen";
     if (sourceId === "sniffer") return "DC-Analyzer öffnen";
     return "Analyse öffnen";
   }
@@ -1395,16 +1400,16 @@ function App() {
         priority: 55,
         eyebrow: collectorWasSeen ? "Verbindung prüfen" : "Daten ergänzen",
         title: collectorIsStale
-          ? "Collector sendet nicht mehr"
+          ? "CCU Add-on sendet nicht mehr"
           : collectorWasSeen
-            ? "Collector liefert keine Logs"
-            : "Log-Collector einrichten",
+            ? "CCU Add-on liefert keine Logs"
+            : "CCU Add-on installieren",
         detail: collectorIsStale
-          ? `Der Collector war bereits eingerichtet, hat aber seit ${lastCollectorAt ?? "längerer Zeit"} keine Daten mehr gesendet.`
+          ? `Das Add-on war bereits eingerichtet, hat aber seit ${lastCollectorAt ?? "längerer Zeit"} keine Daten mehr gesendet.`
           : collectorWasSeen
-            ? "Der Collector sendet Systemwerte, aber aktuell keine lesbaren Logzeilen."
+            ? "Das Add-on sendet Systemwerte, aber aktuell keine lesbaren Logzeilen."
             : "Logs fehlen noch. Das verhindert die belegbare Erkennung von Scriptfehlern, Dienstneustarts und auffälligen externen Zugriffen.",
-        button: collectorWasSeen ? "Collector prüfen" : "Collector einrichten",
+        button: collectorWasSeen ? "Add-on prüfen" : "Add-on installieren",
         modal: "collector",
         checkId: logCheck.id
       });
@@ -2071,7 +2076,7 @@ function App() {
       setCcuScriptPreview(copied ? "" : script);
       showToast({
         type: copied ? "success" : "warning",
-        title: copied ? "CCU-Script kopiert" : "Kopieren blockiert",
+        title: copied ? "Legacy-Script kopiert" : "Kopieren blockiert",
         message: copied ? "Script wurde kopiert." : "Das Script wird unten eingeblendet. Bitte manuell markieren und kopieren."
       });
     } catch {
@@ -2185,7 +2190,7 @@ function App() {
           <div className="panel__header">
             <p className="eyebrow">Setup</p>
             <h2>Zugänge eintragen</h2>
-            <p>Empfohlene Reihenfolge: erst CCU-Zugang und XML-API-Token, danach das CCU-Script kopieren. Alles Weitere ist optional.</p>
+            <p>Empfohlene Reihenfolge: CCU verbinden, XML-API prüfen, dann das Homematic Analyzer Add-on auf der Zentrale installieren. Sniffer bleibt optional.</p>
             <p className="setup-note">Zugangsdaten werden lokal in diesem Browser gespeichert. Die CCU bleibt im LAN oder VPN.</p>
             <button type="button" className="ghost-button" onClick={resetSavedSetup}>
               Gespeicherte Daten löschen
@@ -2196,8 +2201,8 @@ function App() {
             {[
               ["1", "CCU Login", "Host, Benutzer, Passwort und XML-API Token eintragen."],
               ["2", "Analyse testen", "Einmal Analyse starten und prüfen, ob Geräte gelesen werden."],
-              ["3", "CCU-Script", "Script kopieren, in der WebUI einfügen und täglich laufen lassen."],
-              ["4", "Optional", "Shell-Logs, Sniffer und Benachrichtigungen nur bei Bedarf ergänzen."]
+              ["3", "CCU Add-on", "Add-on herunterladen und unter Zusatzsoftware installieren."],
+              ["4", "Optional", "Sniffer und Benachrichtigungen nur bei Bedarf ergänzen."]
             ].map(([number, title, text]) => (
               <div className="setup-roadmap-step" key={number}>
                 <strong>{number}</strong>
@@ -2310,7 +2315,7 @@ function App() {
             <fieldset className="setup-card setup-card-optional">
               <legend>SSH Login</legend>
               <InfoTooltip label="Wann ist SSH sinnvoll?">
-                Nur für Logauszüge und aktive Verbindungen. CPU, RAM, Temperatur, Speicher und Backups kommen bevorzugt über das CCU-WebUI-Script.
+                Nur als Fallback für Logauszüge und aktive Verbindungen. Das CCU Add-on ist der empfohlene Weg.
               </InfoTooltip>
               <div className="form-grid form-grid-2">
                 <label>
@@ -2408,23 +2413,20 @@ function App() {
         <details>
           <summary>
             <span>
-              <small>Einmaliges Setup</small>
-              CCU-Daten täglich vorbereiten
+              <small>Empfohlen</small>
+              CCU Add-on installieren
             </span>
-            <strong>Script anzeigen</strong>
+            <strong>Add-on laden</strong>
           </summary>
           <div className="setup-script-content">
             <p>
-              Dieses WebUI-Script legt die Variablen `HomematicAnalyzer_LastRun`, `HomematicAnalyzer_Status`,
-              `HomematicAnalyzer_DeviceInventory`, `HomematicAnalyzer_SystemCpu`, `HomematicAnalyzer_SystemRam`,
-              `HomematicAnalyzer_SystemTemperature`, `HomematicAnalyzer_SystemDisk`, `HomematicAnalyzer_SystemBackups`
-              und `HomematicAnalyzer_Error` an. Es sendet Gerätenamen und CCU3/RaspberryMatic-Systemwerte an den Analyzer.
+              Das Add-on übernimmt die regelmäßige Übergabe von CCU-Systemwerten, Backups, Logs, Verbindungen und Gerätenamen an den Analyzer.
             </p>
-            <p className="setup-note">Empfehlung: erst oben CCU-Login eintragen und eine Analyse testen, danach dieses Script kopieren.</p>
+            <p className="setup-note">Empfehlung: erst oben CCU-Login eintragen und eine Analyse testen, danach das Add-on herunterladen und installieren.</p>
             <p className={`setup-note ${masterdataStatus?.available ? "setup-note-ok" : ""}`}>
               {masterdataStatus?.available
                 ? `Empfangen: ${masterdataStatus.deviceCount} Geräte${masterdataStatus.systemAvailable ? " · CCU-Systemwerte" : ""}, am Analyzer zuletzt ${masterdataStatus.receivedAt ? new Date(masterdataStatus.receivedAt).toLocaleString("de-DE") : masterdataStatus.collectedAt ? new Date(masterdataStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}.`
-                : "Noch keine CCU-Daten empfangen."}
+                : "Noch keine Add-on-Daten empfangen."}
             </p>
             {usesLocalAnalyzerUrl && (
               <p className="setup-warning">
@@ -2433,25 +2435,33 @@ function App() {
               </p>
             )}
             <div className="script-actions">
-              <button type="button" onClick={() => void copyCcuMasterdataScript()}>
-                CCU-Script kopieren
-              </button>
-              <a href={ccuMasterdataScriptUrl} target="_blank" rel="noreferrer">
-                Script im Browser öffnen
+              <a className="button-link" href={addonDownloadUrl} download>
+                Homematic Analyzer Add-on herunterladen
               </a>
             </div>
-            {ccuScriptPreview && (
-              <label className="script-preview">
-                Script zum manuellen Kopieren
-                <textarea readOnly value={ccuScriptPreview} onFocus={(event) => event.target.select()} />
-              </label>
-            )}
             <ol>
               <li>CCU WebUI öffnen.</li>
-              <li>`Programme und Verknüpfungen` öffnen und ein neues Programm erstellen.</li>
-              <li>Als Aktion `Script` wählen und den kopierten Inhalt einfügen.</li>
-              <li>Einmal manuell ausführen und danach z. B. täglich nachts ausführen lassen.</li>
+              <li>`Einstellungen` → `Systemsteuerung` → `Zusatzsoftware` öffnen.</li>
+              <li>Die heruntergeladene Add-on-Datei hochladen und installieren.</li>
+              <li>Nach kurzer Zeit liefert die Zentrale automatisch neue Daten.</li>
             </ol>
+            <details className="secondary-details">
+              <summary>Erweiterte Fallback-Scripts anzeigen</summary>
+              <div className="script-actions">
+                <button type="button" onClick={() => void copyCcuMasterdataScript()}>
+                  Legacy-CCU-Legacy-Script kopieren
+                </button>
+                <a href={ccuMasterdataScriptUrl} target="_blank" rel="noreferrer">
+                  Script im Browser öffnen
+                </a>
+              </div>
+              {ccuScriptPreview && (
+                <label className="script-preview">
+                  Legacy-Script zum manuellen Kopieren
+                  <textarea readOnly value={ccuScriptPreview} onFocus={(event) => event.target.select()} />
+                </label>
+              )}
+            </details>
           </div>
         </details>
 
@@ -2459,13 +2469,13 @@ function App() {
           <summary>
             <span>
               <small>Optional</small>
-              Logs und Verbindungen per Shell sammeln
+              Erweiterter Fallback
             </span>
             <strong>Details</strong>
           </summary>
           <div className="setup-script-content">
             <p>
-              Nur nötig, wenn zusätzlich Logauszüge oder aktive CCU-Verbindungen geprüft werden sollen. CPU, RAM, Temperatur, Speicher und Backups kommen bevorzugt aus dem CCU-WebUI-Script.
+              Nur als Fallback, falls das Add-on auf deiner Zentrale nicht installiert werden kann.
             </p>
             <p className={`setup-note ${collectorStatus?.available && collectorStatus.state !== "stale" ? "setup-note-ok" : ""}`}>
               {collectorStatus?.available
@@ -2594,7 +2604,7 @@ function App() {
               </div>
               <div className="dc-guidance-actions">
                 <button type="button" onClick={() => void copyAskSinDevListScript()}>
-                  Script kopieren
+                  Legacy-Script kopieren
                 </button>
                 <a href="https://homematic-forum.de/forum/viewtopic.php?t=84237" target="_blank" rel="noreferrer">
                   Anleitung
@@ -3015,7 +3025,7 @@ function App() {
                   </div>
                   <div className="dc-guidance-actions">
                     <button type="button" onClick={() => void copyAskSinDevListScript()}>
-                      Script kopieren
+                      Legacy-Script kopieren
                     </button>
                   </div>
                 </div>
@@ -3339,17 +3349,17 @@ function App() {
                 <p className="eyebrow">Keine Logs</p>
                 <h3>
                   {logPayload?.collectorState === "stale"
-                    ? "Collector sendet nicht mehr"
+                    ? "CCU Add-on sendet nicht mehr"
                     : logPayload?.collectorAvailable
-                      ? "Collector findet keine Logdatei"
+                      ? "CCU Add-on findet keine Logdatei"
                       : "Noch keine Logdaten empfangen"}
                 </h3>
                 <p>
                   {logPayload?.collectorState === "stale"
-                    ? `Der Collector war bereits verbunden, der letzte Snapshot ist aber ${logPayload.collectorAgeMinutes ?? "viele"} Minuten alt. Installiere den dauerhaften Cronjob erneut.`
+                    ? `Das Add-on war bereits verbunden, der letzte Snapshot ist aber ${logPayload.collectorAgeMinutes ?? "viele"} Minuten alt. Installiere das Add-on erneut oder öffne den Status.`
                     : logPayload?.collectorAvailable
                       ? "Systemdaten kommen an, aber auf der CCU wurde keine lesbare Logquelle gefunden. Prüfe /var/log/messages, /var/log/syslog oder journalctl."
-                      : "Führe den Shell-Collector auf der CCU/RaspberryMatic aus, damit Logs hier 1:1 angezeigt werden."}
+                      : "Installiere das CCU Add-on, damit Logs hier 1:1 angezeigt werden."}
                 </p>
               </div>
               <div className="script-copy-row">
@@ -3507,7 +3517,7 @@ function App() {
                       onClick={() => {
                         if (source.actionType === "diagnostics") navigateTo("diagnostics");
                         if (source.actionType === "collector") openActionModal("collector");
-                        if (source.actionType === "masterdata") navigateTo("setup");
+                        if (source.actionType === "masterdata") openActionModal("collector");
                         if (source.actionType === "dc") navigateTo("dc");
                       }}
                     >
@@ -3604,7 +3614,7 @@ function App() {
                     )}
                   </div>
                   <button type="button" className="collector-shortcut-button" onClick={() => openActionModal("collector")}>
-                    Collector-Script anzeigen
+                    Add-on öffnen
                   </button>
                 </div>
               </div>
@@ -3623,22 +3633,19 @@ function App() {
                 <div className="system-collector-empty">
                   <div>
                     <p className="eyebrow">Systemdaten fehlen</p>
-                    <h3>CPU, RAM, Temperatur, Speicher und Backups brauchen das Shell-Script</h3>
+                    <h3>CPU, RAM, Temperatur, Speicher und Backups brauchen das CCU Add-on</h3>
                     <p>
                       Die Homematic-Analyse funktioniert bereits. Für das System-Dashboard muss die CCU/RaspberryMatic
                       aber regelmäßig Messwerte an den Analyzer senden.
                     </p>
                   </div>
                   <ol>
-                    <li>Per SSH auf der CCU/RaspberryMatic anmelden: <code>ssh root@{analysis.systemDashboard.ccuHost ?? (form.ccuHost.trim() || "CCU-IP")}</code></li>
-                    <li>Den folgenden Befehl einfügen und ausführen.</li>
+                    <li>Setup öffnen und das Homematic Analyzer Add-on herunterladen.</li>
+                    <li>In der CCU unter Zusatzsoftware installieren.</li>
                     <li>Danach die Analyse neu starten oder kurz warten — die Werte aktualisieren sich minütlich.</li>
                   </ol>
                   <div className="script-copy-row">
-                    <code>{collectorCommand}</code>
-                    <button type="button" onClick={() => void copyCollectorCommand()}>
-                      Kopieren
-                    </button>
+                    <a className="button-link" href={addonDownloadUrl} download>Add-on herunterladen</a>
                     <button type="button" className="secondary" onClick={() => openActionModal("collector")}>
                       Anleitung öffnen
                     </button>
@@ -3666,7 +3673,7 @@ function App() {
                     label: "CPU",
                     value: formatCpu(analysis.systemDashboard.cpu),
                     hint: "Systemlast der CCU/RaspberryMatic.",
-                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten. Der Verlauf zeigt 0–100% CPU-Auslastung der CCU.",
+                    help: "Wenn CPU nicht verfügbar ist: Setup öffnen und das CCU Add-on installieren. Der Verlauf zeigt 0–100% CPU-Auslastung der CCU.",
                     sparkline: sparklinePoints(history.map((point) => parseCpuLoad(point.cpu)).filter((value): value is number => value !== undefined)),
                     sparklineLabel: "CPU-Verlauf 0 bis 100 Prozent",
                     axisTop: "100%",
@@ -3678,7 +3685,7 @@ function App() {
                     label: "RAM",
                     value: formatMemory(analysis.systemDashboard.memory),
                     hint: "Arbeitsspeicher der CCU/RaspberryMatic.",
-                    help: "Wenn RAM nicht verfügbar ist: Setup öffnen und den Shell-Collector minütlich einrichten oder das CCU-WebUI-Script erneut kopieren. Der Verlauf zeigt 0–100% RAM-Belegung.",
+                    help: "Wenn RAM nicht verfügbar ist: Setup öffnen und das CCU Add-on installieren. Der Verlauf zeigt 0–100% RAM-Belegung.",
                     sparkline: sparklinePoints(history.map((point) => parseMemoryUsagePercent(point.memory)).filter((value): value is number => value !== undefined)),
                     sparklineLabel: "RAM-Verlauf 0 bis 100 Prozent",
                     axisTop: "100%",
@@ -3689,7 +3696,7 @@ function App() {
                     group: "performance",
                     label: "Temperatur",
                     value: formatTemperature(analysis.systemDashboard.temperature),
-                    hint: analysis.systemDashboard.temperature ? "CPU-/Systemtemperatur der Zentrale." : "Auf der CCU das aktualisierte WebUI-Script einmal ausführen.",
+                    hint: analysis.systemDashboard.temperature ? "CPU-/Systemtemperatur der Zentrale." : "Das CCU Add-on installieren oder aktualisieren.",
                     help: "Temperatur kommt über `/usr/bin/vcgencmd measure_temp`. Wenn sie fehlt: Script auf RaspberryMatic/CCU3 ausführen; in einem LXC ist dieser Wert meist nicht vorhanden.",
                     sparkline: sparklinePoints(temperatureValues, 120, 34, temperatureMin, temperatureMax),
                     sparklineLabel: "Temperatur-Verlauf der Zentrale",
@@ -3702,7 +3709,7 @@ function App() {
                     label: "Lokaler Speicher",
                     value: formatDisk(analysis.systemDashboard.disk),
                     hint: "Interner Speicherbereich der CCU/RaspberryMatic.",
-                    help: "Wenn lokaler Speicher nicht verfügbar ist: CCU-WebUI-Script aktualisieren und erneut ausführen oder Shell-Collector minütlich einrichten. Geprüft wird `df -h /usr/local`. Gelb ab 80%, rot ab 95% Belegung.",
+                    help: "Wenn lokaler Speicher nicht verfügbar ist: Setup öffnen und das CCU Add-on installieren. Geprüft wird `df -h /usr/local`. Gelb ab 80%, rot ab 95% Belegung.",
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.disk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
@@ -3717,7 +3724,7 @@ function App() {
                     label: "USB/Backup-Speicher",
                     value: formatDisk(analysis.systemDashboard.backupDisk),
                     hint: "Speicherplatz des Backup-Mediums, falls ein USB-Stick erkannt wurde.",
-                    help: "Der Wert kommt vom Dateisystem, auf dem das neueste Backup liegt. Wenn nicht verfügbar: Shell-Collector nach dem Update neu auf der CCU ausführen und prüfen, ob der Stick unter `/media`, `/mnt` oder `/run/media` gemountet ist.",
+                    help: "Der Wert kommt vom Dateisystem, auf dem das neueste Backup liegt. Wenn nicht verfügbar: CCU Add-on nach dem Update erneut installieren oder abwarten und prüfen, ob der Stick unter `/media`, `/mnt` oder `/run/media` gemountet ist.",
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.backupDisk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
@@ -3749,7 +3756,7 @@ function App() {
                     label: "Uptime",
                     value: formatUptime(analysis.systemDashboard.uptime),
                     hint: "Laufzeit seit dem letzten Neustart.",
-                    help: "Wenn nicht verfügbar: CCU-WebUI-Script erneut ausführen. Es liest `uptime` direkt auf der Zentrale."
+                    help: "Wenn nicht verfügbar: CCU Add-on erneut installieren. Es liest `uptime` direkt auf der Zentrale."
                   }
                 ];
                   const groups = [
@@ -4018,7 +4025,7 @@ function App() {
                         <button type="button" onClick={() => setCurrentPage("setup")}>Setup öffnen</button>
                       )}
                       {["system-health", "logs", "external-access"].includes(check.id) && (
-                        <button type="button" onClick={() => openActionModal("collector")}>Collector-Script anzeigen</button>
+                        <button type="button" onClick={() => openActionModal("collector")}>Add-on öffnen</button>
                       )}
                       {check.id === "duty-cycle" && (
                         <button type="button" onClick={() => setCurrentPage("dc")}>DC-Analyzer öffnen</button>
@@ -4671,59 +4678,62 @@ function App() {
                 <p className="eyebrow">Collector verwalten</p>
                 <h2 id="action-modal-title">
                   {collectorStatus?.state === "stale"
-                    ? "Der Collector war eingerichtet, sendet aber nicht mehr"
+                    ? "Das CCU Add-on war eingerichtet, sendet aber nicht mehr"
                     : collectorStatus?.available
-                      ? "Collector ist eingerichtet"
-                      : "Collector auf der CCU einrichten"}
+                      ? "CCU Add-on ist eingerichtet"
+                      : "CCU Add-on installieren"}
                 </h2>
                 <p>
                   {collectorStatus?.state === "stale"
-                    ? `Der Analyzer hat den Collector früher erkannt. Der letzte Snapshot kam am ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "unbekannten Zeitpunkt"}. Nach einem CCU-Neustart oder Update kann der alte, nicht dauerhaft gespeicherte Cronjob verschwunden sein.`
+                    ? `Der Analyzer hat das Add-on früher erkannt. Der letzte Snapshot kam am ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "unbekannten Zeitpunkt"}. Nach einem CCU-Neustart oder Update bitte das Add-on prüfen.`
                     : collectorStatus?.available
-                      ? "Der Collector sendet Systemwerte, Backups, Speicherinfos, Verbindungen und — wenn vorhanden — Logzeilen an diesen Analyzer."
-                      : "Das Script läuft auf der CCU/RaspberryMatic und sendet Systemwerte, Backups, Verbindungen und Logdaten an diesen Analyzer. Dein PC oder Smartphone spielt dabei keine Rolle."}
+                      ? "Das Add-on sendet Systemwerte, Backups, Speicherinfos, Verbindungen und — wenn vorhanden — Logzeilen an diesen Analyzer."
+                      : "Das Add-on läuft auf der CCU/RaspberryMatic und sendet Systemwerte, Backups, Verbindungen und Logdaten an diesen Analyzer. Dein PC oder Smartphone spielt dabei keine Rolle."}
                 </p>
                 <div className="collector-command-panel">
                   <div>
-                    <strong>Was möchtest du tun?</strong>
+                    <strong>Add-on herunterladen und in der CCU installieren</strong>
                     <span>
                       {collectorStatus?.available && collectorStatus.state !== "stale"
                         ? `Aktuell empfangen: ${collectorStatus.host ?? "Zentrale"} · ${collectorStatus.collectedAt ? new Date(collectorStatus.collectedAt).toLocaleString("de-DE") : "gerade eben"}`
-                        : "Kopiere den Befehl und führe ihn per SSH auf der CCU/RaspberryMatic aus."}
+                        : "Die Datei in der CCU unter Einstellungen → Systemsteuerung → Zusatzsoftware hochladen."}
                     </span>
                   </div>
-                  <div className="collector-command-options">
-                    <label>
-                      Ausführung
-                      <select value={collectorMode} onChange={(event) => setCollectorMode(event.target.value as typeof collectorMode)}>
-                        <option value="once">Einmal jetzt senden</option>
-                        <option value="install">Regelmäßig einrichten</option>
-                        <option value="uninstall">Regelmäßige Übertragung entfernen</option>
-                      </select>
-                    </label>
-                    <label>
-                      Zyklus
-                      <select value={collectorInterval} onChange={(event) => setCollectorInterval(event.target.value as typeof collectorInterval)} disabled={collectorMode === "once" || collectorMode === "uninstall"}>
-                        <option value="minute">Minütlich für Verlauf</option>
-                        <option value="hourly">Stündlich</option>
-                        <option value="daily">Täglich nachts</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="modal-command">
-                    <code>{collectorCommand}</code>
-                    <button type="button" onClick={() => void copyCollectorCommand()}>Kopieren</button>
-                  </div>
-                  {collectorCommandPreview && (
-                    <label className="script-preview">
-                      Shell-Befehl zum manuellen Kopieren
-                      <textarea readOnly value={collectorCommandPreview} onFocus={(event) => event.target.select()} />
-                    </label>
-                  )}
+                  <a className="button-link" href={addonDownloadUrl} download>Homematic Analyzer Add-on herunterladen</a>
                   <p className="modal-note">
-                    Installieren speichert den Cronjob auf OpenCCU/RaspberryMatic dauerhaft unter <code>/usr/local/crontabs/root</code>.
-                    Entfernen löscht nur den markierten Homematic-Analyzer-Eintrag.
+                    Das Add-on richtet die regelmäßige Übertragung selbst ein und kann über die CCU-Zusatzsoftware wieder entfernt werden.
                   </p>
+                  <details className="secondary-details">
+                    <summary>Fallback per SSH anzeigen</summary>
+                    <div className="collector-command-options">
+                      <label>
+                        Ausführung
+                        <select value={collectorMode} onChange={(event) => setCollectorMode(event.target.value as typeof collectorMode)}>
+                          <option value="once">Einmal jetzt senden</option>
+                          <option value="install">Regelmäßig einrichten</option>
+                          <option value="uninstall">Regelmäßige Übertragung entfernen</option>
+                        </select>
+                      </label>
+                      <label>
+                        Zyklus
+                        <select value={collectorInterval} onChange={(event) => setCollectorInterval(event.target.value as typeof collectorInterval)} disabled={collectorMode === "once" || collectorMode === "uninstall"}>
+                          <option value="minute">Minütlich für Verlauf</option>
+                          <option value="hourly">Stündlich</option>
+                          <option value="daily">Täglich nachts</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="modal-command">
+                      <code>{collectorCommand}</code>
+                      <button type="button" onClick={() => void copyCollectorCommand()}>Kopieren</button>
+                    </div>
+                    {collectorCommandPreview && (
+                      <label className="script-preview">
+                        Shell-Befehl zum manuellen Kopieren
+                        <textarea readOnly value={collectorCommandPreview} onFocus={(event) => event.target.select()} />
+                      </label>
+                    )}
+                  </details>
                 </div>
                 {collectorStatus?.available && collectorStatus.state !== "stale" ? (
                   <>
@@ -4737,9 +4747,9 @@ function App() {
                 ) : (
                   <>
                     <ol className="action-modal-steps">
-                      <li>Per SSH anmelden: <code>ssh root@{form.ccuHost.trim() || "CCU-IP"}</code></li>
-                      <li>Den Befehl kopieren und im SSH-Fenster einfügen.</li>
-                      <li>Nach der Erfolgsmeldung kurz warten; Logs werden automatisch neu geladen.</li>
+                      <li>Add-on-Datei herunterladen.</li>
+                      <li>CCU WebUI öffnen: <code>Einstellungen → Systemsteuerung → Zusatzsoftware</code>.</li>
+                      <li>Datei hochladen, installieren und kurz warten.</li>
                     </ol>
                   </>
                 )}
@@ -4861,7 +4871,7 @@ function App() {
                   <code>{backup.path}</code>
                 </article>
               ))}
-              {visibleBackupItems.length === 0 && <p>Keine Backup-Details verfügbar. Bitte Shell-Collector nach dem Update erneut ausführen.</p>}
+              {visibleBackupItems.length === 0 && <p>Keine Backup-Details verfügbar. Bitte CCU Add-on nach dem Update erneut installieren oder den nächsten Lauf abwarten.</p>}
             </div>
             <div className="confirm-dialog__actions backup-modal__actions">
               <button type="button" className="ghost-button" onClick={() => setBackupPage((page) => Math.max(0, page - 1))} disabled={backupPage === 0}>
