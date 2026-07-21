@@ -276,6 +276,26 @@ test("wertet UNREACH=false im Collector-Log als unauffällige Entwarnung", () =>
   assert.equal(logs?.evidence.length, 0);
 });
 
+test("wertet ReGa XML-API Lesehinweise als unauffällig", () => {
+  const collector: CollectorPayload = {
+    host: "Homematic-raspi",
+    collectedAt: new Date().toISOString(),
+    logs: [
+      "Jul 21 14:03:01 Homematic-raspi local0.info ReGaHss: Info: metadata property 'UNIT' does not exist [GetUnitProperty():iseDOMdp.cpp:390]",
+      "Jul 21 14:03:01 Homematic-raspi local0.info ReGaHss: Info: read flag is not set; operations = 4 [ReadValue():iseDOMdpHSS.cpp:133]"
+    ]
+  };
+
+  const logs = createAnalysis(
+    { ccuHost: "192.168.1.22", sshUser: "root" },
+    collector
+  ).find((check) => check.id === "logs");
+
+  assert.equal(logs?.status, "ok");
+  assert.match(logs?.summary ?? "", /keine belegbaren Fehler/);
+  assert.equal(logs?.evidence.length, 0);
+});
+
 test("erklärt aktive CCU-Verbindungen mit lokal aufgelöstem Gerätenamen", () => {
   const collector: CollectorPayload = {
     host: "Homematic-raspi",

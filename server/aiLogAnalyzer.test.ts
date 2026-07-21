@@ -51,6 +51,18 @@ test("blendet harmlose Firmware-Update-Statuszeilen auch im Vollmodus aus", () =
   assert.equal(isBenignLogLine("Device firmware update available=false"), true);
 });
 
+test("blendet harmlose ReGa XML-API Lesehinweise aus", () => {
+  const unitLine = "Jul 21 14:03:01 Homematic-raspi local0.info ReGaHss: Info: metadata property 'UNIT' does not exist [GetUnitProperty():iseDOMdp.cpp:390]";
+  const readFlagLine = "Jul 21 14:03:01 Homematic-raspi local0.info ReGaHss: Info: read flag is not set; operations = 4 [ReadValue():iseDOMdpHSS.cpp:133]";
+  const result = prepareLogLines([unitLine, readFlagLine], "full");
+
+  assert.equal(isBenignLogLine(unitLine), true);
+  assert.equal(isBenignLogLine(readFlagLine), true);
+  assert.equal(result.totalLines, 2);
+  assert.equal(result.suppressedLines, 2);
+  assert.deepEqual(result.lines, []);
+});
+
 test("begrenzt die vollständige Analyse auf die neuesten 500 Zeilen", () => {
   const logs = Array.from({ length: 520 }, (_, index) => `Logzeile ${index + 1}`);
   const result = prepareLogLines(logs, "full");
