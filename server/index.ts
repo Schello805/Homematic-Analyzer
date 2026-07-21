@@ -179,12 +179,13 @@ async function createHomematicAddonPackage(analyzerUrl: string, token: string) {
     await mkdir(wwwDir, { recursive: true });
 
     const addonConfig = [
-      "ADDON_NAME=Homematic Analyzer Bridge",
+      `ADDON_ID=${addonName}`,
+      `ADDON_NAME=${shellSingleQuote("Homematic Analyzer Bridge")}`,
       `ADDON_VERSION=${appVersion}`,
-      "ADDON_DESCRIPTION=Sendet CCU-Systemdaten an den Homematic Analyzer",
-      "ADDON_AUTHOR=Homematic Analyzer",
-      `ADDON_URL=/addons/${addonName}/index.cgi`,
-      `CONFIG_URL=/addons/${addonName}/index.cgi`,
+      `ADDON_DESCRIPTION=${shellSingleQuote("Sendet CCU-Systemdaten an den Homematic Analyzer")}`,
+      `ADDON_AUTHOR=${shellSingleQuote("Homematic Analyzer")}`,
+      `ADDON_URL=${shellSingleQuote(`/addons/${addonName}/index.cgi`)}`,
+      `CONFIG_URL=${shellSingleQuote(`/addons/${addonName}/index.cgi`)}`,
       ""
     ].join("\n");
     await writeFile(join(addonDir, "addon.cfg"), addonConfig);
@@ -212,9 +213,10 @@ exit 1
 ADDON_NAME="Homematic Analyzer Bridge"
 ADDON_ID="${addonName}"
 VERSION="${appVersion}"
-WWW_DIR="/etc/config/addons/www/$ADDON_ID"
+CONFIG_DIR="/usr/local/etc/config/addons"
+WWW_DIR="$CONFIG_DIR/www/$ADDON_ID"
 CONFIG_URL="/addons/$ADDON_ID/index.cgi"
-RUNNER="/etc/config/addons/$ADDON_ID/bin/homematic-analyzer-bridge.sh"
+RUNNER="$CONFIG_DIR/$ADDON_ID/bin/homematic-analyzer-bridge.sh"
 CRON_FILE="/usr/local/crontabs/root"
 CRON_MARKER="# Homematic Analyzer Add-on Bridge"
 CRON_LINE="* * * * * $RUNNER >/tmp/homematic-analyzer-addon.log 2>&1 $CRON_MARKER"
@@ -268,8 +270,8 @@ uninstall_bridge() {
     rm -f "/www/config/$ADDON_ID"
     mount -o remount,ro / >/dev/null 2>&1 || true
   fi
-  rm -rf "/etc/config/addons/$ADDON_ID" "$WWW_DIR"
-  rm -f "/etc/config/addons/$ADDON_ID.cfg"
+  rm -rf "$CONFIG_DIR/$ADDON_ID" "$WWW_DIR"
+  rm -f "$CONFIG_DIR/$ADDON_ID.cfg"
 }
 
 case "$1" in
