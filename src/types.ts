@@ -209,6 +209,18 @@ export type SnifferSnapshot = {
   connected: boolean;
   readerActive: boolean;
   source: string;
+  status: {
+    state: "not-configured" | "port-missing" | "reader-stopped" | "listening" | "noise-only" | "boot-only" | "telegrams";
+    label: string;
+    detail: string;
+    lastLineAt?: string;
+    readerStartedAt?: string;
+    readerPid?: number;
+    lastExitCode?: number | null;
+    lastError?: string;
+    portReadable?: boolean;
+    portType?: string;
+  };
   summary: {
     rawLines: number;
     validLines: number;

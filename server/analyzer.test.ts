@@ -193,6 +193,11 @@ test("bewertet ein einzelnes schwaches Sniffer-Telegramm noch nicht als belastba
     connected: true,
     readerActive: true,
     source: "test",
+    status: {
+      state: "telegrams",
+      label: "Funktelegramme werden empfangen",
+      detail: "1 Homematic-Telegramm im aktuellen 60-Minuten-Fenster erkannt."
+    },
     summary: {
       rawLines: 1,
       validLines: 1,

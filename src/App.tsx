@@ -780,7 +780,7 @@ function App() {
     }
   }
 
-  async function loadSnifferSnapshot(showSuccessToast = false, showLoading = true) {
+  async function loadSnifferSnapshot(showSuccessToast = false, showLoading = true, forceRestart = false) {
     if (!form.snifferEnabled) {
       setSnifferSnapshot(null);
       setSnifferHistory(null);
@@ -793,7 +793,7 @@ function App() {
       const response = await fetch("/api/sniffer/snapshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ port: form.snifferPort.trim() })
+        body: JSON.stringify({ port: form.snifferPort.trim(), forceRestart })
       });
 
       if (!response.ok) throw new Error("Snifferdaten konnten nicht gelesen werden.");
@@ -806,13 +806,13 @@ function App() {
       }
       if (showSuccessToast) {
         showToast({
-          type: snapshot.connected ? "success" : snapshot.configured ? "warning" : "info",
+          type: snapshot.summary.telegrams > 0 ? "success" : snapshot.configured ? "warning" : "info",
           title: "DC-Analyzer geprüft",
-          message: snapshot.connected
-            ? `${snapshot.summary.telegrams} Sniffer-Zeilen ausgewertet.`
-            : snapshot.configured
+          message: snapshot.status?.detail ?? (
+            snapshot.configured
               ? "Port ist eingetragen, aber noch keine Snifferdaten vorhanden."
               : "Bitte zuerst einen Sniffer-Port im Setup auswählen."
+          )
         });
       }
     } catch {
@@ -2557,7 +2557,7 @@ function App() {
                 Live-Messwerte vom AskSin-Sniffer. Er ergänzt die CCU um Telegramme, Funkzeit, Carrier Sense und RSSI am Standort des Sniffers.
               </InfoTooltip>
             </div>
-            <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true)} disabled={snifferLoading}>
+            <button type="button" className="analyze-button analyze-button-compact" onClick={() => void loadSnifferSnapshot(true, true, true)} disabled={snifferLoading}>
               {snifferLoading ? "Prüfe ..." : "Sniffer prüfen"}
             </button>
           </div>
@@ -2585,11 +2585,10 @@ function App() {
             <div className={snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-ok" : "needs-action"}>
               <span>Sniffer</span>
               <strong>
-                {snifferSnapshot?.connected
-                  ? "Daten werden empfangen"
-                  : snifferSnapshot?.readerActive
-                    ? "Verbunden, wartet auf Funk"
-                    : "Noch nicht verbunden"}
+                {snifferSnapshot?.status?.label
+                  ?? (snifferSnapshot?.readerActive
+                    ? "Port wird überwacht"
+                    : "Noch nicht verbunden")}
               </strong>
               <small>{form.snifferPort.trim() || "Kein USB-Port ausgewählt"}</small>
             </div>
@@ -2683,17 +2682,36 @@ function App() {
               </fieldset>
 
               <div className={`dc-status-card ${snifferSnapshot?.connected || snifferSnapshot?.readerActive ? "is-connected" : ""}`}>
-                <strong>{snifferSnapshot?.connected ? "Empfang läuft" : snifferSnapshot?.readerActive ? "Port wird überwacht" : "Keine Verbindung"}</strong>
+                <strong>{snifferSnapshot?.status?.label ?? (snifferSnapshot?.readerActive ? "Port wird überwacht" : "Keine Verbindung")}</strong>
                 <span>
-                  {snifferSnapshot?.connected
-                    ? `Quelle: ${snifferSnapshot.source}`
-                    : snifferSnapshot?.readerActive
+                  {snifferSnapshot?.status?.detail
+                    ?? (snifferSnapshot?.readerActive
                       ? "Löse jetzt ein Homematic-Gerät aus. Neue Daten werden automatisch geladen."
-                      : "Wähle einen Port und starte anschließend die Prüfung."}
+                      : "Wähle einen Port und starte anschließend die Prüfung.")}
                 </span>
               </div>
             </div>
           </details>
+
+          {snifferSnapshot?.configured && snifferSnapshot.summary.telegrams === 0 && (
+            <div className={`dc-guidance-card ${snifferSnapshot.status.state === "port-missing" || snifferSnapshot.status.state === "reader-stopped" ? "needs-action" : ""}`}>
+              <div>
+                <strong>Warum kommen keine Sniffer-Telegramme?</strong>
+                <span>{snifferSnapshot.status.detail}</span>
+                <small>
+                  Reader: {snifferSnapshot.status.readerPid ? `PID ${snifferSnapshot.status.readerPid}` : "nicht aktiv"}
+                  {snifferSnapshot.status.readerStartedAt ? ` · gestartet ${formatSnifferTime(snifferSnapshot.status.readerStartedAt)}` : ""}
+                  {snifferSnapshot.status.lastLineAt ? ` · letzte Zeile ${formatSnifferTime(snifferSnapshot.status.lastLineAt)}` : ""}
+                  {snifferSnapshot.status.portType ? ` · Port: ${snifferSnapshot.status.portType}` : ""}
+                </small>
+              </div>
+              <div className="dc-guidance-actions">
+                <button type="button" onClick={() => void loadSnifferSnapshot(true, true, true)} disabled={snifferLoading}>
+                  Reader neu starten
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Warnbox: Port konfiguriert aber Reader nicht aktiv */}
           {snifferSnapshot?.configured && !snifferSnapshot.readerActive && (
@@ -2706,7 +2724,7 @@ function App() {
                 </span>
               </div>
               <div className="dc-guidance-actions">
-                <button type="button" onClick={() => void loadSnifferSnapshot(true)}>
+                <button type="button" onClick={() => void loadSnifferSnapshot(true, true, true)}>
                   Erneut verbinden
                 </button>
               </div>
@@ -3184,6 +3202,30 @@ function App() {
                   </ul>
                 </details>
               ) : null}
+              {snifferSnapshot?.configured && (
+                <details className="dc-events">
+                  <summary>
+                    <span>
+                      <small>Diagnose</small>
+                      Befehle für SSH/Proxmox prüfen
+                    </span>
+                    <strong>4</strong>
+                  </summary>
+                  <ul>
+                    {[
+                      `ls -la ${snifferSnapshot.port ?? form.snifferPort.trim()}`,
+                      "ls -la /dev/serial/by-id/ 2>/dev/null || true",
+                      `timeout 8 cat ${snifferSnapshot.port ?? form.snifferPort.trim()} | sed -n '1,20p'`,
+                      "journalctl -u homematic-analyzer -n 120 --no-pager | grep -i sniffer"
+                    ].map((command) => (
+                      <li key={command}>
+                        <strong>SSH</strong>
+                        <code>{command}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </div>
           )}
         </section>

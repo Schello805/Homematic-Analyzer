@@ -48,6 +48,10 @@ let snifferLineHistory: Array<{ raw: string; receivedAt: string }> = [];
 let activeSnifferPort = "";
 let snifferReader: ReturnType<typeof spawn> | undefined;
 let snifferReaderBuffer = "";
+let snifferReaderStartedAt: string | undefined;
+let snifferReaderLastLineAt: string | undefined;
+let snifferReaderLastError: string | undefined;
+let snifferReaderLastExitCode: number | null | undefined;
 let persistedNotificationSettings: NotificationSettings | undefined;
 let notificationMonitorState: NotificationMonitorState = {};
 let notificationMonitorRunning = false;
@@ -523,7 +527,8 @@ const collectorSchema = z.object({
 });
 
 const snifferSnapshotSchema = z.object({
-  port: z.string().max(300).optional()
+  port: z.string().max(300).optional(),
+  forceRestart: z.boolean().optional()
 });
 
 const aiLogAnalysisSchema = z.object({
@@ -715,7 +720,7 @@ function isGatewaySnifferDevice(device: { name?: string; type?: string; serial?:
   return /\b(ccu-rf|hmrf|gateway|lan-gateway|lancfg|hap|drap|access point|access-point|hmip-hap|hmip-drap|hm-lgw)\b/i.test(haystack);
 }
 
-async function ensureSerialSnifferReader(port?: string): Promise<void> {
+async function ensureSerialSnifferReader(port?: string, forceRestart = false): Promise<void> {
   const trimmedPort = port?.trim();
   if (!trimmedPort || !trimmedPort.startsWith("/dev/")) return;
 
@@ -726,7 +731,7 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
     return;
   }
 
-  if (snifferReader && activeSnifferPort === trimmedPort && snifferReader.exitCode === null) {
+  if (!forceRestart && snifferReader && activeSnifferPort === trimmedPort && snifferReader.exitCode === null) {
     return;
   }
 
@@ -740,6 +745,8 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
     latestSnifferSnapshot = undefined;
   }
   snifferReaderBuffer = "";
+  snifferReaderLastError = undefined;
+  snifferReaderLastExitCode = undefined;
 
   const reader = spawn("bash", ["-lc", [
     "stty -F \"$SNIFFER_PORT\" 57600 cs8 -cstopb -parenb -ixon -ixoff raw -echo 2>/dev/null || true",
@@ -749,6 +756,7 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"]
   });
   snifferReader = reader;
+  snifferReaderStartedAt = new Date().toISOString();
 
   reader.stdout.on("data", (chunk: Buffer) => {
     snifferReaderBuffer += chunk.toString("utf8");
@@ -760,19 +768,26 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
       .filter(Boolean)
       .map((raw) => ({ raw, receivedAt }));
     if (newLines.length > 0) {
+      snifferReaderLastLineAt = receivedAt;
       const historyCutoff = Date.now() - 65 * 60 * 1000;
       snifferLineHistory = [...snifferLineHistory, ...newLines]
         .filter((line) => Date.parse(line.receivedAt) >= historyCutoff)
         .slice(-20000);
     }
   });
+  reader.stderr.on("data", (chunk: Buffer) => {
+    const message = chunk.toString("utf8").trim();
+    if (message) snifferReaderLastError = message.slice(-500);
+  });
   reader.on("error", (error) => {
+    snifferReaderLastError = error.message;
     console.warn("[Homematic Analyzer][Sniffer] Serieller Leser konnte nicht gestartet werden", {
       port: trimmedPort,
       message: error.message
     });
   });
   reader.on("close", (exitCode) => {
+    snifferReaderLastExitCode = exitCode;
     if (snifferReader === reader) {
       snifferReader = undefined;
     }
@@ -797,7 +812,7 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
           delayMs: 10000
         });
         setTimeout(() => {
-          void ensureSerialSnifferReader(trimmedPort);
+          void ensureSerialSnifferReader(trimmedPort, true);
         }, 10000);
       } else {
         console.warn("[Homematic Analyzer][Sniffer] Maximale Auto-Restart-Versuche erreicht (3/h). Kein weiterer Neustart.", {
@@ -812,12 +827,32 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
   });
 }
 
-async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
+async function readSnifferSnapshot(port?: string, forceRestart = false): Promise<SnifferSnapshot> {
   const checkedAt = new Date().toISOString();
   let lines: Array<{ raw: string; receivedAt: string }> = [];
   let source = "Noch keine Snifferdaten empfangen.";
+  let portReadable: boolean | undefined;
+  let portType: string | undefined;
 
-  await ensureSerialSnifferReader(port);
+  const trimmedPort = port?.trim();
+  if (trimmedPort) {
+    try {
+      const stats = await lstat(trimmedPort);
+      portReadable = true;
+      portType = stats.isSymbolicLink()
+        ? "Symlink"
+        : stats.isCharacterDevice()
+          ? "serielles Gerät"
+          : stats.isFile()
+            ? "Datei"
+            : "kein serielles Gerät";
+    } catch (error) {
+      portReadable = false;
+      portType = error instanceof Error ? error.message : "nicht lesbar";
+    }
+  }
+
+  await ensureSerialSnifferReader(port, forceRestart);
   const firstTimestampOfHour = Date.parse(checkedAt) - 60 * 60 * 1000;
   lines = snifferLineHistory.filter((line) => Date.parse(line.receivedAt) >= firstTimestampOfHour);
   if (lines.length > 0) {
@@ -920,6 +955,88 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     ? Math.round(carrierSenseValues.reduce((sum, value) => sum + value, 0) / carrierSenseValues.length)
     : undefined;
   const readerActive = Boolean(snifferReader && activeSnifferPort === port?.trim() && snifferReader.exitCode === null);
+  const snifferStatus = (() => {
+    if (!trimmedPort) {
+      return {
+        state: "not-configured" as const,
+        label: "Kein Sniffer-Port ausgewählt",
+        detail: "Wähle im Setup oder auf der DC-Seite einen seriellen USB-Port aus.",
+        portReadable,
+        portType
+      };
+    }
+    if (portReadable === false) {
+      return {
+        state: "port-missing" as const,
+        label: "USB-Port nicht lesbar",
+        detail: `Der Analyzer kann ${trimmedPort} nicht öffnen. Prüfe USB-Durchreichung, Container-Rechte und ob der Port noch existiert.`,
+        lastError: snifferReaderLastError,
+        lastExitCode: snifferReaderLastExitCode,
+        portReadable,
+        portType
+      };
+    }
+    if (!readerActive) {
+      return {
+        state: "reader-stopped" as const,
+        label: "Serieller Leser läuft nicht",
+        detail: "Der Port ist gespeichert, aber aktuell überwacht kein Reader diesen Port. Starte die Prüfung erneut oder wähle den Port neu aus.",
+        lastError: snifferReaderLastError,
+        lastExitCode: snifferReaderLastExitCode,
+        portReadable,
+        portType
+      };
+    }
+    if (telegrams.length > 0) {
+      return {
+        state: "telegrams" as const,
+        label: "Funktelegramme werden empfangen",
+        detail: `${telegrams.length} Homematic-Telegramme im aktuellen 60-Minuten-Fenster erkannt.`,
+        lastLineAt: snifferReaderLastLineAt,
+        readerStartedAt: snifferReaderStartedAt,
+        readerPid: snifferReader?.pid,
+        lastError: snifferReaderLastError,
+        portReadable,
+        portType
+      };
+    }
+    if (rssiNoises.length > 0) {
+      return {
+        state: "noise-only" as const,
+        label: "Nur Rauschpegel, keine Telegramme",
+        detail: `${rssiNoises.length} Carrier-Sense/RSSI-Noise-Zeilen empfangen. Das beweist den seriellen Datenstrom, aber noch kein Homematic-Telegramm. Löse ein Gerät in Sniffer-Reichweite aus.`,
+        lastLineAt: snifferReaderLastLineAt,
+        readerStartedAt: snifferReaderStartedAt,
+        readerPid: snifferReader?.pid,
+        lastError: snifferReaderLastError,
+        portReadable,
+        portType
+      };
+    }
+    if (lines.length > 0) {
+      return {
+        state: "boot-only" as const,
+        label: "Nur Start-/Infomeldungen",
+        detail: `${lines.length} Zeilen empfangen, aber noch keine AskSin-Telegramme oder Rauschpegelwerte. Prüfe Sniffer-Firmware, Baudrate und löse ein Homematic-Gerät aus.`,
+        lastLineAt: snifferReaderLastLineAt,
+        readerStartedAt: snifferReaderStartedAt,
+        readerPid: snifferReader?.pid,
+        lastError: snifferReaderLastError,
+        portReadable,
+        portType
+      };
+    }
+    return {
+      state: "listening" as const,
+      label: "Port wird überwacht, noch keine Zeilen",
+      detail: "Der Reader läuft, aber vom USB-Port kam noch keine Zeile. Prüfe, ob der richtige Port gewählt ist und ob der Sniffer Strom/Firmware hat.",
+      readerStartedAt: snifferReaderStartedAt,
+      readerPid: snifferReader?.pid,
+      lastError: snifferReaderLastError,
+      portReadable,
+      portType
+    };
+  })();
   const currentMinuteStart = Math.floor(Date.parse(checkedAt) / 60000) * 60000;
   const timelineStart = currentMinuteStart - 59 * 60 * 1000;
   const timeline = Array.from({ length: 60 }, (_, index) => {
@@ -957,6 +1074,7 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
     connected: lines.length > 0,
     readerActive,
     source,
+    status: snifferStatus,
     summary: {
       rawLines: lines.length,
       validLines: telegrams.length + rssiNoises.length,
@@ -986,7 +1104,11 @@ async function readSnifferSnapshot(port?: string): Promise<SnifferSnapshot> {
       : diagnostics.length > 0
         ? diagnostics
       : readerActive && lines.length === 0
-        ? ["Serieller Leser ist aktiv und wartet auf Sniffer-Zeilen."]
+        ? [
+            "Serieller Leser ist aktiv und wartet auf Sniffer-Zeilen.",
+            `Status: ${snifferStatus.detail}`,
+            ...(snifferStatus.lastError ? [`Letzte Reader-Meldung: ${snifferStatus.lastError}`] : [])
+          ]
       : []
   };
   if (snapshot.configured && (snapshot.readerActive || snapshot.connected)) {
@@ -1606,9 +1728,7 @@ app.get("/api/diagnostics", async (_request, response) => {
         detail: setup.snifferEnabled === false
           ? "Bewusst deaktiviert – Basisanalyse läuft ohne Zusatzhardware."
           : latestSnifferSnapshot?.readerActive
-            ? latestSnifferSnapshot.summary.telegrams > 0
-              ? `${latestSnifferSnapshot.summary.telegrams} Telegramme im aktuellen 60-Minuten-Fenster.`
-              : "Serieller Leser aktiv – noch keine Telegramme empfangen. Löse ein Homematic-Gerät aus."
+            ? latestSnifferSnapshot.status.detail
             : setup.snifferPort
               ? `Port ${setup.snifferPort} ist gespeichert, aber kein aktiver Leser. USB-Verbindung prüfen oder Port in der Web-App neu auswählen.`
               : "Optional – kein Sniffer eingerichtet.",
@@ -1695,7 +1815,7 @@ app.post("/api/sniffer/snapshot", async (request, response) => {
     return;
   }
 
-  latestSnifferSnapshot = await readSnifferSnapshot(parsed.data.port);
+  latestSnifferSnapshot = await readSnifferSnapshot(parsed.data.port, parsed.data.forceRestart);
   response.json(latestSnifferSnapshot);
 });
 
