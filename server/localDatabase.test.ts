@@ -18,12 +18,13 @@ test("speichert sensible Konfigurationswerte verschlüsselt", async () => {
     notificationSettings: {
       telegram: { botToken: "telegram-secret" },
       email: { password: "smtp-secret" },
+      ntfy: { token: "ntfy-secret" },
       ai: { openaiApiKey: "openai-secret", geminiApiKey: "gemini-secret" }
     }
   }));
 
   const raw = await readFile(databaseFile, "utf8");
-  assert.doesNotMatch(raw, /ccu-secret|xml-secret|ssh-secret|telegram-secret|smtp-secret|openai-secret|gemini-secret/);
+  assert.doesNotMatch(raw, /ccu-secret|xml-secret|ssh-secret|telegram-secret|smtp-secret|ntfy-secret|openai-secret|gemini-secret/);
   assert.match(raw, /enc:v1:/);
 
   const database = await readLocalDatabase(databaseFile);

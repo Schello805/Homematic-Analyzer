@@ -55,6 +55,13 @@ export type NotificationSettings = {
     from?: string;
     to?: string;
   };
+  ntfy?: {
+    enabled?: boolean;
+    serverUrl?: string;
+    topic?: string;
+    token?: string;
+    priority?: number;
+  };
   events?: {
     critical?: boolean;
     warning?: boolean;

@@ -55,6 +55,8 @@ let collectorHistory: CollectorHistoryPoint[] = [];
 let analysisHistory: AnalysisHistoryEntry[] = [];
 let snifferHistory: SnifferHistoryPoint[] = [];
 let lastPersistedSnifferHistoryAt = 0;
+let snifferRestartAttempts = 0;
+let snifferRestartWindowStart = 0;
 let installationCollectorTokenPromise: Promise<string> | undefined;
 let updateRun: {
   running: boolean;
@@ -398,6 +400,7 @@ function preventHttpCaching(response: express.Response) {
 const defaultNotificationSettings: NotificationSettings = {
   telegram: { enabled: false },
   email: { enabled: false, port: 587, secure: false },
+  ntfy: { enabled: false, priority: 3 },
   events: {
     critical: true,
     warning: false,
@@ -437,6 +440,13 @@ const notificationSettingsSchema = z.object({
     password: z.string().max(300).optional(),
     from: z.string().max(300).optional(),
     to: z.string().max(300).optional()
+  }).optional(),
+  ntfy: z.object({
+    enabled: z.boolean().optional(),
+    serverUrl: z.string().max(300).optional(),
+    topic: z.string().max(160).optional(),
+    token: z.string().max(300).optional(),
+    priority: z.preprocess((value) => value === 0 || value === "" ? undefined : value, z.number().int().min(1).max(5).optional())
   }).optional(),
   events: z.object({
     critical: z.boolean().optional(),
@@ -484,7 +494,7 @@ const analyzeSchema = z.object({
 });
 
 const notificationTestSchema = z.object({
-  channel: z.enum(["telegram", "email"]),
+  channel: z.enum(["telegram", "email", "ntfy"]),
   settings: notificationSettingsSchema.optional()
 });
 
@@ -770,6 +780,31 @@ async function ensureSerialSnifferReader(port?: string): Promise<void> {
       port: trimmedPort,
       exitCode
     });
+
+    // Auto-Restart bei unerwartetem Absturz (max. 3 Versuche pro Stunde)
+    const unexpectedExit = exitCode !== 0 && exitCode !== null;
+    if (unexpectedExit && activeSnifferPort === trimmedPort) {
+      const now = Date.now();
+      if (now - snifferRestartWindowStart > 60 * 60 * 1000) {
+        snifferRestartAttempts = 0;
+        snifferRestartWindowStart = now;
+      }
+      if (snifferRestartAttempts < 3) {
+        snifferRestartAttempts += 1;
+        console.info("[Homematic Analyzer][Sniffer] Auto-Restart geplant", {
+          port: trimmedPort,
+          attempt: snifferRestartAttempts,
+          delayMs: 10000
+        });
+        setTimeout(() => {
+          void ensureSerialSnifferReader(trimmedPort);
+        }, 10000);
+      } else {
+        console.warn("[Homematic Analyzer][Sniffer] Maximale Auto-Restart-Versuche erreicht (3/h). Kein weiterer Neustart.", {
+          port: trimmedPort
+        });
+      }
+    }
   });
 
   console.info("[Homematic Analyzer][Sniffer] Serieller Leser gestartet", {
@@ -1297,6 +1332,7 @@ function mergeNotificationSettings(settings?: NotificationSettings): Notificatio
   return {
     telegram: { ...defaultNotificationSettings.telegram, ...settings?.telegram },
     email: { ...defaultNotificationSettings.email, ...settings?.email },
+    ntfy: { ...defaultNotificationSettings.ntfy, ...settings?.ntfy },
     events: { ...defaultNotificationSettings.events, ...settings?.events },
     ai: { ...defaultNotificationSettings.ai, ...settings?.ai }
   };
@@ -1335,7 +1371,7 @@ async function persistNotificationMonitorState(nextState: NotificationMonitorSta
 }
 
 function notificationChannelsEnabled(settings: NotificationSettings) {
-  return Boolean(settings.telegram?.enabled || settings.email?.enabled);
+  return Boolean(settings.telegram?.enabled || settings.email?.enabled || settings.ntfy?.enabled);
 }
 
 async function runNotificationMonitor() {
@@ -1352,7 +1388,7 @@ async function runNotificationMonitor() {
         lastRunAt: new Date().toISOString(),
         lastError: !setup.ccuHost
           ? "Keine serverseitig gespeicherte CCU-Adresse."
-          : "Telegram oder E-Mail ist nicht aktiviert."
+          : "Telegram, E-Mail oder ntfy ist nicht aktiviert."
       });
       return;
     }
@@ -1377,9 +1413,9 @@ async function runNotificationMonitor() {
 
     if (selection.newChecks.length > 0) {
       const notificationResult = await sendNotificationSummaries(settings, selection.newChecks, configuredAnalyzerUrl());
-      const delivered = [notificationResult.telegram, notificationResult.email].some((result) => result.state === "sent");
+      const delivered = [notificationResult.telegram, notificationResult.email, notificationResult.ntfy].some((result) => result.state === "sent");
       if (!delivered) {
-        throw new Error("Ereignis erkannt, aber Telegram oder E-Mail konnte nicht versendet werden. Einstellungen prüfen.");
+        throw new Error("Ereignis erkannt, aber kein Benachrichtigungskanal konnte senden. Einstellungen prüfen.");
       }
       selection.state.lastNotificationAt = new Date().toISOString();
     }
@@ -1570,8 +1606,12 @@ app.get("/api/diagnostics", async (_request, response) => {
         detail: setup.snifferEnabled === false
           ? "Bewusst deaktiviert – Basisanalyse läuft ohne Zusatzhardware."
           : latestSnifferSnapshot?.readerActive
-          ? `${latestSnifferSnapshot.summary.telegrams} Telegramme im aktuellen 60-Minuten-Fenster.`
-          : setup.snifferPort ? "Port ist gespeichert, aber kein aktiver Leser wurde bestätigt." : "Optional – kein Sniffer eingerichtet.",
+            ? latestSnifferSnapshot.summary.telegrams > 0
+              ? `${latestSnifferSnapshot.summary.telegrams} Telegramme im aktuellen 60-Minuten-Fenster.`
+              : "Serieller Leser aktiv – noch keine Telegramme empfangen. Löse ein Homematic-Gerät aus."
+            : setup.snifferPort
+              ? `Port ${setup.snifferPort} ist gespeichert, aber kein aktiver Leser. USB-Verbindung prüfen oder Port in der Web-App neu auswählen.`
+              : "Optional – kein Sniffer eingerichtet.",
         lastSuccessAt: latestSnifferSnapshot?.checkedAt,
         ageMinutes: snifferAge.ageMinutes
       },
@@ -1739,7 +1779,8 @@ app.post("/api/analyze", async (request, response) => {
     const notificationResult = parsed.data.notify === false
       ? {
         telegram: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." },
-        email: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." }
+        email: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." },
+        ntfy: { state: "skipped" as const, message: "Automatische Aktualisierung: keine Benachrichtigung gesendet." }
       }
       : await sendNotificationSummaries(notificationSettings, checks, analyzerUrl);
 
@@ -1774,7 +1815,8 @@ app.post("/api/analyze", async (request, response) => {
       systemDashboard,
       notifications: {
         telegram: notificationResult.telegram,
-        email: notificationResult.email
+        email: notificationResult.email,
+        ntfy: notificationResult.ntfy
       }
     });
   } catch (error) {

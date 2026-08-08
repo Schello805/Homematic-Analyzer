@@ -13,6 +13,23 @@ cd "$ROOT_DIR"
 
 git config --global --add safe.directory "$ROOT_DIR" 2>/dev/null || true
 
+printf '[INFO] Repository wird aktualisiert ...\n'
+previous_head="$(git rev-parse HEAD 2>/dev/null || true)"
+git fetch origin
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+git pull --ff-only origin "$current_branch"
+current_head="$(git rev-parse HEAD 2>/dev/null || true)"
+
+# Frühzeitig beenden wenn kein Update vorhanden und dist/ bereits existiert
+if [ -n "$previous_head" ] && [ -n "$current_head" ] && [ "$previous_head" = "$current_head" ] && [ -d "$ROOT_DIR/dist" ]; then
+  printf '[OK] Bereits auf dem neuesten Stand (HEAD: %s). Build wird übersprungen.\n' "$current_head"
+  printf '[OK] Update abgeschlossen.\n'
+  if [ -n "$ANALYZER_PID" ] && kill -0 "$ANALYZER_PID" 2>/dev/null; then
+    printf '[INFO] Kein Neustart erforderlich (keine Änderungen).\n'
+  fi
+  exit 0
+fi
+
 if [ -d "$ROOT_DIR/.data" ]; then
   backup_file="$ROOT_DIR/.data/pre-update-$(date +%Y%m%d-%H%M%S).tar.gz"
   temporary_backup="${TMPDIR:-/tmp}/homematic-analyzer-pre-update-$$.tar.gz"
@@ -22,13 +39,6 @@ if [ -d "$ROOT_DIR/.data" ]; then
   chmod 600 "$backup_file"
   ls -1t "$ROOT_DIR"/.data/pre-update-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm -f
 fi
-
-printf '[INFO] Repository wird aktualisiert ...\n'
-previous_head="$(git rev-parse HEAD 2>/dev/null || true)"
-git fetch origin
-current_branch="$(git rev-parse --abbrev-ref HEAD)"
-git pull --ff-only origin "$current_branch"
-current_head="$(git rev-parse HEAD 2>/dev/null || true)"
 
 dependencies_changed="no"
 if [ ! -d "$ROOT_DIR/node_modules" ] || [ ! -x "$ROOT_DIR/node_modules/.bin/tsc" ]; then

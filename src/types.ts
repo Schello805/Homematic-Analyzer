@@ -67,6 +67,10 @@ export type AnalysisResponse = {
       state: "disabled" | "not-configured" | "skipped" | "sent" | "failed";
       message: string;
     };
+    ntfy?: {
+      state: "disabled" | "not-configured" | "skipped" | "sent" | "failed";
+      message: string;
+    };
   };
 };
 
@@ -299,6 +303,7 @@ export type SetupDefaults = Partial<Pick<SetupForm, "ccuHost" | "ccuUser" | "ccu
 export type NotificationSettings = {
   telegram: { enabled: boolean; [key: string]: any };
   email: { enabled: boolean; [key: string]: any };
+  ntfy: { enabled: boolean; [key: string]: any };
   events: { enabled: boolean; serviceTypes?: string[]; [key: string]: any };
   ai: { enabled: boolean; [key: string]: any };
 };

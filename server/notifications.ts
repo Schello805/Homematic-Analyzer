@@ -11,6 +11,7 @@ export type NotificationChannelResult = TelegramNotificationResult;
 export type NotificationResult = {
   telegram: NotificationChannelResult;
   email: NotificationChannelResult;
+  ntfy: NotificationChannelResult;
 };
 
 function serviceNotificationCategory(detail: string) {
@@ -138,6 +139,24 @@ function buildEmailMessage(checks: AnalysisCheck[], settings: NotificationSettin
   ].filter(Boolean).join("\n");
 }
 
+function buildPlainNotificationMessage(checks: AnalysisCheck[], settings: NotificationSettings, analyzerUrl?: string) {
+  const selectedChecks = relevantChecks(checks, settings);
+  return [
+    "🏠 Homematic Analyzer",
+    statusOverview(checks),
+    "",
+    "Was jetzt wichtig ist",
+    ...selectedChecks.slice(0, 5).flatMap((check) => [
+      `${statusIcon(check)} ${check.title}`,
+      shorten(check.summary, 260),
+      notificationRecommendation(check),
+      ""
+    ]),
+    selectedChecks.length > 5 ? `… und ${selectedChecks.length - 5} weitere Meldung${selectedChecks.length - 5 === 1 ? "" : "en"}.` : undefined,
+    analyzerUrl ? `Analyzer öffnen: ${analyzerUrl}` : "Bitte Analyzer öffnen und Belege prüfen."
+  ].filter(Boolean).join("\n");
+}
+
 async function sendTelegramSummary(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationChannelResult> {
   if (!settings.telegram?.enabled) {
     return { state: "disabled", message: "Telegram ist nicht aktiviert." };
@@ -221,20 +240,63 @@ async function sendEmailSummary(settings: NotificationSettings, checks: Analysis
   }
 }
 
-export async function sendNotificationSummaries(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationResult> {
-  const [telegram, email] = await Promise.all([
-    sendTelegramSummary(settings, checks, analyzerUrl),
-    sendEmailSummary(settings, checks, analyzerUrl)
-  ]);
+async function sendNtfySummary(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationChannelResult> {
+  if (!settings.ntfy?.enabled) {
+    return { state: "disabled", message: "ntfy ist nicht aktiviert." };
+  }
 
-  return { telegram, email };
+  const selectedChecks = relevantChecks(checks, settings);
+  if (selectedChecks.length === 0) {
+    return { state: "skipped", message: "Keine passenden Ereignisse, keine ntfy-Nachricht gesendet." };
+  }
+
+  const serverUrl = settings.ntfy.serverUrl?.replace(/\/+$/, "");
+  const topic = settings.ntfy.topic?.replace(/^\/+|\/+$/g, "");
+  if (!serverUrl || !topic) {
+    return { state: "not-configured", message: "ntfy ist aktiviert, aber Server-URL oder Topic fehlt." };
+  }
+
+  const headers: Record<string, string> = {
+    Title: "Homematic Analyzer",
+    Priority: String(settings.ntfy.priority ?? 3),
+    Tags: selectedChecks.some((check) => check.status === "critical") ? "warning,house" : "information_source,house"
+  };
+  if (analyzerUrl) headers.Click = analyzerUrl;
+  if (settings.ntfy.token) headers.Authorization = `Bearer ${settings.ntfy.token}`;
+
+  try {
+    const response = await fetch(`${serverUrl}/${encodeURIComponent(topic)}`, {
+      method: "POST",
+      headers,
+      body: buildPlainNotificationMessage(checks, settings, analyzerUrl)
+    });
+
+    if (!response.ok) {
+      return { state: "failed", message: `ntfy konnte nicht senden: HTTP ${response.status}.` };
+    }
+
+    return { state: "sent", message: `${selectedChecks.length} Ereignis(se) per ntfy gemeldet.` };
+  } catch {
+    return { state: "failed", message: "ntfy konnte nicht erreicht werden." };
+  }
 }
 
-export async function sendTestNotification(channel: "telegram" | "email", settings: NotificationSettings, analyzerUrl?: string): Promise<NotificationChannelResult> {
+export async function sendNotificationSummaries(settings: NotificationSettings, checks: AnalysisCheck[], analyzerUrl?: string): Promise<NotificationResult> {
+  const [telegram, email, ntfy] = await Promise.all([
+    sendTelegramSummary(settings, checks, analyzerUrl),
+    sendEmailSummary(settings, checks, analyzerUrl),
+    sendNtfySummary(settings, checks, analyzerUrl)
+  ]);
+
+  return { telegram, email, ntfy };
+}
+
+export async function sendTestNotification(channel: "telegram" | "email" | "ntfy", settings: NotificationSettings, analyzerUrl?: string): Promise<NotificationChannelResult> {
   const testSettings: NotificationSettings = {
     ...settings,
     telegram: { ...settings.telegram, enabled: channel === "telegram" },
     email: { ...settings.email, enabled: channel === "email" },
+    ntfy: { ...settings.ntfy, enabled: channel === "ntfy" },
     events: { ...settings.events, critical: true }
   };
   const testChecks: AnalysisCheck[] = [{
@@ -250,5 +312,7 @@ export async function sendTestNotification(channel: "telegram" | "email", settin
   }];
 
   const result = await sendNotificationSummaries(testSettings, testChecks, analyzerUrl);
-  return channel === "telegram" ? result.telegram : result.email;
+  if (channel === "telegram") return result.telegram;
+  if (channel === "email") return result.email;
+  return result.ntfy;
 }

@@ -54,6 +54,9 @@ async function transformSecrets(databaseFile: string, database: LocalDatabase, m
   if (copy.notificationSettings?.email) {
     copy.notificationSettings.email.password = await transform(databaseFile, copy.notificationSettings.email.password);
   }
+  if (copy.notificationSettings?.ntfy) {
+    copy.notificationSettings.ntfy.token = await transform(databaseFile, copy.notificationSettings.ntfy.token);
+  }
   if (copy.notificationSettings?.ai) {
     copy.notificationSettings.ai.openaiApiKey = await transform(databaseFile, copy.notificationSettings.ai.openaiApiKey);
     copy.notificationSettings.ai.geminiApiKey = await transform(databaseFile, copy.notificationSettings.ai.geminiApiKey);
@@ -107,6 +110,7 @@ export async function ensureLocalDatabaseEncryption(filePath: string): Promise<b
       raw.setupDefaults?.sshPassword,
       raw.notificationSettings?.telegram?.botToken,
       raw.notificationSettings?.email?.password,
+      raw.notificationSettings?.ntfy?.token,
       raw.notificationSettings?.ai?.openaiApiKey,
       raw.notificationSettings?.ai?.geminiApiKey
     ].filter((value): value is string => Boolean(value));

@@ -154,7 +154,7 @@ Dann im Analyzer nur die Token-ID eintragen, nicht das CCU-Passwort und nicht di
 
 ### Benachrichtigungen optional aktivieren
 
-Telegram und E-Mail werden in der Settings-Seite konfiguriert. Dort kann der User auch auswählen, bei welchen Ereignissen Benachrichtigungen gesendet werden sollen.
+Telegram, ntfy und E-Mail werden in der Settings-Seite unter **Benachrichtigungen** konfiguriert. Dort kann der User auch auswählen, bei welchen Ereignissen Benachrichtigungen gesendet werden sollen.
 
 Für Telegram können alternativ weiterhin `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` als Umgebungsvariablen gesetzt werden, wenn keine Tokens im Browser gespeichert werden sollen.
 

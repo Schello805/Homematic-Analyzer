@@ -14,11 +14,17 @@ test("exportiert und importiert Konfiguration passwortverschlüsselt", () => {
         enabled: true,
         botToken: "telegram-secret",
         chatId: "123"
+      },
+      ntfy: {
+        enabled: true,
+        serverUrl: "https://ntfy.example.com",
+        topic: "homematic",
+        token: "ntfy-secret"
       }
     }
   };
   const backup = createConfigurationBackup(payload, "sicheres-passwort");
-  assert.doesNotMatch(JSON.stringify(backup), /ccu-secret|xml-secret|telegram-secret/);
+  assert.doesNotMatch(JSON.stringify(backup), /ccu-secret|xml-secret|telegram-secret|ntfy-secret/);
   assert.deepEqual(restoreConfigurationBackup(backup, "sicheres-passwort"), payload);
   assert.throws(() => restoreConfigurationBackup(backup, "falsches-passwort"));
 });

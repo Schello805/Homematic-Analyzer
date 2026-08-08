@@ -521,7 +521,7 @@ function App() {
       || masterdataStatus?.available
     );
     const snifferDone = !form.snifferEnabled || Boolean(form.snifferPort.trim());
-    const notificationDone = notificationSettings.telegram.enabled || notificationSettings.email.enabled;
+    const notificationDone = notificationSettings.telegram.enabled || notificationSettings.email.enabled || notificationSettings.ntfy.enabled;
     return [
       {
         label: "Basis",
@@ -546,7 +546,7 @@ function App() {
       },
       {
         label: "Benachrichtigung",
-        text: "Telegram oder E-Mail",
+        text: "Telegram, ntfy oder E-Mail",
         done: notificationDone,
         optional: true,
         hint: notificationDone ? "Meldungen können versendet werden." : "Optional, wenn du aktiv erinnert werden willst."
@@ -667,6 +667,7 @@ function App() {
         setNotificationSettings({
           telegram: { ...initialNotificationSettings.telegram, ...result.notificationSettings.telegram },
           email: { ...initialNotificationSettings.email, ...result.notificationSettings.email },
+          ntfy: { ...initialNotificationSettings.ntfy, ...result.notificationSettings.ntfy },
           events: { ...initialNotificationSettings.events, ...result.notificationSettings.events },
           ai: { ...initialNotificationSettings.ai, ...result.notificationSettings.ai }
         });
@@ -1074,7 +1075,7 @@ function App() {
     }
   }
 
-  async function testNotificationChannel(channel: "telegram" | "email") {
+  async function testNotificationChannel(channel: "telegram" | "email" | "ntfy") {
     try {
       const response = await fetch("/api/settings/notifications/test", {
         method: "POST",
@@ -1087,7 +1088,7 @@ function App() {
       const result = (await response.json()) as { state: "disabled" | "not-configured" | "skipped" | "sent" | "failed"; message: string };
       showToast({
         type: result.state === "sent" ? "success" : result.state === "failed" || result.state === "not-configured" ? "warning" : "info",
-        title: channel === "telegram" ? "Telegram-Test" : "E-Mail-Test",
+        title: channel === "telegram" ? "Telegram-Test" : channel === "email" ? "E-Mail-Test" : "ntfy-Test",
         message: result.message
       });
     } catch {
@@ -1529,6 +1530,7 @@ function App() {
           const nextSettings = {
             telegram: { ...initialNotificationSettings.telegram, ...settings.telegram },
             email: { ...initialNotificationSettings.email, ...settings.email },
+            ntfy: { ...initialNotificationSettings.ntfy, ...settings.ntfy },
             events: { ...initialNotificationSettings.events, ...settings.events },
             ai: { ...initialNotificationSettings.ai, ...settings.ai }
           };
@@ -1913,7 +1915,7 @@ function App() {
       isActive = false;
       window.clearInterval(interval);
     };
-  }, [currentPage, notificationSettings.telegram.enabled, notificationSettings.email.enabled]);
+  }, [currentPage, notificationSettings.telegram.enabled, notificationSettings.email.enabled, notificationSettings.ntfy.enabled]);
 
   useEffect(() => {
     if (!analysis || currentPage !== "analysis" || !form.snifferEnabled || !form.snifferPort.trim()) return;
@@ -2048,6 +2050,14 @@ function App() {
           type: emailResult.state === "sent" ? "success" : emailResult.state === "failed" || emailResult.state === "not-configured" ? "warning" : "info",
           title: emailResult.state === "sent" ? "E-Mail gesendet" : "E-Mail Hinweis",
           message: emailResult.message
+        });
+      }
+      if (notificationSettings.ntfy.enabled && data.notifications?.ntfy) {
+        const ntfyResult = data.notifications.ntfy;
+        showToast({
+          type: ntfyResult.state === "sent" ? "success" : ntfyResult.state === "failed" || ntfyResult.state === "not-configured" ? "warning" : "info",
+          title: ntfyResult.state === "sent" ? "ntfy gesendet" : "ntfy Hinweis",
+          message: ntfyResult.message
         });
       }
     } catch (caughtError) {
@@ -2681,6 +2691,37 @@ function App() {
               </div>
             </div>
           </details>
+
+          {/* Warnbox: Port konfiguriert aber Reader nicht aktiv */}
+          {snifferSnapshot?.configured && !snifferSnapshot.readerActive && (
+            <div className="dc-guidance-card needs-action">
+              <div>
+                <strong>Sniffer nicht verbunden</strong>
+                <span>
+                  Port <code>{snifferSnapshot.port}</code> ist konfiguriert, aber der serielle Leser ist nicht aktiv.
+                  {" "}USB-Verbindung prüfen oder Port in der Web-App neu auswählen. Der Server versucht automatisch, die Verbindung wiederherzustellen.
+                </span>
+              </div>
+              <div className="dc-guidance-actions">
+                <button type="button" onClick={() => void loadSnifferSnapshot(true)}>
+                  Erneut verbinden
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Infobox: Reader aktiv, aber noch keine Daten */}
+          {snifferSnapshot?.readerActive && !snifferSnapshot.connected && (
+            <div className="dc-guidance-card">
+              <div>
+                <strong>Warte auf Funktelegramme</strong>
+                <span>
+                  Serieller Leser ist aktiv – noch keine Homematic-Telegramme empfangen.
+                  {" "}Löse jetzt ein Homematic-Gerät aus (z.&nbsp;B. Licht ein/aus), um den Datenempfang zu testen.
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="dc-metric-grid">
             {[
@@ -4130,7 +4171,7 @@ function App() {
             <p className="setup-note">Secrets werden lokal verschlüsselt gespeichert. Die App bleibt trotzdem für Heimnetz oder VPN gedacht und sollte nicht öffentlich ins Internet gestellt werden.</p>
             <p className={`notification-monitor-status ${notificationMonitorStatus?.lastError ? "has-error" : ""}`}>
               {notificationMonitorStatus === null && "Benachrichtigungs-Überwachung wird geprüft ..."}
-              {notificationMonitorStatus && !notificationMonitorStatus.enabled && "Für Ereignisbenachrichtigungen Telegram oder E-Mail aktivieren."}
+              {notificationMonitorStatus && !notificationMonitorStatus.enabled && "Für Ereignisbenachrichtigungen Telegram, E-Mail oder ntfy aktivieren."}
               {notificationMonitorStatus?.enabled && notificationMonitorStatus.lastError && `Überwachung wartet: ${notificationMonitorStatus.lastError}`}
               {notificationMonitorStatus?.enabled && !notificationMonitorStatus.lastError && !notificationMonitorStatus.initialized && "Überwachung startet: Der erste CCU-Abgleich bildet still eine Basis."}
               {notificationMonitorStatus?.enabled && !notificationMonitorStatus.lastError && notificationMonitorStatus.initialized && `Überwachung aktiv · neue Ereignisse werden innerhalb von ${notificationMonitorStatus.intervalSeconds} Sekunden geprüft.`}
@@ -4269,181 +4310,253 @@ function App() {
             </details>
 
             <details className="setup-card settings-block" open>
-              <summary><span>Telegram</span><small>Bot und Chat-ID</small></summary>
+              <summary><span>Benachrichtigungen</span><small>Telegram, E-Mail und ntfy</small></summary>
               <div className="settings-block__body">
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={notificationSettings.telegram.enabled}
-                  onChange={(event) => updateNotificationSettings({
-                    ...notificationSettings,
-                    telegram: { ...notificationSettings.telegram, enabled: event.target.checked }
-                  })}
-                />
-                <span>Telegram aktivieren</span>
-              </label>
-
-              <details className="inline-help" style={{ marginBottom: "16px" }}>
-                <summary>Anleitung: Telegram-Bot erstellen</summary>
-                <ol>
-                  <li>Öffne den <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a> in Telegram und sende <code>/newbot</code>.</li>
-                  <li>Wähle einen Namen und einen eindeutigen Benutzernamen für deinen Bot.</li>
-                  <li>Kopiere das generierte <strong>HTTP API Token</strong> (Bot Token) in das Feld unten.</li>
-                  <li>Sende eine beliebige Nachricht (oder <code>/start</code>) an deinen Bot, um den Chat zu aktivieren.</li>
-                  <li>Öffne den <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer">@userinfobot</a> in Telegram, um deine persönliche <strong>Chat ID</strong> zu ermitteln.</li>
-                  <li>Trage beide Werte ein und klicke auf „Telegram testen“.</li>
-                </ol>
-              </details>
-
-              <div className="form-grid form-grid-2">
-                <label>
-                  Bot Token
-                  <span className="secret-field">
+                <p className="setup-note">Alle Kanäle nutzen dieselben Ereignisregeln weiter unten. Du kannst einen oder mehrere Kanäle parallel aktivieren.</p>
+                <details className="inline-help notification-channel" open>
+                  <summary>Telegram</summary>
+                  <label className="toggle">
                     <input
-                      type={visibleSecrets.telegramBotToken ? "text" : "password"}
-                      value={notificationSettings.telegram.botToken}
+                      type="checkbox"
+                      checked={notificationSettings.telegram.enabled}
                       onChange={(event) => updateNotificationSettings({
                         ...notificationSettings,
-                        telegram: { ...notificationSettings.telegram, botToken: event.target.value }
+                        telegram: { ...notificationSettings.telegram, enabled: event.target.checked }
                       })}
-                      placeholder="123456:ABC..."
-                      autoComplete="off"
                     />
-                    <button type="button" onClick={() => toggleSecret("telegramBotToken")} aria-label={visibleSecrets.telegramBotToken ? "Telegram Bot Token ausblenden" : "Telegram Bot Token anzeigen"}>
-                      {getSecretIcon(Boolean(visibleSecrets.telegramBotToken))}
-                    </button>
-                  </span>
-                </label>
-                <label>
-                  Chat ID
-                  <input
-                    value={notificationSettings.telegram.chatId}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      telegram: { ...notificationSettings.telegram, chatId: event.target.value }
-                    })}
-                    placeholder="123456789"
-                    autoComplete="off"
-                  />
-                </label>
-              </div>
-              <div className="script-actions">
-                <button type="button" onClick={() => void testNotificationChannel("telegram")}>
-                  Telegram testen
-                </button>
-              </div>
-              </div>
-            </details>
+                    <span>Telegram aktivieren</span>
+                  </label>
+                  <details className="inline-help" style={{ marginBottom: "16px" }}>
+                    <summary>Anleitung: Telegram-Bot erstellen</summary>
+                    <ol>
+                      <li>Öffne den <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a> in Telegram und sende <code>/newbot</code>.</li>
+                      <li>Kopiere das <strong>HTTP API Token</strong> in das Feld unten.</li>
+                      <li>Sende deinem Bot <code>/start</code> und ermittle deine <strong>Chat ID</strong> z. B. mit <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer">@userinfobot</a>.</li>
+                    </ol>
+                  </details>
+                  <div className="form-grid form-grid-2">
+                    <label>
+                      Bot Token
+                      <span className="secret-field">
+                        <input
+                          type={visibleSecrets.telegramBotToken ? "text" : "password"}
+                          value={notificationSettings.telegram.botToken}
+                          onChange={(event) => updateNotificationSettings({
+                            ...notificationSettings,
+                            telegram: { ...notificationSettings.telegram, botToken: event.target.value }
+                          })}
+                          placeholder="123456:ABC..."
+                          autoComplete="off"
+                        />
+                        <button type="button" onClick={() => toggleSecret("telegramBotToken")} aria-label={visibleSecrets.telegramBotToken ? "Telegram Bot Token ausblenden" : "Telegram Bot Token anzeigen"}>
+                          {getSecretIcon(Boolean(visibleSecrets.telegramBotToken))}
+                        </button>
+                      </span>
+                    </label>
+                    <label>
+                      Chat ID
+                      <input
+                        value={notificationSettings.telegram.chatId}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          telegram: { ...notificationSettings.telegram, chatId: event.target.value }
+                        })}
+                        placeholder="123456789"
+                        autoComplete="off"
+                      />
+                    </label>
+                  </div>
+                  <div className="script-actions">
+                    <button type="button" onClick={() => void testNotificationChannel("telegram")}>Telegram testen</button>
+                  </div>
+                </details>
 
-            <details className="setup-card settings-block">
-              <summary><span>E-Mail SMTP</span><small>Mailserver optional</small></summary>
-              <div className="settings-block__body">
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={notificationSettings.email.enabled}
-                  onChange={(event) => updateNotificationSettings({
-                    ...notificationSettings,
-                    email: { ...notificationSettings.email, enabled: event.target.checked }
-                  })}
-                />
-                <span>E-Mail aktivieren</span>
-              </label>
-              <div className="form-grid form-grid-3">
-                <label>
-                  SMTP Host
-                  <input
-                    value={notificationSettings.email.host}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, host: event.target.value }
-                    })}
-                    placeholder="smtp.example.com"
-                  />
-                </label>
-                <label>
-                  Port
-                  <input
-                    type="number"
-                    value={notificationSettings.email.port}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, port: Number(event.target.value) || 587 }
-                    })}
-                    placeholder="587"
-                  />
-                </label>
-                <label className="toggle toggle-inline">
-                  <input
-                    type="checkbox"
-                    checked={notificationSettings.email.secure}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, secure: event.target.checked }
-                    })}
-                  />
-                  <span>SSL/TLS direkt nutzen</span>
-                </label>
-              </div>
-              <div className="form-grid form-grid-2">
-                <label>
-                  SMTP Benutzer
-                  <input
-                    value={notificationSettings.email.user}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, user: event.target.value }
-                    })}
-                    autoComplete="username"
-                  />
-                </label>
-                <label>
-                  SMTP Passwort
-                  <span className="secret-field">
+                <details className="inline-help notification-channel">
+                  <summary>ntfy</summary>
+                  <label className="toggle">
                     <input
-                      type={visibleSecrets.smtpPassword ? "text" : "password"}
-                      value={notificationSettings.email.password}
+                      type="checkbox"
+                      checked={notificationSettings.ntfy.enabled}
                       onChange={(event) => updateNotificationSettings({
                         ...notificationSettings,
-                        email: { ...notificationSettings.email, password: event.target.value }
+                        ntfy: { ...notificationSettings.ntfy, enabled: event.target.checked }
                       })}
-                      autoComplete="current-password"
                     />
-                    <button type="button" onClick={() => toggleSecret("smtpPassword")} aria-label={visibleSecrets.smtpPassword ? "SMTP Passwort ausblenden" : "SMTP Passwort anzeigen"}>
-                      {getSecretIcon(Boolean(visibleSecrets.smtpPassword))}
-                    </button>
-                  </span>
-                </label>
-              </div>
-              <div className="form-grid form-grid-2">
-                <label>
-                  Absender
-                  <input
-                    value={notificationSettings.email.from}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, from: event.target.value }
-                    })}
-                    placeholder="homematic@example.com"
-                  />
-                </label>
-                <label>
-                  Empfänger
-                  <input
-                    value={notificationSettings.email.to}
-                    onChange={(event) => updateNotificationSettings({
-                      ...notificationSettings,
-                      email: { ...notificationSettings.email, to: event.target.value }
-                    })}
-                    placeholder="du@example.com"
-                  />
-                </label>
-              </div>
-              <div className="script-actions">
-                <button type="button" onClick={() => void testNotificationChannel("email")}>
-                  E-Mail testen
-                </button>
-              </div>
+                    <span>ntfy aktivieren</span>
+                  </label>
+                  <div className="form-grid form-grid-3">
+                    <label>
+                      Server-URL
+                      <input
+                        value={notificationSettings.ntfy.serverUrl}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          ntfy: { ...notificationSettings.ntfy, serverUrl: event.target.value }
+                        })}
+                        placeholder="https://ntfy.example.com"
+                        autoComplete="url"
+                      />
+                    </label>
+                    <label>
+                      Topic
+                      <input
+                        value={notificationSettings.ntfy.topic}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          ntfy: { ...notificationSettings.ntfy, topic: event.target.value }
+                        })}
+                        placeholder="homematic-analyzer"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label>
+                      Priorität
+                      <select
+                        value={notificationSettings.ntfy.priority}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          ntfy: { ...notificationSettings.ntfy, priority: Number(event.target.value) }
+                        })}
+                      >
+                        <option value={1}>1 · sehr niedrig</option>
+                        <option value={2}>2 · niedrig</option>
+                        <option value={3}>3 · normal</option>
+                        <option value={4}>4 · hoch</option>
+                        <option value={5}>5 · dringend</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Access Token optional
+                    <span className="secret-field">
+                      <input
+                        type={visibleSecrets.ntfyToken ? "text" : "password"}
+                        value={notificationSettings.ntfy.token}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          ntfy: { ...notificationSettings.ntfy, token: event.target.value }
+                        })}
+                        placeholder="tk_..."
+                        autoComplete="off"
+                      />
+                      <button type="button" onClick={() => toggleSecret("ntfyToken")} aria-label={visibleSecrets.ntfyToken ? "ntfy Token ausblenden" : "ntfy Token anzeigen"}>
+                        {getSecretIcon(Boolean(visibleSecrets.ntfyToken))}
+                      </button>
+                    </span>
+                  </label>
+                  <p className="muted">Selbst gehostetes ntfy: Server-URL und Topic reichen bei öffentlichen Topics. Bei geschützten Topics zusätzlich einen Access Token eintragen.</p>
+                  <div className="script-actions">
+                    <button type="button" onClick={() => void testNotificationChannel("ntfy")}>ntfy testen</button>
+                  </div>
+                </details>
+
+                <details className="inline-help notification-channel">
+                  <summary>E-Mail SMTP</summary>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings.email.enabled}
+                      onChange={(event) => updateNotificationSettings({
+                        ...notificationSettings,
+                        email: { ...notificationSettings.email, enabled: event.target.checked }
+                      })}
+                    />
+                    <span>E-Mail aktivieren</span>
+                  </label>
+                  <div className="form-grid form-grid-3">
+                    <label>
+                      SMTP Host
+                      <input
+                        value={notificationSettings.email.host}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, host: event.target.value }
+                        })}
+                        placeholder="smtp.example.com"
+                      />
+                    </label>
+                    <label>
+                      Port
+                      <input
+                        type="number"
+                        value={notificationSettings.email.port}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, port: Number(event.target.value) || 587 }
+                        })}
+                        placeholder="587"
+                      />
+                    </label>
+                    <label className="toggle toggle-inline">
+                      <input
+                        type="checkbox"
+                        checked={notificationSettings.email.secure}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, secure: event.target.checked }
+                        })}
+                      />
+                      <span>SSL/TLS direkt nutzen</span>
+                    </label>
+                  </div>
+                  <div className="form-grid form-grid-2">
+                    <label>
+                      SMTP Benutzer
+                      <input
+                        value={notificationSettings.email.user}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, user: event.target.value }
+                        })}
+                        autoComplete="username"
+                      />
+                    </label>
+                    <label>
+                      SMTP Passwort
+                      <span className="secret-field">
+                        <input
+                          type={visibleSecrets.smtpPassword ? "text" : "password"}
+                          value={notificationSettings.email.password}
+                          onChange={(event) => updateNotificationSettings({
+                            ...notificationSettings,
+                            email: { ...notificationSettings.email, password: event.target.value }
+                          })}
+                          autoComplete="current-password"
+                        />
+                        <button type="button" onClick={() => toggleSecret("smtpPassword")} aria-label={visibleSecrets.smtpPassword ? "SMTP Passwort ausblenden" : "SMTP Passwort anzeigen"}>
+                          {getSecretIcon(Boolean(visibleSecrets.smtpPassword))}
+                        </button>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="form-grid form-grid-2">
+                    <label>
+                      Absender
+                      <input
+                        value={notificationSettings.email.from}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, from: event.target.value }
+                        })}
+                        placeholder="homematic@example.com"
+                      />
+                    </label>
+                    <label>
+                      Empfänger
+                      <input
+                        value={notificationSettings.email.to}
+                        onChange={(event) => updateNotificationSettings({
+                          ...notificationSettings,
+                          email: { ...notificationSettings.email, to: event.target.value }
+                        })}
+                        placeholder="du@example.com"
+                      />
+                    </label>
+                  </div>
+                  <div className="script-actions">
+                    <button type="button" onClick={() => void testNotificationChannel("email")}>E-Mail testen</button>
+                  </div>
+                </details>
               </div>
             </details>
 

@@ -25,6 +25,7 @@ export type NotificationSettings = any;
 export const initialNotificationSettings: NotificationSettings = {
   telegram: { enabled: false, token: "", chatId: "", botToken: "" },
   email: { enabled: false, to: "", host: "", port: undefined, user: "" },
+  ntfy: { enabled: false, serverUrl: "", topic: "", token: "", priority: 3 },
   events: { enabled: false },
   ai: { enabled: false, apiKey: "" }
 };
