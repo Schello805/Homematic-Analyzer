@@ -162,6 +162,7 @@ function App() {
   const [notificationMonitorStatus, setNotificationMonitorStatus] = useState<NotificationMonitorStatus | null>(null);
   const [updatingApp, setUpdatingApp] = useState(false);
   const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
+  const [forceUpdateRebuild, setForceUpdateRebuild] = useState(false);
   const [updateRunStatus, setUpdateRunStatus] = useState<UpdateRunStatus | null>(null);
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const [usbPorts, setUsbPorts] = useState<UsbPort[]>([]);
@@ -1155,20 +1156,21 @@ function App() {
     window.setTimeout(reloadWhenNewVersionIsReady, 2500);
   }
 
-  async function runAppUpdate() {
+  async function runAppUpdate(forceRebuild = false) {
     if (isUpdateRunning) return;
-    console.info("[Homematic Analyzer][Update] start clicked");
+    console.info("[Homematic Analyzer][Update] start clicked", { forceRebuild });
     setShowUpdateConfirm(false);
     setUpdatingApp(true);
     setUpdateRunStatus({
       status: "running",
       running: true,
       startedAt: new Date().toISOString(),
-      log: "Update wird gestartet ..."
+      log: forceRebuild ? "Frontend-Reparatur wird gestartet ..." : "Update wird gestartet ..."
     });
     try {
-      console.info("[Homematic Analyzer][Update] POST /api/system/update");
-      const response = await fetch("/api/system/update", { method: "POST" });
+      const updateUrl = forceRebuild ? "/api/system/update?force=1" : "/api/system/update";
+      console.info("[Homematic Analyzer][Update] POST", updateUrl);
+      const response = await fetch(updateUrl, { method: "POST" });
       console.info("[Homematic Analyzer][Update] POST response", {
         ok: response.ok,
         status: response.status,
@@ -1203,7 +1205,7 @@ function App() {
       console.info("[Homematic Analyzer][Update] started", result);
       showToast({
         type: "success",
-        title: "Update gestartet",
+        title: forceRebuild ? "Reparatur gestartet" : "Update gestartet",
         message: result.message ?? "Die App aktualisiert sich im Hintergrund."
       });
     } catch (error) {
@@ -1223,8 +1225,9 @@ function App() {
     }
   }
 
-  function requestAppUpdate() {
+  function requestAppUpdate(forceRebuild = false) {
     if (isUpdateRunning) return;
+    setForceUpdateRebuild(forceRebuild);
     setShowUpdateConfirm(true);
   }
 
@@ -4313,6 +4316,18 @@ function App() {
               <summary><span>Benachrichtigungen</span><small>Telegram, E-Mail und ntfy</small></summary>
               <div className="settings-block__body">
                 <p className="setup-note">Alle Kanäle nutzen dieselben Ereignisregeln weiter unten. Du kannst einen oder mehrere Kanäle parallel aktivieren.</p>
+                <div className="notification-channel-overview" aria-label="Benachrichtigungskanäle">
+                  {[
+                    { id: "telegram", label: "Telegram", hint: "Bot und Chat-ID", active: notificationSettings.telegram.enabled },
+                    { id: "ntfy", label: "ntfy", hint: "Self-hosted Push", active: notificationSettings.ntfy.enabled },
+                    { id: "email", label: "E-Mail", hint: "SMTP optional", active: notificationSettings.email.enabled }
+                  ].map((channel) => (
+                    <span key={channel.id} className={`notification-channel-pill ${channel.active ? "is-active" : ""}`}>
+                      <strong>{channel.label}</strong>
+                      <small>{channel.active ? "aktiv" : channel.hint}</small>
+                    </span>
+                  ))}
+                </div>
                 <details className="inline-help notification-channel" open>
                   <summary>Telegram</summary>
                   <label className="toggle">
@@ -4775,18 +4790,20 @@ function App() {
       {showUpdateConfirm && (
         <div className="confirm-backdrop" role="presentation" onMouseDown={() => setShowUpdateConfirm(false)}>
           <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="update-confirm-title" onMouseDown={(event) => event.stopPropagation()}>
-            <p className="eyebrow">Update bestätigen</p>
-            <h2 id="update-confirm-title">Analyzer jetzt aktualisieren?</h2>
+            <p className="eyebrow">{forceUpdateRebuild ? "Frontend reparieren" : "Update bestätigen"}</p>
+            <h2 id="update-confirm-title">{forceUpdateRebuild ? "Aktuelles Frontend neu bauen?" : "Analyzer jetzt aktualisieren?"}</h2>
             <p>
-              Die App lädt die neueste Version von GitHub, installiert Abhängigkeiten, baut neu und startet danach kurz neu.
-              Währenddessen kann die Oberfläche für einen Moment nicht erreichbar sein.
+              {forceUpdateRebuild
+                ? "Die App bleibt auf derselben GitHub-Version, baut aber das ausgelieferte Frontend neu und startet danach kurz neu. Das hilft, wenn der Footer aktuell ist, die Oberfläche aber alte Bereiche zeigt."
+                : "Die App lädt die neueste Version von GitHub, installiert Abhängigkeiten, baut neu und startet danach kurz neu."}
+              {" "}Währenddessen kann die Oberfläche für einen Moment nicht erreichbar sein.
             </p>
             <div className="confirm-dialog__actions">
               <button type="button" className="ghost-button" onClick={() => setShowUpdateConfirm(false)}>
                 Abbrechen
               </button>
-              <button type="button" className="primary-button" onClick={() => void runAppUpdate()} disabled={isUpdateRunning}>
-                {isUpdateRunning ? "Update läuft …" : "OK, Update starten"}
+              <button type="button" className="primary-button" onClick={() => void runAppUpdate(forceUpdateRebuild)} disabled={isUpdateRunning}>
+                {isUpdateRunning ? "Update läuft …" : forceUpdateRebuild ? "OK, Frontend neu bauen" : "OK, Update starten"}
               </button>
             </div>
           </section>
@@ -5031,8 +5048,13 @@ function App() {
           </a>
         )}
         {updateStatus.state === "update" && (
-          <button type="button" className="footer-update-button" onClick={requestAppUpdate} disabled={isUpdateRunning}>
+          <button type="button" className="footer-update-button" onClick={() => requestAppUpdate(false)} disabled={isUpdateRunning}>
             {isUpdateRunning ? "Update läuft …" : "Update starten"}
+          </button>
+        )}
+        {updateStatus.state === "current" && (
+          <button type="button" className="footer-repair-button" onClick={() => requestAppUpdate(true)} disabled={isUpdateRunning}>
+            {isUpdateRunning ? "Update läuft …" : "Frontend reparieren"}
           </button>
         )}
         {updateRunStatus && updateRunStatus.status !== "idle" && (

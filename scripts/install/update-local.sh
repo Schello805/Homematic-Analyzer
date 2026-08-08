@@ -20,14 +20,21 @@ current_branch="$(git rev-parse --abbrev-ref HEAD)"
 git pull --ff-only origin "$current_branch"
 current_head="$(git rev-parse HEAD 2>/dev/null || true)"
 
-# Frühzeitig beenden wenn kein Update vorhanden und dist/ bereits existiert
-if [ -n "$previous_head" ] && [ -n "$current_head" ] && [ "$previous_head" = "$current_head" ] && [ -d "$ROOT_DIR/dist" ]; then
+force_rebuild="${FORCE_REBUILD:-0}"
+
+# Frühzeitig beenden wenn kein Update vorhanden und dist/ bereits existiert.
+# FORCE_REBUILD=1 wird bewusst nur für den Frontend-Reparaturknopf genutzt.
+if [ "$force_rebuild" != "1" ] && [ -n "$previous_head" ] && [ -n "$current_head" ] && [ "$previous_head" = "$current_head" ] && [ -d "$ROOT_DIR/dist" ]; then
   printf '[OK] Bereits auf dem neuesten Stand (HEAD: %s). Build wird übersprungen.\n' "$current_head"
   printf '[OK] Update abgeschlossen.\n'
   if [ -n "$ANALYZER_PID" ] && kill -0 "$ANALYZER_PID" 2>/dev/null; then
     printf '[INFO] Kein Neustart erforderlich (keine Änderungen).\n'
   fi
   exit 0
+fi
+
+if [ "$force_rebuild" = "1" ] && [ -n "$previous_head" ] && [ -n "$current_head" ] && [ "$previous_head" = "$current_head" ]; then
+  printf '[INFO] Keine neue Git-Version gefunden, Frontend wird bewusst neu gebaut.\n'
 fi
 
 if [ -d "$ROOT_DIR/.data" ]; then

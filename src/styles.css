@@ -1924,6 +1924,39 @@ h2 {
   padding: 16px;
 }
 
+.notification-channel-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.notification-channel-pill {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #d5e0ef;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: #f8fbff;
+}
+
+.notification-channel-pill strong {
+  color: #172033;
+}
+
+.notification-channel-pill small {
+  color: #657086;
+  font-weight: 680;
+}
+
+.notification-channel-pill.is-active {
+  border-color: #76e0a0;
+  background: #ecfdf3;
+}
+
+.notification-channel-pill.is-active small {
+  color: #087443;
+}
+
 .configuration-backup-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5127,18 +5160,29 @@ pre {
   background: #fef0c7;
 }
 
-.footer-update-button {
+.footer-update-button,
+.footer-repair-button {
   border: 0;
   border-radius: 16px;
   padding: 11px 13px;
-  color: white;
   cursor: pointer;
   font-weight: 680;
   white-space: nowrap;
+}
+
+.footer-update-button {
+  color: white;
   background: #172033;
 }
 
-.footer-update-button:disabled {
+.footer-repair-button {
+  color: #1849a9;
+  border: 1px solid #cfe0ff;
+  background: #f3f8ff;
+}
+
+.footer-update-button:disabled,
+.footer-repair-button:disabled {
   cursor: wait;
   opacity: 0.65;
 }
@@ -7221,6 +7265,10 @@ pre {
     width: 100%;
   }
 
+  .footer-repair-button {
+    width: 100%;
+  }
+
   .evidence li,
   .recommendation-banner,
   .routing-truth-note,
@@ -7286,6 +7334,10 @@ pre {
 
   .analysis-detail-toggle button {
     width: 100%;
+  }
+
+  .notification-channel-overview {
+    grid-template-columns: 1fr;
   }
 
   .routing-topology-card {

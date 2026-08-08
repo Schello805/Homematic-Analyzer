@@ -2144,11 +2144,13 @@ app.post("/api/settings/notifications/test", async (request, response) => {
   response.json(result);
 });
 
-app.post("/api/system/update", async (_request, response) => {
+app.post("/api/system/update", async (request, response) => {
+  const forceRebuild = request.query.force === "1" || request.query.force === "true";
   console.log("[Homematic Analyzer][Update] start requested", {
     root,
     updateLogFile,
-    alreadyRunning: updateRun.running
+    alreadyRunning: updateRun.running,
+    forceRebuild
   });
 
   if (updateRun.running) {
@@ -2166,10 +2168,11 @@ app.post("/api/system/update", async (_request, response) => {
     await readFile(updateScript, "utf8");
     await mkdir(dataDir, { recursive: true });
     await writeFile(updateLogFile, [
-      `[${new Date().toISOString()}] Update per Footer gestartet`,
+      `[${new Date().toISOString()}] ${forceRebuild ? "Frontend-Reparatur" : "Update"} per Footer gestartet`,
       `[INFO] Root: ${root}`,
       `[INFO] Script: ${updateScript}`,
       `[INFO] Node PID: ${process.pid}`,
+      forceRebuild ? "[INFO] Force-Rebuild: ja" : "[INFO] Force-Rebuild: nein",
       ""
     ].join("\n"));
     updateRun = {
@@ -2184,7 +2187,8 @@ app.post("/api/system/update", async (_request, response) => {
       env: {
         ...process.env,
         ANALYZER_PID: String(process.pid),
-        UPDATE_LOG_FILE: updateLogFile
+        UPDATE_LOG_FILE: updateLogFile,
+        FORCE_REBUILD: forceRebuild ? "1" : "0"
       }
     });
 
@@ -2218,7 +2222,9 @@ app.post("/api/system/update", async (_request, response) => {
 
     response.json({
       ok: true,
-      message: "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
+      message: forceRebuild
+        ? "Frontend-Reparatur wurde gestartet. Die App baut das aktuelle Frontend neu und startet danach kurz neu."
+        : "Update wurde gestartet. Der Analyzer lädt GitHub-Änderungen, baut neu und startet danach neu.",
       log: ".data/update.log",
       fallbackCommand: "sudo bash /opt/homematic-analyzer/scripts/install/install-linux.sh"
     });
