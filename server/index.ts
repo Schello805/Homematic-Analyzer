@@ -3,7 +3,8 @@ import express from "express";
 import type { Request } from "express";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { networkInterfaces, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -731,6 +732,14 @@ async function ensureSerialSnifferReader(port?: string, forceRestart = false): P
     return;
   }
 
+  try {
+    await access(trimmedPort, fsConstants.R_OK);
+  } catch (error) {
+    snifferReaderLastError = error instanceof Error ? error.message : "Keine Leserechte auf den seriellen Port";
+    snifferReaderLastExitCode = 13;
+    return;
+  }
+
   if (!forceRestart && snifferReader && activeSnifferPort === trimmedPort && snifferReader.exitCode === null) {
     return;
   }
@@ -833,12 +842,13 @@ async function readSnifferSnapshot(port?: string, forceRestart = false): Promise
   let source = "Noch keine Snifferdaten empfangen.";
   let portReadable: boolean | undefined;
   let portType: string | undefined;
+  let portExists = false;
 
   const trimmedPort = port?.trim();
   if (trimmedPort) {
     try {
       const stats = await lstat(trimmedPort);
-      portReadable = true;
+      portExists = true;
       portType = stats.isSymbolicLink()
         ? "Symlink"
         : stats.isCharacterDevice()
@@ -846,13 +856,23 @@ async function readSnifferSnapshot(port?: string, forceRestart = false): Promise
           : stats.isFile()
             ? "Datei"
             : "kein serielles Gerät";
+      try {
+        await access(trimmedPort, fsConstants.R_OK);
+        portReadable = true;
+      } catch (error) {
+        portReadable = false;
+        snifferReaderLastError = error instanceof Error ? error.message : "Keine Leserechte auf den seriellen Port";
+        snifferReaderLastExitCode = 13;
+      }
     } catch (error) {
       portReadable = false;
       portType = error instanceof Error ? error.message : "nicht lesbar";
     }
   }
 
-  await ensureSerialSnifferReader(port, forceRestart);
+  if (!trimmedPort || portReadable !== false) {
+    await ensureSerialSnifferReader(port, forceRestart);
+  }
   const firstTimestampOfHour = Date.parse(checkedAt) - 60 * 60 * 1000;
   lines = snifferLineHistory.filter((line) => Date.parse(line.receivedAt) >= firstTimestampOfHour);
   if (lines.length > 0) {
@@ -965,11 +985,22 @@ async function readSnifferSnapshot(port?: string, forceRestart = false): Promise
         portType
       };
     }
-    if (portReadable === false) {
+    if (trimmedPort && !portExists) {
       return {
         state: "port-missing" as const,
-        label: "USB-Port nicht lesbar",
-        detail: `Der Analyzer kann ${trimmedPort} nicht öffnen. Prüfe USB-Durchreichung, Container-Rechte und ob der Port noch existiert.`,
+        label: "USB-Port nicht gefunden",
+        detail: `${trimmedPort} existiert im Analyzer-System nicht. Prüfe, ob der Sniffer eingesteckt ist und ob der USB-Port in Proxmox/LXC durchgereicht wurde.`,
+        lastError: snifferReaderLastError,
+        lastExitCode: snifferReaderLastExitCode,
+        portReadable,
+        portType
+      };
+    }
+    if (portReadable === false) {
+      return {
+        state: "port-permission" as const,
+        label: "USB-Port vorhanden, aber Zugriff verweigert",
+        detail: `Der Port ${trimmedPort} existiert, kann vom Analyzer aber nicht gelesen werden. Das passt zu „Permission denied“: In Proxmox/LXC fehlen meist Device-cgroup-Rechte oder die passende Gruppen-/Mount-Konfiguration.`,
         lastError: snifferReaderLastError,
         lastExitCode: snifferReaderLastExitCode,
         portReadable,
@@ -1071,7 +1102,7 @@ async function readSnifferSnapshot(port?: string, forceRestart = false): Promise
     checkedAt,
     port: port?.trim() || undefined,
     configured: Boolean(port?.trim()),
-    connected: lines.length > 0,
+    connected: ["telegrams", "noise-only", "boot-only"].includes(snifferStatus.state),
     readerActive,
     source,
     status: snifferStatus,

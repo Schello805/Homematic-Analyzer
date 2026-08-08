@@ -2694,7 +2694,7 @@ function App() {
           </details>
 
           {snifferSnapshot?.configured && snifferSnapshot.summary.telegrams === 0 && (
-            <div className={`dc-guidance-card ${snifferSnapshot.status.state === "port-missing" || snifferSnapshot.status.state === "reader-stopped" ? "needs-action" : ""}`}>
+            <div className={`dc-guidance-card ${["port-missing", "port-permission", "reader-stopped"].includes(snifferSnapshot.status.state) ? "needs-action" : ""}`}>
               <div>
                 <strong>Warum kommen keine Sniffer-Telegramme?</strong>
                 <span>{snifferSnapshot.status.detail}</span>
@@ -2704,6 +2704,12 @@ function App() {
                   {snifferSnapshot.status.lastLineAt ? ` · letzte Zeile ${formatSnifferTime(snifferSnapshot.status.lastLineAt)}` : ""}
                   {snifferSnapshot.status.portType ? ` · Port: ${snifferSnapshot.status.portType}` : ""}
                 </small>
+                {snifferSnapshot.status.state === "port-permission" && (
+                  <div className="dc-inline-fix">
+                    <strong>Wahrscheinlicher Fix in Proxmox/LXC</strong>
+                    <span>Auf dem Proxmox-Host den USB-Port dem Container mit `lxc.cgroup2.devices.allow` und `lxc.mount.entry` freigeben, Container neu starten und danach den Port erneut prüfen. Wenn sogar `cat /dev/ttyUSB0` im Container „Permission denied“ meldet, ist das kein Homematic-Problem, sondern die Container-Durchreichung.</span>
+                  </div>
+                )}
               </div>
               <div className="dc-guidance-actions">
                 <button type="button" onClick={() => void loadSnifferSnapshot(true, true, true)} disabled={snifferLoading}>
@@ -2714,7 +2720,7 @@ function App() {
           )}
 
           {/* Warnbox: Port konfiguriert aber Reader nicht aktiv */}
-          {snifferSnapshot?.configured && !snifferSnapshot.readerActive && (
+          {snifferSnapshot?.configured && !snifferSnapshot.readerActive && snifferSnapshot.status.state !== "port-permission" && (
             <div className="dc-guidance-card needs-action">
               <div>
                 <strong>Sniffer nicht verbunden</strong>

@@ -210,7 +210,7 @@ export type SnifferSnapshot = {
   readerActive: boolean;
   source: string;
   status: {
-    state: "not-configured" | "port-missing" | "reader-stopped" | "listening" | "noise-only" | "boot-only" | "telegrams";
+    state: "not-configured" | "port-missing" | "port-permission" | "reader-stopped" | "listening" | "noise-only" | "boot-only" | "telegrams";
     label: string;
     detail: string;
     lastLineAt?: string;
