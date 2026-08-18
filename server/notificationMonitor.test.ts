@@ -75,3 +75,28 @@ test("sendet Duty-Cycle-Änderungen innerhalb derselben Statusstufe nicht minüt
   assert.equal(escalated.newChecks.length, 1);
   assert.match(escalated.newChecks[0]?.summary ?? "", /92%/);
 });
+
+test("benachrichtigt über Add-on-Updates wenn releases aktiviert ist", () => {
+  const releaseSettings: NotificationSettings = {
+    events: { releases: true }
+  };
+  const addonCheck: AnalysisCheck = {
+    id: "addon-release-cuxd",
+    title: "CUxD Update",
+    category: "Wartung",
+    status: "warning",
+    summary: "Neues CUxD-Update verfügbar: Version 2.11.0.",
+    recommendation: "Update installieren.",
+    access: ["ccu"],
+    evidence: [{ source: "GitHub Add-on Release", detail: "Installiert: 2.10.1. Verfügbar: 2.11.0." }],
+    details: []
+  };
+
+  const firstRun = selectNewNotificationChecks([addonCheck], releaseSettings);
+  assert.equal(firstRun.newChecks.length, 0); // initial run is baseline
+
+  const repeatedRun = selectNewNotificationChecks([], releaseSettings, firstRun.state);
+  const nextRun = selectNewNotificationChecks([addonCheck], releaseSettings, repeatedRun.state);
+  assert.equal(nextRun.newChecks.length, 1);
+  assert.equal(nextRun.newChecks[0]?.id, "addon-release-cuxd");
+});

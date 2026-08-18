@@ -545,3 +545,62 @@ test("blendet die HmIP-Routing-Prüfung nur bei aktivierter Funktion ein", () =>
   assert.equal(disabledChecks.some((check) => check.id === "routing-topology"), false);
   assert.equal(enabledChecks.some((check) => check.id === "routing-topology"), true);
 });
+
+test("erzeugt Update-Kachel für CCU-Addons wie CUxD", () => {
+  const checks = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    undefined,
+    [
+      {
+        name: "CUxD",
+        installedVersion: "2.10.1",
+        latestVersion: "2.11.0",
+        available: true,
+        url: "https://github.com/jens-maus/cuxd/releases",
+        checkedAt: "2026-08-18T10:00:00.000Z"
+      }
+    ]
+  );
+
+  const cuxdCheck = checks.find((check) => check.id === "addon-release-cuxd");
+  assert.ok(cuxdCheck);
+  assert.equal(cuxdCheck.title, "CUxD Update");
+  assert.equal(cuxdCheck.status, "warning");
+  assert.match(cuxdCheck.summary, /2\.11\.0/);
+  assert.equal(cuxdCheck.evidence[0]?.source, "GitHub Add-on Release");
+  assert.match(cuxdCheck.evidence[0]?.detail ?? "", /Installiert: 2\.10\.1/);
+});
+
+test("zeigt CCU-Addon als aktuell an, wenn kein Update vorliegt", () => {
+  const checks = createAnalysis(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {},
+    undefined,
+    [
+      {
+        name: "XML-API",
+        installedVersion: "2.3",
+        latestVersion: "2.3",
+        available: false,
+        url: "https://github.com/homematic-community/XML-API/releases",
+        checkedAt: "2026-08-18T10:00:00.000Z"
+      }
+    ]
+  );
+
+  const xmlCheck = checks.find((check) => check.id === "addon-release-xml-api");
+  assert.ok(xmlCheck);
+  assert.equal(xmlCheck.status, "ok");
+  assert.match(xmlCheck.summary, /aktuell/);
+});

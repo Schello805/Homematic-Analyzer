@@ -30,6 +30,7 @@ HMIP_ROUTING_CONFIG_FILE="$(make_tmp_file hmip-routing-config)"
 DEVICE_FIRMWARE_FILE="$(make_tmp_file device-firmware)"
 RADIO_GATEWAY_FILE="$(make_tmp_file radio-gateways)"
 CONNECTION_LIST_FILE="$(make_tmp_file connections)"
+ADDON_LIST_FILE="$(make_tmp_file addons)"
 : > "$TMP_FILE"
 : > "$RESPONSE_FILE"
 : > "$BACKUP_LIST_FILE"
@@ -40,9 +41,10 @@ CONNECTION_LIST_FILE="$(make_tmp_file connections)"
 : > "$DEVICE_FIRMWARE_FILE"
 : > "$RADIO_GATEWAY_FILE"
 : > "$CONNECTION_LIST_FILE"
+: > "$ADDON_LIST_FILE"
 
 cleanup() {
-  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$DEVICE_FIRMWARE_FILE" "$RADIO_GATEWAY_FILE" "$CONNECTION_LIST_FILE"
+  rm -f "$TMP_FILE" "$RESPONSE_FILE" "$BACKUP_LIST_FILE" "$LOG_LIST_FILE" "$HMIP_LOG_LIST_FILE" "$HMIP_ROUTING_LOG_LIST_FILE" "$HMIP_ROUTING_CONFIG_FILE" "$DEVICE_FIRMWARE_FILE" "$RADIO_GATEWAY_FILE" "$CONNECTION_LIST_FILE" "$ADDON_LIST_FILE"
 }
 
 trap cleanup EXIT INT TERM
@@ -399,6 +401,37 @@ if [ -r /etc/config/rfd.conf ]; then
 fi
 
 {
+  # CUxD
+  if [ -x /usr/local/addons/cuxd/cuxd ]; then
+    cuxd_ver="$(/usr/local/addons/cuxd/cuxd -v 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' || true)"
+    [ -n "$cuxd_ver" ] && printf 'ADDON|name=CUxD|version=%s\n' "$cuxd_ver"
+  elif [ -r /usr/local/addons/cuxd/VERSION ]; then
+    printf 'ADDON|name=CUxD|version=%s\n' "$(cat /usr/local/addons/cuxd/VERSION 2>/dev/null | tr -d '\r\n')"
+  elif [ -r /usr/local/etc/config/addons/www/cuxd/VERSION ]; then
+    printf 'ADDON|name=CUxD|version=%s\n' "$(cat /usr/local/etc/config/addons/www/cuxd/VERSION 2>/dev/null | tr -d '\r\n')"
+  fi
+
+  # XML-API
+  if [ -r /usr/local/addons/xmlapi/VERSION ]; then
+    printf 'ADDON|name=XML-API|version=%s\n' "$(cat /usr/local/addons/xmlapi/VERSION 2>/dev/null | tr -d '\r\n')"
+  elif [ -r /www/addons/xmlapi/info.html ]; then
+    xml_ver="$(grep -oE 'Version [0-9]+\.[0-9]+(\.[0-9]+)?' /www/addons/xmlapi/info.html 2>/dev/null | head -n 1 | awk '{print $2}' || true)"
+    [ -n "$xml_ver" ] && printf 'ADDON|name=XML-API|version=%s\n' "$xml_ver"
+  fi
+
+  # Other addons in /usr/local/addons or /usr/local/etc/config/addons/www
+  for vfile in /usr/local/addons/*/VERSION /usr/local/etc/config/addons/www/*/VERSION /www/addons/*/VERSION; do
+    if [ -r "$vfile" ]; then
+      aname="$(basename "$(dirname "$vfile")")"
+      aver="$(cat "$vfile" 2>/dev/null | tr -d '\r\n' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' || true)"
+      if [ -n "$aname" ] && [ -n "$aver" ] && [ "$aname" != "cuxd" ] && [ "$aname" != "xmlapi" ]; then
+        printf 'ADDON|name=%s|version=%s\n' "$aname" "$aver"
+      fi
+    fi
+  done
+} | sort -u > "$ADDON_LIST_FILE" 2>/dev/null || true
+
+{
   ss -Htanp 2>/dev/null
   netstat -tnp 2>/dev/null
   netstat -tn 2>/dev/null
@@ -542,6 +575,20 @@ EOF_BACKUPS
     fi
     printf '    "%s"' "$encoded_line"
   done < "$RADIO_GATEWAY_FILE"
+  printf '\n  ],\n'
+  printf '  "addonsBase64": [\n'
+  FIRST=1
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    encoded_line="$(printf '%s' "$line" | base64 2>/dev/null | tr -d '\r\n' || true)"
+    [ -n "$encoded_line" ] || continue
+    if [ "$FIRST" = "1" ]; then
+      FIRST=0
+    else
+      printf ',\n'
+    fi
+    printf '    "%s"' "$encoded_line"
+  done < "$ADDON_LIST_FILE"
   printf '\n  ],\n'
   printf '  "network": {\n'
   printf '    "connectionsBase64": [\n'

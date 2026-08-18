@@ -20,7 +20,7 @@ import { resolveNetworkHostnames } from "./networkIdentity.js";
 import { sendNotificationSummaries, sendTestNotification } from "./notifications.js";
 import { selectNewNotificationChecks } from "./notificationMonitor.js";
 import type { NotificationMonitorState } from "./notificationMonitor.js";
-import { checkOfficialCcu3Release, checkOpenCcuRelease, checkRepositoryRelease, isOfficialCcu3Product, isOpenCcuFamilyProduct } from "./releases.js";
+import { checkKnownAddonUpdates, checkOfficialCcu3Release, checkOpenCcuRelease, checkRepositoryRelease, isOfficialCcu3Product, isOpenCcuFamilyProduct } from "./releases.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
 import { normalizeDutyCycle, parseAskSinTelegram, parseRssiNoise } from "./snifferProtocol.js";
 import packageInfo from "../package.json" with { type: "json" };
@@ -520,6 +520,8 @@ const collectorSchema = z.object({
   deviceFirmwareBase64: z.array(z.string().max(4000)).max(500).optional(),
   radioGateways: z.array(z.coerce.string().max(1000)).max(50).optional(),
   radioGatewaysBase64: z.array(z.string().max(4000)).max(50).optional(),
+  addons: z.array(z.object({ name: z.string(), version: z.string() })).max(100).optional(),
+  addonsBase64: z.array(z.string().max(4000)).max(100).optional(),
   network: z.object({
     connections: z.array(z.coerce.string().max(2000)).max(250).optional(),
     connectionsBase64: z.array(z.string().max(8000)).max(250).optional()
@@ -1560,8 +1562,50 @@ async function runNotificationMonitor() {
     if (isPersistableCcuSnapshot(ccuSnapshot)) {
       await persistCcuSnapshot(ccuSnapshot);
     }
+    const runtimeVersion = await getRuntimeAppVersion();
+    const releaseCheck = await checkRepositoryRelease(runtimeVersion);
+    const installedCentralVersion = firstNonBlankString(
+      ccuSnapshot?.centralVersion,
+      centralVersionFromSystem(latestCollector?.system),
+      centralVersionFromSystem(latestCcuMasterdata?.system)
+    );
+    const centralProduct = firstNonBlankString(
+      ccuSnapshot?.centralProduct,
+      centralProductFromSystem(latestCollector?.system),
+      centralProductFromSystem(latestCcuMasterdata?.system)
+    );
+    const centralReleaseCheck = isOfficialCcu3Product(centralProduct)
+      ? await checkOfficialCcu3Release(installedCentralVersion, centralProduct)
+      : isOpenCcuFamilyProduct(centralProduct)
+        ? await checkOpenCcuRelease(installedCentralVersion, centralProduct)
+        : undefined;
+
+    const installedAddons = [
+      ...(ccuSnapshot?.addons ?? []),
+      ...(latestCollector?.addons ?? []),
+      ...(latestCcuMasterdata?.addons ?? [])
+    ].reduce<Array<{ name: string; version: string }>>((acc, item) => {
+      if (!acc.some((existing) => existing.name.toLowerCase() === item.name.toLowerCase())) {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+    const addonReleaseChecks = installedAddons.length > 0
+      ? await checkKnownAddonUpdates(installedAddons)
+      : [];
+
     const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
-    const checks = createAnalysis(config, latestCollector, ccuSnapshot, latestCcuMasterdata, undefined, latestSnifferSnapshot, networkHostnames);
+    const checks = createAnalysis(
+      config,
+      latestCollector,
+      ccuSnapshot,
+      latestCcuMasterdata,
+      releaseCheck,
+      latestSnifferSnapshot,
+      networkHostnames,
+      centralReleaseCheck,
+      addonReleaseChecks
+    );
     const selection = selectNewNotificationChecks(checks, settings, notificationMonitorState);
 
     if (selection.newChecks.length > 0) {
@@ -1924,8 +1968,32 @@ app.post("/api/analyze", async (request, response) => {
         : latestSnifferSnapshot;
     latestSnifferSnapshot = snifferSnapshot;
 
+    const installedAddons = [
+      ...(ccuSnapshot?.addons ?? []),
+      ...(latestCollector?.addons ?? []),
+      ...(latestCcuMasterdata?.addons ?? [])
+    ].reduce<Array<{ name: string; version: string }>>((acc, item) => {
+      if (!acc.some((existing) => existing.name.toLowerCase() === item.name.toLowerCase())) {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+    const addonReleaseChecks = installedAddons.length > 0
+      ? await checkKnownAddonUpdates(installedAddons)
+      : [];
+
     const networkHostnames = await resolveNetworkHostnames(collectorRemoteAddresses(latestCollector));
-    const checks = createAnalysis({ ...parsed.data, notificationSettings }, latestCollector, ccuSnapshot, latestCcuMasterdata, releaseCheck, snifferSnapshot, networkHostnames, centralReleaseCheck);
+    const checks = createAnalysis(
+      { ...parsed.data, notificationSettings },
+      latestCollector,
+      ccuSnapshot,
+      latestCcuMasterdata,
+      releaseCheck,
+      snifferSnapshot,
+      networkHostnames,
+      centralReleaseCheck,
+      addonReleaseChecks
+    );
     const analyzerUrl = analyzerUrlFromRequest(request);
     const notificationResult = parsed.data.notify === false
       ? {
@@ -1979,6 +2047,22 @@ app.post("/api/analyze", async (request, response) => {
   }
 });
 
+function parseCollectorAddons(lines?: string[]): Array<{ name: string; version: string }> | undefined {
+  if (!lines || lines.length === 0) return undefined;
+  const addons: Array<{ name: string; version: string }> = [];
+  for (const line of lines) {
+    const match = line.match(/^ADDON\|name=([^|]+)\|version=(.+)$/);
+    if (match) {
+      const name = match[1].trim();
+      const version = match[2].trim();
+      if (name && version && !addons.some((a) => a.name.toLowerCase() === name.toLowerCase())) {
+        addons.push({ name, version });
+      }
+    }
+  }
+  return addons.length > 0 ? addons : undefined;
+}
+
 app.post("/api/collector", async (request, response) => {
   const parsed = collectorSchema.safeParse(request.body);
 
@@ -2006,6 +2090,8 @@ app.post("/api/collector", async (request, response) => {
   const decodedHmipRoutingConfig = decodeBase64Lines(parsed.data.hmipRoutingConfigBase64);
   const decodedDeviceFirmware = decodeBase64Lines(parsed.data.deviceFirmwareBase64);
   const decodedRadioGateways = decodeBase64Lines(parsed.data.radioGatewaysBase64);
+  const decodedAddons = decodeBase64Lines(parsed.data.addonsBase64);
+  const collectorAddons = parsed.data.addons ?? parseCollectorAddons(decodedAddons);
   const decodedConnections = decodeBase64Lines(parsed.data.network?.connectionsBase64);
   const {
     logsBase64: _logsBase64,
@@ -2014,6 +2100,7 @@ app.post("/api/collector", async (request, response) => {
     hmipRoutingConfigBase64: _hmipRoutingConfigBase64,
     deviceFirmwareBase64: _deviceFirmwareBase64,
     radioGatewaysBase64: _radioGatewaysBase64,
+    addonsBase64: _addonsBase64,
     network: encodedNetwork,
     ...collectorData
   } = parsed.data;
@@ -2027,6 +2114,7 @@ app.post("/api/collector", async (request, response) => {
     hmipRoutingConfig: parsed.data.hmipRoutingConfig ?? decodedHmipRoutingConfig,
     deviceFirmware: parsed.data.deviceFirmware ?? decodedDeviceFirmware,
     radioGateways: parsed.data.radioGateways ?? decodedRadioGateways,
+    addons: collectorAddons,
     network: encodedNetwork
       ? {
           ...network,
@@ -2262,6 +2350,48 @@ app.get("/api/system/central-update-status", async (_request, response) => {
           : `Installiert: ${releaseCheck.installedVersion}. Kein neuerer ${releaseCheck.source === "ccu3" ? "CCU3" : "OpenCCU"}-Stand gefunden.`,
     url: releaseCheck.url
   });
+});
+
+app.get("/api/system/addon-update-status", async (_request, response) => {
+  preventHttpCaching(response);
+  const installedAddons = [
+    ...(latestCcuSnapshot?.addons ?? []),
+    ...(latestCollector?.addons ?? []),
+    ...(latestCcuMasterdata?.addons ?? [])
+  ].reduce<Array<{ name: string; version: string }>>((acc, item) => {
+    if (!acc.some((existing) => existing.name.toLowerCase() === item.name.toLowerCase())) {
+      acc.push(item);
+    }
+    return acc;
+  }, []);
+
+  if (installedAddons.length === 0) {
+    response.json([]);
+    return;
+  }
+
+  const results = await checkKnownAddonUpdates(installedAddons);
+  response.json(
+    results.map((check) => ({
+      name: check.name,
+      state: check.error || !check.installedVersion
+        ? "unknown"
+        : check.available
+          ? "update"
+          : "current",
+      label: check.available
+        ? `${check.name}-Update verfügbar`
+        : check.error
+          ? `${check.name}-Check fehlgeschlagen`
+          : `${check.name} aktuell`,
+      detail: check.error
+        ? check.error
+        : check.available
+          ? `Installiert: ${check.installedVersion}. Neu: ${check.latestVersion}.`
+          : `Installiert: ${check.installedVersion}. Kein neuerer Stand auf GitHub gefunden.`,
+      url: check.url
+    }))
+  );
 });
 
 app.get("/api/system/update-run", async (_request, response) => {

@@ -128,6 +128,7 @@ export type CcuSnapshot = {
   dutyCycle?: number;
   centralVersion?: string;
   centralProduct?: string;
+  addons?: Array<{ name: string; version: string }>;
   counters: {
     devices: number;
     lowBattery: number;
@@ -149,6 +150,7 @@ export type CollectorPayload = {
   hmipRoutingConfig?: string[];
   deviceFirmware?: string[];
   radioGateways?: string[];
+  addons?: Array<{ name: string; version: string }>;
   network?: {
     connections?: string[];
   };
@@ -233,6 +235,7 @@ export type CcuMasterdataPayload = {
   deviceCount?: number;
   system?: Record<string, unknown>;
   backups?: Record<string, unknown>;
+  addons?: Array<{ name: string; version: string }>;
   devices?: Array<{
     name?: string;
     address?: string;
@@ -382,6 +385,16 @@ export type CentralReleaseCheck = {
   latestVersion?: string;
   product?: string;
   source: "openccu" | "ccu3";
+  url: string;
+  checkedAt: string;
+  error?: string;
+};
+
+export type AddonReleaseCheck = {
+  name: string;
+  installedVersion?: string;
+  latestVersion?: string;
+  available: boolean;
   url: string;
   checkedAt: string;
   error?: string;

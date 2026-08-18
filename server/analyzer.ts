@@ -1,4 +1,4 @@
-import type { AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CentralReleaseCheck, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
+import type { AddonReleaseCheck, AnalysisCheck, AnalyzeRequest, CcuDevice, CcuMasterdataPayload, CcuSnapshot, CentralReleaseCheck, CollectorPayload, Evidence, ReleaseCheck, SnifferDeviceSummary, SnifferSnapshot } from "./types.js";
 import { isBenignLogLine, isClearingEventLine } from "./aiLogAnalyzer.js";
 import { describeKnownService } from "./networkIdentity.js";
 import { buildRoutingTopology, parseRadioGateways } from "./routingTopology.js";
@@ -362,7 +362,17 @@ function weakSnifferDevices(devices: SnifferDeviceSummary[], limit = -85): Sniff
     .sort((left, right) => (left.avgRssi ?? 0) - (right.avgRssi ?? 0));
 }
 
-export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayload, ccu?: CcuSnapshot, masterdata?: CcuMasterdataPayload, release?: ReleaseCheck, sniffer?: SnifferSnapshot, networkHostnames: Record<string, string> = {}, centralRelease?: CentralReleaseCheck): AnalysisCheck[] {
+export function createAnalysis(
+  config: AnalyzeRequest,
+  collector?: CollectorPayload,
+  ccu?: CcuSnapshot,
+  masterdata?: CcuMasterdataPayload,
+  release?: ReleaseCheck,
+  sniffer?: SnifferSnapshot,
+  networkHostnames: Record<string, string> = {},
+  centralRelease?: CentralReleaseCheck,
+  addonReleases?: AddonReleaseCheck[]
+): AnalysisCheck[] {
   const hasCcuCredentials = Boolean(config.ccuHost && config.ccuUser && (config.ccuPassword || config.hasCcuPassword));
   const hasCcuData = Boolean(ccu?.reachable);
   const hasSsh = Boolean((config.sshHost || config.ccuHost || collector?.host) && (config.sshUser || collector));
@@ -1087,6 +1097,47 @@ export function createAnalysis(config: AnalyzeRequest, collector?: CollectorPayl
         "Der Analyzer installiert Zentralen-Updates niemals automatisch."
       ]
     });
+  }
+
+  if (addonReleases && addonReleases.length > 0) {
+    for (const addon of addonReleases) {
+      const hasInstalledVersion = Boolean(addon.installedVersion);
+      const safeId = addon.name.toLowerCase().replace(/[^a-z0-9]/g, "-");
+      checks.push({
+        id: `addon-release-${safeId}`,
+        title: `${addon.name} Update`,
+        category: "Wartung",
+        status: addon.available ? "warning" : addon.error ? "improvement" : !hasInstalledVersion ? "unavailable" : "ok",
+        summary: addon.available
+          ? `Neues ${addon.name}-Update verfügbar: Version ${addon.latestVersion}.`
+          : addon.error
+            ? `Der Update-Check für ${addon.name} konnte nicht durchgeführt werden.`
+            : !hasInstalledVersion
+              ? `Die installierte Version von ${addon.name} konnte noch nicht ermittelt werden.`
+              : `${addon.name} ist aktuell (${addon.installedVersion}).`,
+        recommendation: addon.available
+          ? `Release-Hinweise öffnen, Add-on herunterladen und über die CCU-WebUI unter Systemsteuerung → Zusatzsoftware installieren.`
+          : addon.error
+            ? `Internetverbindung oder GitHub-Erreichbarkeit prüfen.`
+            : !hasInstalledVersion
+              ? `CCU-Zusatzsoftware prüfen oder den Collector ausführen, um die Versionsnummer zu ermitteln.`
+              : "Kein Handlungsbedarf.",
+        access: ["ccu"],
+        evidence: [{
+          source: "GitHub Add-on Release",
+          detail: hasInstalledVersion
+            ? `Installiert: ${addon.installedVersion}. Verfügbar: ${addon.latestVersion ?? "nicht ermittelbar"}.`
+            : `Online gefunden: ${addon.latestVersion ?? "nicht ermittelbar"}. Installierte Version noch unbekannt.`,
+          timestamp: addon.checkedAt,
+          url: addon.url
+        }],
+        details: [
+          `Prüfung gegen das offizielle GitHub-Repository für ${addon.name}.`,
+          "Add-on-Updates werden manuell über die CCU-WebUI unter Systemsteuerung → Zusatzsoftware eingespielt.",
+          "Vor Add-on-Updates empfiehlt sich die Erstellung eines CCU-Backups."
+        ]
+      });
+    }
   }
 
   return config.hmipRoutingEnabled

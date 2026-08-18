@@ -24,3 +24,10 @@ test("grenzt OpenCCU-Familie von originaler CCU-Firmware ab", () => {
   assert.equal(isOfficialCcu3Product("CCU3"), true);
   assert.equal(isOfficialCcu3Product("OpenCCU"), false);
 });
+
+test("vergleicht Addon-Versionsnummern semantisch", () => {
+  assert.equal(compareVersions("2.11.0", "2.10.1") > 0, true);
+  assert.equal(compareVersions("2.10.1", "2.11.0") < 0, true);
+  assert.equal(compareVersions("2.11.0", "2.11.0"), 0);
+  assert.equal(compareVersions("2.3", "2.2.1") > 0, true);
+});

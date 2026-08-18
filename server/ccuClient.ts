@@ -357,6 +357,158 @@ async function readCentralVersionFromWebUi(endpoint: CcuEndpoint, config: Analyz
   return {};
 }
 
+async function probeDirectAddons(
+  endpoint: CcuEndpoint,
+  config: AnalyzeRequest,
+  sid?: string
+): Promise<Array<{ name: string; version: string }>> {
+  const addons: Array<{ name: string; version: string }> = [];
+
+  // Probe CUxD
+  try {
+    const cuxdText = await fetchCcuText(endpoint, "/addons/cuxd/index.ccc", config, sid)
+      ?? await fetchCcuText(endpoint, "/addons/cuxd/index.cgi", config, sid)
+      ?? await fetchCcuText(endpoint, "/addons/cuxd/", config, sid);
+    if (cuxdText) {
+      const match = cuxdText.match(/CUxD(?:\s+Version|\s+v|\s+)\s*(\d+\.\d+(?:\.\d+)?)/i)
+        ?? cuxdText.match(/v?(\d+\.\d+\.\d+)/);
+      if (match?.[1]) {
+        addons.push({ name: "CUxD", version: match[1] });
+      }
+    }
+  } catch {
+  }
+
+  // Probe XML-API
+  try {
+    const xmlApiText = await fetchCcuText(endpoint, "/addons/xmlapi/info.html", config, sid)
+      ?? await fetchCcuText(endpoint, "/addons/xmlapi/version.cgi", config, sid);
+    if (xmlApiText) {
+      const match = xmlApiText.match(/XML-API(?:\s+Version|\s+v|\s+)?\s*(\d+\.\d+(?:\.\d+)?)/i)
+        ?? xmlApiText.match(/Version\s*(\d+\.\d+(?:\.\d+)?)/i);
+      if (match?.[1]) {
+        addons.push({ name: "XML-API", version: match[1] });
+      }
+    }
+  } catch {
+  }
+
+  // Probe JP-HB-Devices
+  try {
+    const jpHbText = await fetchCcuText(endpoint, "/addons/jp-hb-devices-addon/VERSION", config, sid)
+      ?? await fetchCcuText(endpoint, "/addons/jp-hb-devices/VERSION", config, sid);
+    if (jpHbText && /^\d+\.\d+/.test(jpHbText.trim())) {
+      addons.push({ name: "JP-HB-Devices Addon", version: jpHbText.trim() });
+    }
+  } catch {
+  }
+
+  return addons;
+}
+
+export async function readInstalledAddons(
+  endpoint: CcuEndpoint,
+  config: AnalyzeRequest,
+  sid?: string
+): Promise<Array<{ name: string; version: string }>> {
+  // The CCU WebUI lists installed addons on several possible pages
+  const paths = [
+    "/config/cp_addons.cgi",
+    "/config/addon/addon.cgi",
+    "/addons.cgi",
+    "/config/addons.cgi"
+  ];
+
+  const addons: Array<{ name: string; version: string }> = [];
+  const seen = new Set<string>();
+
+  for (const path of paths) {
+    const text = await fetchCcuText(endpoint, path, config, sid);
+    if (!text || text.length < 50) continue;
+
+    const parsed = parseAddonsFromHtml(text);
+    if (parsed.length > 0) {
+      console.info(`[CCU DEBUG] Addons found on ${path}:`, JSON.stringify(parsed));
+      for (const item of parsed) {
+        const key = item.name.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          addons.push(item);
+        }
+      }
+      break;
+    }
+  }
+
+  // Direct probe fallback/supplement for addons not caught by page parsing
+  try {
+    const directAddons = await probeDirectAddons(endpoint, config, sid);
+    for (const item of directAddons) {
+      const key = item.name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        addons.push(item);
+      }
+    }
+  } catch {
+  }
+
+  return addons;
+}
+
+function parseAddonsFromHtml(html: string): Array<{ name: string; version: string }> {
+  const addons: Array<{ name: string; version: string }> = [];
+  const seen = new Set<string>();
+
+  // Strip scripts and styles for cleaner text
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+
+  // Pattern 1: Table rows with name and version columns
+  // Matches: <td>AddonName</td> ... <td>1.2.3</td>
+  const tableRowPattern = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+  const tableRows = cleaned.match(tableRowPattern) ?? [];
+  for (const row of tableRows) {
+    const cells = [...row.matchAll(/<td[^>]*>([^<]+)<\/td>/gi)].map((m) => m[1].trim());
+    if (cells.length < 2) continue;
+    const name = cells[0];
+    const versionCandidate = cells.find((cell) => /^\d+[.\d]+/.test(cell));
+    if (name && versionCandidate && name.length > 1 && !/^\d/.test(name)) {
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        addons.push({ name, version: versionCandidate });
+      }
+    }
+  }
+
+  if (addons.length > 0) return addons;
+
+  // Pattern 2: name/version pairs in divs or spans
+  // e.g. <span class="addon-name">CUxD</span> ... <span class="addon-version">2.11.0</span>
+  const nameVersionPattern = /([A-Za-z][\w\s\-]{1,40}?)\s*[:\-|]?\s*(\d+\.\d+[.\d]*)/g;
+  const plainText = cleaned.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  let match: RegExpExecArray | null;
+  while ((match = nameVersionPattern.exec(plainText)) !== null) {
+    const name = match[1].trim();
+    const version = match[2].trim();
+    if (
+      name.length > 1 &&
+      name.length < 50 &&
+      !/^(version|ver|stand|datum|date|status|action|name|type|size|license)$/i.test(name)
+    ) {
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        addons.push({ name, version });
+      }
+    }
+  }
+
+  return addons;
+}
+
 export function classifyCcuConnectionError(error: unknown): {
   code: NonNullable<CcuSnapshot["errorCode"]>;
   detail: string;
@@ -940,6 +1092,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       webUiVersionSessionWasCreated = Boolean(webUiVersionSid);
     }
     const centralVersionInfo = await readCentralVersionFromWebUi(endpoint, config, webUiVersionSid);
+    const installedAddons = await readInstalledAddons(endpoint, config, webUiVersionSid).catch(() => []);
     if (centralVersionInfo.version) {
       diagnostics.push({
         step: "Zentralenversion",
@@ -974,6 +1127,7 @@ export async function readCcuSnapshot(config: AnalyzeRequest): Promise<CcuSnapsh
       dutyCycle,
       centralVersion: centralVersionInfo.version,
       centralProduct: centralVersionInfo.product,
+      addons: installedAddons.length > 0 ? installedAddons : undefined,
       counters: {
         devices: devices.length,
         lowBattery: devices.filter((device) => device.lowBattery).length,

@@ -164,6 +164,14 @@ export type UpdateRunStatus = {
   log?: string;
 };
 
+export type AddonUpdateItem = {
+  name: string;
+  state: "current" | "update" | "unknown";
+  label: string;
+  detail: string;
+  url: string;
+};
+
 export type LogPayload = {
   available: boolean;
   collectorAvailable?: boolean;

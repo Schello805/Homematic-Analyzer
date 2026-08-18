@@ -1,4 +1,4 @@
-import type { CentralReleaseCheck, ReleaseCheck } from "./types.js";
+import type { AddonReleaseCheck, CentralReleaseCheck, ReleaseCheck } from "./types.js";
 
 const repositoryReleasesUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/releases?per_page=1";
 const repositoryTagsUrl = "https://api.github.com/repos/Schello805/Homematic-Analyzer/tags?per_page=1";
@@ -10,6 +10,67 @@ const openCcuReleasesUrl = "https://github.com/OpenCCU/OpenCCU/releases";
 const officialCcu3UpdateUrl = "https://ccu3-update.homematic.com/firmware/download";
 const officialCcu3DownloadsUrl = "https://homematic-ip.com/de/downloads";
 const releaseCacheDurationMs = 10 * 60 * 1000;
+
+type KnownAddon = {
+  name: string;
+  repo: string;
+  releasesUrl: string;
+  namePatterns: RegExp[];
+};
+
+const knownAddons: KnownAddon[] = [
+  {
+    name: "CUxD",
+    repo: "jens-maus/cuxd",
+    releasesUrl: "https://github.com/jens-maus/cuxd/releases",
+    namePatterns: [/cuxd/i, /cux.daemon/i]
+  },
+  {
+    name: "XML-API",
+    repo: "homematic-community/XML-API",
+    releasesUrl: "https://github.com/homematic-community/XML-API/releases",
+    namePatterns: [/xml.?api/i, /xmlapi/i]
+  },
+  {
+    name: "JP-HB-Devices Addon",
+    repo: "jp112sdl/JP-HB-Devices-addon",
+    releasesUrl: "https://github.com/jp112sdl/JP-HB-Devices-addon/releases",
+    namePatterns: [/jp.hb.devices/i, /jp112sdl/i]
+  },
+  {
+    name: "CCU-Historian",
+    repo: "mdzio/ccu-historian",
+    releasesUrl: "https://github.com/mdzio/ccu-historian/releases",
+    namePatterns: [/historian/i]
+  },
+  {
+    name: "E-Mail Addon",
+    repo: "jens-maus/hm_email",
+    releasesUrl: "https://github.com/jens-maus/hm_email/releases",
+    namePatterns: [/email/i, /e-mail/i, /hm_email/i]
+  },
+  {
+    name: "RedMatic",
+    repo: "rdmtc/RedMatic",
+    releasesUrl: "https://github.com/rdmtc/RedMatic/releases",
+    namePatterns: [/redmatic/i, /node-red/i]
+  },
+  {
+    name: "HAP-HomeMatic",
+    repo: "thkl/hap-homematic",
+    releasesUrl: "https://github.com/thkl/hap-homematic/releases",
+    namePatterns: [/hap-homematic/i, /homekit/i]
+  },
+  {
+    name: "hm-pdetect",
+    repo: "jens-maus/hm-pdetect",
+    releasesUrl: "https://github.com/jens-maus/hm-pdetect/releases",
+    namePatterns: [/hm.?pdetect/i, /pdetect/i]
+  }
+];
+
+const addonReleaseCache = new Map<string, { version: string; url: string; cachedAt: number }>();
+
 
 type ReleaseCandidate = {
   version: string;
@@ -299,4 +360,96 @@ export async function checkOfficialCcu3Release(installedVersion?: string, produc
       error: error instanceof Error ? `CCU3 konnte nicht geprüft werden (${error.message}).` : "CCU3 konnte nicht geprüft werden."
     };
   }
+}
+async function fetchLatestAddonRelease(addon: KnownAddon): Promise<{ version: string; url: string } | undefined> {
+  const cached = addonReleaseCache.get(addon.repo);
+  if (cached && Date.now() - cached.cachedAt < releaseCacheDurationMs) {
+    return { version: cached.version, url: cached.url };
+  }
+
+  const apiUrl = `https://api.github.com/repos/${addon.repo}/releases/latest`;
+  try {
+    const release = await fetchJson(apiUrl, "application/vnd.github+json") as { tag_name?: string; html_url?: string };
+    const version = normalizeVersion(release.tag_name);
+    if (!version) return undefined;
+    const url = release.html_url ?? addon.releasesUrl;
+    addonReleaseCache.set(addon.repo, { version, url, cachedAt: Date.now() });
+    return { version, url };
+  } catch {
+    try {
+      const releases = await fetchJson(
+        `https://api.github.com/repos/${addon.repo}/releases?per_page=1`,
+        "application/vnd.github+json"
+      ) as Array<{ tag_name?: string; html_url?: string }>;
+      const latest = releases[0];
+      const version = normalizeVersion(latest?.tag_name);
+      if (!version) return undefined;
+      const url = latest?.html_url ?? addon.releasesUrl;
+      addonReleaseCache.set(addon.repo, { version, url, cachedAt: Date.now() });
+      return { version, url };
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function matchAddon(installedName: string): KnownAddon | undefined {
+  return knownAddons.find((addon) =>
+    addon.namePatterns.some((pattern) => pattern.test(installedName))
+  );
+}
+
+export async function checkKnownAddonUpdates(
+  installedAddons: Array<{ name: string; version: string }>
+): Promise<AddonReleaseCheck[]> {
+  const checkedAt = new Date().toISOString();
+
+  const matched: Array<{ addon: KnownAddon; installedVersion: string }> = [];
+  for (const installed of installedAddons) {
+    const known = matchAddon(installed.name);
+    if (known && !matched.some((m) => m.addon.repo === known.repo)) {
+      matched.push({ addon: known, installedVersion: normalizeVersion(installed.version) ?? installed.version });
+    }
+  }
+
+  if (matched.length === 0) {
+    return [];
+  }
+
+  return Promise.all(
+    matched.map(async ({ addon, installedVersion }): Promise<AddonReleaseCheck> => {
+      try {
+        const latest = await fetchLatestAddonRelease(addon);
+        if (!latest) {
+          return {
+            name: addon.name,
+            installedVersion,
+            available: false,
+            url: addon.releasesUrl,
+            checkedAt,
+            error: `GitHub lieferte keine Versionsinformation für ${addon.name}.`
+          };
+        }
+        return {
+          name: addon.name,
+          installedVersion,
+          latestVersion: latest.version,
+          available: compareVersions(latest.version, installedVersion) > 0,
+          url: latest.url,
+          checkedAt
+        };
+      } catch (error) {
+        return {
+          name: addon.name,
+          installedVersion,
+          available: false,
+          url: addon.releasesUrl,
+          checkedAt,
+          error: error instanceof Error
+            ? `${addon.name} konnte nicht geprüft werden (${error.message}).`
+            : `${addon.name} konnte nicht geprüft werden.`
+        };
+      }
+    })
+  );
 }
