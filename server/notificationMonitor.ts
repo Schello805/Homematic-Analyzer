@@ -23,6 +23,12 @@ function fingerprint(check: AnalysisCheck) {
   return `${check.id}:${check.status}:${evidence || check.summary.replace(/\s+/g, " ").trim()}`;
 }
 
+function isReleaseCheck(check: AnalysisCheck) {
+  return check.id === "app-release"
+    || check.id === "central-release"
+    || check.id.startsWith("addon-release-");
+}
+
 export function selectNewNotificationChecks(
   checks: AnalysisCheck[],
   settings: NotificationSettings,
@@ -33,7 +39,7 @@ export function selectNewNotificationChecks(
   const previousFingerprints = new Set(previous.activeFingerprints ?? []);
   const isFirstSuccessfulRun = !previous.initialized;
   const newChecks = isFirstSuccessfulRun
-    ? []
+    ? matchingChecks.filter(isReleaseCheck)
     : matchingChecks.filter((check) => !previousFingerprints.has(fingerprint(check)));
 
   return {

@@ -369,12 +369,9 @@ async function probeDirectAddons(
     const cuxdText = await fetchCcuText(endpoint, "/addons/cuxd/index.ccc", config, sid)
       ?? await fetchCcuText(endpoint, "/addons/cuxd/index.cgi", config, sid)
       ?? await fetchCcuText(endpoint, "/addons/cuxd/", config, sid);
-    if (cuxdText) {
-      const match = cuxdText.match(/CUxD(?:\s+Version|\s+v|\s+)\s*(\d+\.\d+(?:\.\d+)?)/i)
-        ?? cuxdText.match(/v?(\d+\.\d+\.\d+)/);
-      if (match?.[1]) {
-        addons.push({ name: "CUxD", version: match[1] });
-      }
+    const version = extractAddonVersionFromText("CUxD", cuxdText);
+    if (version) {
+      addons.push({ name: "CUxD", version });
     }
   } catch {
   }
@@ -383,12 +380,9 @@ async function probeDirectAddons(
   try {
     const xmlApiText = await fetchCcuText(endpoint, "/addons/xmlapi/info.html", config, sid)
       ?? await fetchCcuText(endpoint, "/addons/xmlapi/version.cgi", config, sid);
-    if (xmlApiText) {
-      const match = xmlApiText.match(/XML-API(?:\s+Version|\s+v|\s+)?\s*(\d+\.\d+(?:\.\d+)?)/i)
-        ?? xmlApiText.match(/Version\s*(\d+\.\d+(?:\.\d+)?)/i);
-      if (match?.[1]) {
-        addons.push({ name: "XML-API", version: match[1] });
-      }
+    const version = extractAddonVersionFromText("XML-API", xmlApiText);
+    if (version) {
+      addons.push({ name: "XML-API", version });
     }
   } catch {
   }
@@ -404,6 +398,18 @@ async function probeDirectAddons(
   }
 
   return addons;
+}
+
+export function extractAddonVersionFromText(addonName: "CUxD" | "XML-API", text?: string): string | undefined {
+  if (!text) return undefined;
+
+  const namePattern = addonName === "CUxD" ? /CUxD|CUx-Daemon/i : /XML-?API/i;
+  if (!namePattern.test(text)) return undefined;
+
+  const labelledVersion = text.match(/(?:Version|Version:|v)\s*(\d+\.\d+(?:\.\d+)?)/i)?.[1];
+  if (labelledVersion) return labelledVersion;
+
+  return text.match(/\b(\d+\.\d+(?:\.\d+)?)\b/)?.[1];
 }
 
 export async function readInstalledAddons(
@@ -456,7 +462,7 @@ export async function readInstalledAddons(
   return addons;
 }
 
-function parseAddonsFromHtml(html: string): Array<{ name: string; version: string }> {
+export function parseAddonsFromHtml(html: string): Array<{ name: string; version: string }> {
   const addons: Array<{ name: string; version: string }> = [];
   const seen = new Set<string>();
 

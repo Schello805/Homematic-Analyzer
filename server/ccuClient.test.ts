@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyCcuConnectionError, collectDevices, extractCentralProductFromText, extractCentralVersionFromText, xmlApiTimeoutForPath } from "./ccuClient.js";
+import { classifyCcuConnectionError, collectDevices, extractAddonVersionFromText, extractCentralProductFromText, extractCentralVersionFromText, parseAddonsFromHtml, xmlApiTimeoutForPath } from "./ccuClient.js";
 
 test("erkennt DNS-Fehler des Analyzer-Servers", () => {
   const error = new Error("fetch failed", { cause: { code: "ENOTFOUND" } });
@@ -59,6 +59,30 @@ test("liest Zentralenversion aus einfachem WebUI-Text", () => {
     extractCentralVersionFromText("Aktuelle Firmwareversion: 3.87.6.20260614"),
     "3.87.6.20260614"
   );
+});
+
+test("liest CUxD-Version aus einer realistischen Add-on-Seite", () => {
+  assert.equal(
+    extractAddonVersionFromText("CUxD", "<html><title>CUxD</title><div>CUxD Version 2.10.0</div></html>"),
+    "2.10.0"
+  );
+  assert.equal(
+    extractAddonVersionFromText("CUxD", "<html><title>CUx-Daemon 2.10.1</title></html>"),
+    "2.10.1"
+  );
+  assert.equal(extractAddonVersionFromText("CUxD", "OpenCCU Version 3.87.6.20260614"), undefined);
+});
+
+test("liest CUxD aus der Zusatzsoftware-Tabelle", () => {
+  assert.deepEqual(parseAddonsFromHtml(`
+    <table>
+      <tr><td>CUxD</td><td>2.10.0</td><td>Installiert</td></tr>
+      <tr><td>XML-API</td><td>2.3</td><td>Installiert</td></tr>
+    </table>
+  `), [
+    { name: "CUxD", version: "2.10.0" },
+    { name: "XML-API", version: "2.3" }
+  ]);
 });
 
 test("liest RSSI_DEVICE und RSSI_PEER aus der XML-API-Geräteliste", () => {

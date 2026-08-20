@@ -12,7 +12,7 @@ import { z } from "zod";
 import { createAiLogAnalysis } from "./aiLogAnalyzer.js";
 import { createAnalysis } from "./analyzer.js";
 import { extractCentralProductFromText, extractCentralVersionFromText, readCcuSnapshot } from "./ccuClient.js";
-import { decodeBase64Lines } from "./collectorPayload.js";
+import { decodeBase64Lines, parseCollectorAddons } from "./collectorPayload.js";
 import { createConfigurationBackup, restoreConfigurationBackup } from "./configurationBackup.js";
 import { ensureLocalDatabaseEncryption, readLocalDatabase, updateLocalDatabase } from "./localDatabase.js";
 import type { SetupDefaults } from "./localDatabase.js";
@@ -2046,22 +2046,6 @@ app.post("/api/analyze", async (request, response) => {
     });
   }
 });
-
-function parseCollectorAddons(lines?: string[]): Array<{ name: string; version: string }> | undefined {
-  if (!lines || lines.length === 0) return undefined;
-  const addons: Array<{ name: string; version: string }> = [];
-  for (const line of lines) {
-    const match = line.match(/^ADDON\|name=([^|]+)\|version=(.+)$/);
-    if (match) {
-      const name = match[1].trim();
-      const version = match[2].trim();
-      if (name && version && !addons.some((a) => a.name.toLowerCase() === name.toLowerCase())) {
-        addons.push({ name, version });
-      }
-    }
-  }
-  return addons.length > 0 ? addons : undefined;
-}
 
 app.post("/api/collector", async (request, response) => {
   const parsed = collectorSchema.safeParse(request.body);

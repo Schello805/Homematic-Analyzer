@@ -93,10 +93,29 @@ test("benachrichtigt über Add-on-Updates wenn releases aktiviert ist", () => {
   };
 
   const firstRun = selectNewNotificationChecks([addonCheck], releaseSettings);
-  assert.equal(firstRun.newChecks.length, 0); // initial run is baseline
+  assert.equal(firstRun.newChecks.length, 1);
+  assert.equal(firstRun.newChecks[0]?.id, "addon-release-cuxd");
 
-  const repeatedRun = selectNewNotificationChecks([], releaseSettings, firstRun.state);
-  const nextRun = selectNewNotificationChecks([addonCheck], releaseSettings, repeatedRun.state);
-  assert.equal(nextRun.newChecks.length, 1);
-  assert.equal(nextRun.newChecks[0]?.id, "addon-release-cuxd");
+  const repeatedRun = selectNewNotificationChecks([addonCheck], releaseSettings, firstRun.state);
+  assert.equal(repeatedRun.newChecks.length, 0);
+});
+
+test("meldet Release-Hinweise beim ersten Lauf, aber keine bestehende Fehlerflut", () => {
+  const releaseSettings: NotificationSettings = {
+    events: { releases: true, critical: true, serviceOverheat: true }
+  };
+  const addonCheck: AnalysisCheck = {
+    id: "addon-release-cuxd",
+    title: "CUxD Update",
+    category: "Wartung",
+    status: "warning",
+    summary: "Neues CUxD-Update verfügbar: Version 2.10.1.",
+    recommendation: "Update installieren.",
+    access: ["ccu"],
+    evidence: [{ source: "GitHub Add-on Release", detail: "Installiert: 2.10.0. Verfügbar: 2.10.1." }],
+    details: []
+  };
+
+  const firstRun = selectNewNotificationChecks([overheatCheck(), addonCheck], releaseSettings);
+  assert.deepEqual(firstRun.newChecks.map((check) => check.id), ["addon-release-cuxd"]);
 });
