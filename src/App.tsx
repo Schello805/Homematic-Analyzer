@@ -2390,6 +2390,15 @@ function App() {
               </details>
               {form.snifferEnabled ? (
                 <>
+                  <div className="proxmox-usb-hint">
+                    <strong>Sniffer in Proxmox/LXC?</strong>
+                    <span>
+                      Der USB-Port muss zuerst auf dem Proxmox-Host als Gerät an den Container durchgereicht werden. Ein Port, der hier nicht erscheint oder beim Prüfen „Permission denied“ meldet, ist eine Container-Einstellung – kein Homematic-Fehler.
+                    </span>
+                    <a href="https://github.com/Schello805/Homematic-Analyzer/blob/main/docs/PROXMOX_USB.md" target="_blank" rel="noreferrer">
+                      Proxmox-Anleitung öffnen
+                    </a>
+                  </div>
                   <div className="usb-port-picker">
                     <label>
                       AskSin Analyzer XS USB-Port
@@ -2656,6 +2665,9 @@ function App() {
                 <InfoTooltip label="USB-Port erklären">
                   Der Sniffer steckt am Analyzer-System. Bei Proxmox muss der Port vorher an den LXC durchgereicht werden.
                 </InfoTooltip>
+                <p className="proxmox-usb-hint compact">
+                  <strong>Proxmox/LXC:</strong> USB-Port am Host als <code>dev0</code> an den Container durchreichen und danach den Container neu starten. <a href="https://github.com/Schello805/Homematic-Analyzer/blob/main/docs/PROXMOX_USB.md" target="_blank" rel="noreferrer">Anleitung öffnen</a>
+                </p>
                 <div className="usb-port-picker">
                   <label>
                     Serieller Port

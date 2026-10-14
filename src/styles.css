@@ -223,6 +223,33 @@ h2 {
   background: #dcfae6;
 }
 
+.proxmox-usb-hint {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #bfd4ff;
+  border-radius: 12px;
+  color: #12356d;
+  background: #eef5ff;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.proxmox-usb-hint strong {
+  color: #0c3270;
+}
+
+.proxmox-usb-hint a {
+  width: fit-content;
+  color: #1849a9;
+  font-weight: 700;
+}
+
+.proxmox-usb-hint.compact {
+  margin: 0 0 14px;
+}
+
 .ghost-button {
   width: fit-content;
   border: 1px solid #dbe4f0;

@@ -203,7 +203,9 @@ choose_usb_port() {
   done < <(scan_usb_ports)
 
   if [ "${#ports[@]}" -eq 0 ]; then
-    printf '\033[1;33m[HINWEIS]\033[0m Kein USB-Seriell-Port gefunden. In Proxmox LXC muss der USB-Stick vorher in den Container durchgereicht werden.\n' > /dev/tty
+    printf '\033[1;33m[HINWEIS]\033[0m Kein USB-Seriell-Port gefunden.\n' > /dev/tty
+    printf 'Bei Proxmox LXC muss der Sniffer zuerst auf dem Proxmox-Host als Geraet (dev0) an den Container durchgereicht werden; erst danach kann die App ihn finden.\n' > /dev/tty
+    printf 'Anleitung: https://github.com/Schello805/Homematic-Analyzer/blob/main/docs/PROXMOX_USB.md\n' > /dev/tty
     ask_text "Sniffer-Port manuell eintragen oder leer lassen" ""
     return
   fi

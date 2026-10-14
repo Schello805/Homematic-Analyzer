@@ -35,13 +35,11 @@ pct list
 
 Beispiel in dieser Anleitung: Container-ID `105`.
 
-## 3. Container stoppen
+## 3. USB-Port als Gerät an den Container durchreichen
 
-```bash
-pct stop 105
-```
+Der folgende Schritt wird **auf dem Proxmox-Host** ausgeführt, nicht in der Container-Konsole. Für unprivilegierte LXC ist die Proxmox-Gerätefreigabe `dev0` der zuverlässigste Weg: Sie setzt den Geräte-Node im Container mit den benötigten Rechten.
 
-## 4. LXC-Konfiguration bearbeiten
+Container-Konfiguration bearbeiten:
 
 ```bash
 nano /etc/pve/lxc/105.conf
@@ -52,8 +50,7 @@ nano /etc/pve/lxc/105.conf
 Für viele USB-Seriell-Adapter wie FTDI/CH340/CP210x:
 
 ```ini
-lxc.cgroup2.devices.allow: c 188:* rwm
-lxc.mount.entry: /dev/ttyUSB0 dev/ttyUSB0 none bind,optional,create=file
+dev0: /dev/ttyUSB0,mode=0666
 ```
 
 ### Variante B: `/dev/ttyACM0`
@@ -61,8 +58,7 @@ lxc.mount.entry: /dev/ttyUSB0 dev/ttyUSB0 none bind,optional,create=file
 Für ACM-Geräte:
 
 ```ini
-lxc.cgroup2.devices.allow: c 166:* rwm
-lxc.mount.entry: /dev/ttyACM0 dev/ttyACM0 none bind,optional,create=file
+dev0: /dev/ttyACM0,mode=0666
 ```
 
 ### Variante C: stabiler `/dev/serial/by-id/...` Pfad
@@ -70,36 +66,39 @@ lxc.mount.entry: /dev/ttyACM0 dev/ttyACM0 none bind,optional,create=file
 Empfohlen, wenn der Pfad existiert:
 
 ```ini
-lxc.cgroup2.devices.allow: c 188:* rwm
-lxc.mount.entry: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0 dev/ttyAskSinAnalyzer none bind,optional,create=file
+dev0: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0,mode=0666
 ```
 
 Dann im Homematic Analyzer später diesen Port eintragen:
 
 ```text
-/dev/ttyAskSinAnalyzer
+/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0
 ```
 
-Hinweis: Wenn dein Gerät intern `ttyACM` nutzt, kann statt `c 188:*` die Major-Nummer `166` nötig sein.
+Es darf pro Container nur ein `dev0` geben. Wenn bereits Geräte durchgereicht werden, verwende stattdessen die nächste freie Nummer, etwa `dev1`.
 
-## 5. Container starten
+## 4. Container neu starten
 
 ```bash
-pct start 105
+pct reboot 105
 ```
 
-## 6. Im LXC prüfen
+## 5. Im LXC prüfen
 
-Im Container einloggen:
+Auf dem Proxmox-Host prüfen:
+
+```bash
+pct exec 105 -- ls -l /dev/ttyUSB0
+pct exec 105 -- timeout 2 cat /dev/ttyUSB0
+```
+
+Der zweite Befehl darf nicht `Permission denied` melden. Eine leere Ausgabe oder ein Timeout ist normal, wenn der Sniffer in diesem Moment keine Daten sendet.
+
+Alternativ im Container einloggen:
 
 ```bash
 pct enter 105
-```
-
-Dann prüfen:
-
-```bash
-ls -la /dev/ttyUSB* /dev/ttyACM* /dev/ttyAskSinAnalyzer 2>/dev/null
+ls -la /dev/ttyUSB* /dev/ttyACM* /dev/serial/by-id/ 2>/dev/null
 ```
 
 Wenn der Port sichtbar ist, im Homematic Analyzer unter `AskSin Analyzer XS USB-Port` eintragen, z. B.:
@@ -114,7 +113,7 @@ oder:
 /dev/ttyUSB0
 ```
 
-## 7. Berechtigungen prüfen
+## 6. Berechtigungen prüfen
 
 Falls der Port sichtbar ist, aber nicht geöffnet werden kann:
 
@@ -122,7 +121,7 @@ Falls der Port sichtbar ist, aber nicht geöffnet werden kann:
 ls -la /dev/ttyUSB0 /dev/ttyAskSinAnalyzer 2>/dev/null
 ```
 
-Optional im Container:
+Bei `dev0` mit `mode=0666` ist das normalerweise nicht erforderlich. Bei einer anderen Freigabeart kann optional im Container gelten:
 
 ```bash
 usermod -aG dialout homematic-analyzer
@@ -146,16 +145,15 @@ Wenn der Host nichts sieht, ist der Sniffer nicht korrekt verbunden oder der USB
 
 ### Gerät im Host sichtbar, aber nicht im LXC
 
-- Container wirklich gestoppt und neu gestartet?
+- Ist der Eintrag `dev0: /dev/ttyUSB0,mode=0666` (oder der passende Pfad) in der **richtigen** `/etc/pve/lxc/<CTID>.conf` gespeichert?
+- Container nach der Änderung wirklich neu gestartet (`pct reboot <CTID>`) ?
 - Richtige Container-ID bearbeitet?
-- Major-Nummer passend?
-  - `ttyUSB`: meist `188`
-  - `ttyACM`: meist `166`
-- Pfad in `lxc.mount.entry` exakt richtig?
+- Ist der Port auf dem Host sichtbar (`ls -l /dev/ttyUSB0`)?
+- Meldet `pct exec <CTID> -- timeout 2 cat /dev/ttyUSB0` noch `Permission denied`? Dann ist die Gerätefreigabe noch nicht wirksam.
 
 ### Unprivileged LXC
 
-Bei unprivileged Containern kann USB-Passthrough je nach Proxmox-/Kernel-/LXC-Setup zickig sein. Wenn es trotz korrektem Eintrag nicht klappt, sind die pragmatischen Optionen:
+Bei unprivileged Containern kann ein manueller `lxc.mount.entry` zu Rechteproblemen führen. Deshalb ist `dev0` mit `mode=0666` in dieser Anleitung der empfohlene Weg. Wenn es trotz korrektem Eintrag nicht klappt, sind die pragmatischen Optionen:
 
 - privileged LXC für den Analyzer nutzen
 - statt LXC eine kleine VM nutzen
