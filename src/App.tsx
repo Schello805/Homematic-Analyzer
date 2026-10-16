@@ -2816,7 +2816,7 @@ function App() {
               <p className="eyebrow">Verlauf</p>
               <h3>Telegramme und gemessener Rauschpegel</h3>
               <InfoTooltip label="Diagramm erklären">
-                Blau = empfangene Homematic-Telegramme. Orange = regelmäßige Rauschpegel-Messpunkte des Sniffers, nicht einzelne Störsignale.
+                Blau = empfangene Homematic-Telegramme. Orange = regelmäßige Rauschpegel-Messpunkte des Sniffers, nicht einzelne Störsignale. Klicke auf einen blauen Balken, um die Geräte dieser Minute nach Funklast zu sehen.
               </InfoTooltip>
             </div>
             <div className="dc-chart">
@@ -2880,6 +2880,27 @@ function App() {
                           <small>Rauschpegel</small>
                           <strong>{selectedPoint.noiseAverage !== undefined ? `${selectedPoint.noiseAverage} dBm` : "nicht gemessen"}</strong>
                           <span>{selectedNoise.label}{selectedPoint.noiseSamples ? ` · ${selectedPoint.noiseSamples} Messungen` : ""}</span>
+                        </div>
+                        <div className="dc-chart-device-breakdown">
+                          <small>Verursacher in dieser Minute</small>
+                          {selectedPoint.devices.length > 0 ? (
+                            <div className="dc-chart-device-list">
+                              {selectedPoint.devices.map((device) => (
+                                <div key={device.address}>
+                                  <span>
+                                    <strong>{device.name}</strong>
+                                    <small>
+                                      {device.telegrams} {device.telegrams === 1 ? "Telegramm" : "Telegramme"} · {formatPercent(device.dutyCycle)} Funkzeit
+                                      {device.type ? ` · ${device.type}` : ""}
+                                    </small>
+                                  </span>
+                                  <b>{device.dutyShare}%</b>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span>In dieser Minute wurden keine Homematic-Telegramme erkannt.</span>
+                          )}
                         </div>
                       </div>
                     )}

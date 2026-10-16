@@ -1086,17 +1086,56 @@ async function readSnifferSnapshot(port?: string, forceRestart = false): Promise
       })
       .map((noise) => noise.rssi)
       .filter((value): value is number => value !== undefined);
+    const minuteRawDutyCycle = minuteTelegrams.reduce((sum, telegram) => sum + telegram.dutyCycle, 0);
+    const minuteDevices = [...minuteTelegrams.reduce((map, telegram) => {
+      const current = map.get(telegram.fromAddress) ?? {
+        address: telegram.fromAddress,
+        name: telegram.fromName ?? telegram.fromAddress,
+        serial: telegram.fromSerial,
+        type: telegram.fromType,
+        telegrams: 0,
+        dutyCycle: 0,
+        sendTimeMs: 0,
+        rssiValues: [] as number[]
+      };
+      current.telegrams += 1;
+      current.dutyCycle += telegram.dutyCycle;
+      current.sendTimeMs += telegram.sendTimeMs;
+      current.rssiValues.push(telegram.rssi);
+      map.set(telegram.fromAddress, current);
+      return map;
+    }, new Map<string, {
+      address: string;
+      name: string;
+      serial?: string;
+      type?: string;
+      telegrams: number;
+      dutyCycle: number;
+      sendTimeMs: number;
+      rssiValues: number[];
+    }>()).values()].map((device) => ({
+      address: device.address,
+      name: device.name,
+      serial: device.serial,
+      type: device.type,
+      telegrams: device.telegrams,
+      dutyCycle: Math.round(device.dutyCycle * dutyCycleScale * 10) / 10,
+      dutyShare: minuteRawDutyCycle > 0 ? Math.round((device.dutyCycle / minuteRawDutyCycle) * 1000) / 10 : 0,
+      sendTimeMs: Math.round(device.sendTimeMs),
+      avgRssi: device.rssiValues.length ? Math.round(device.rssiValues.reduce((sum, value) => sum + value, 0) / device.rssiValues.length) : undefined
+    })).sort((left, right) => right.dutyCycle - left.dutyCycle || right.telegrams - left.telegrams);
 
     return {
       minute: new Date(minuteStart).toISOString(),
       telegrams: minuteTelegrams.length,
-      dutyCycle: Math.round(minuteTelegrams.reduce((sum, telegram) => sum + telegram.dutyCycle * dutyCycleScale, 0) * 10) / 10,
+      dutyCycle: Math.round(minuteRawDutyCycle * dutyCycleScale * 10) / 10,
       noiseSamples: minuteNoise.length,
       noiseAverage: minuteNoise.length
         ? Math.round(minuteNoise.reduce((sum, value) => sum + value, 0) / minuteNoise.length)
         : undefined,
       noiseMinimum: minuteNoise.length ? Math.min(...minuteNoise) : undefined,
-      noiseMaximum: minuteNoise.length ? Math.max(...minuteNoise) : undefined
+      noiseMaximum: minuteNoise.length ? Math.max(...minuteNoise) : undefined,
+      devices: minuteDevices
     };
   });
 

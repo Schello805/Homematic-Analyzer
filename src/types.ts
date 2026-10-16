@@ -299,7 +299,26 @@ export type SnifferSnapshot = {
     payload: string;
   }>;
   rssiNoise: Array<{ tstamp: string; raw: string; rssi?: number }>;
-  timeline?: Array<{ minute: string; telegrams: number; dutyCycle: number; noiseSamples: number; noiseAverage?: number; noiseMinimum?: number; noiseMaximum?: number }>;
+  timeline?: Array<{
+    minute: string;
+    telegrams: number;
+    dutyCycle: number;
+    noiseSamples: number;
+    noiseAverage?: number;
+    noiseMinimum?: number;
+    noiseMaximum?: number;
+    devices: Array<{
+      address: string;
+      name: string;
+      serial?: string;
+      type?: string;
+      telegrams: number;
+      dutyCycle: number;
+      dutyShare: number;
+      sendTimeMs: number;
+      avgRssi?: number;
+    }>;
+  }>;
   diagnostics: string[];
 };
 

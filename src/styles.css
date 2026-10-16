@@ -1355,6 +1355,44 @@ h2 {
   background: #f8fbff;
 }
 
+.dc-chart-device-breakdown {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid #dbe5f2;
+}
+
+.dc-chart-device-list {
+  display: grid;
+  max-height: 216px;
+  margin-top: 7px;
+  overflow-y: auto;
+  border: 1px solid #dbe5f2;
+  border-radius: 10px;
+  background: white;
+}
+
+.dc-chart-device-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+}
+
+.dc-chart-device-list > div + div {
+  border-top: 1px solid #edf1f7;
+}
+
+.dc-chart-device-list span {
+  display: grid;
+  gap: 2px;
+}
+
+.dc-chart-device-list b {
+  align-self: center;
+  color: #1849a9;
+  font-size: 0.84rem;
+}
+
 .dc-chart-inspector > div {
   display: grid;
   gap: 2px;

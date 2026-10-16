@@ -338,6 +338,17 @@ export type SnifferSnapshot = {
     noiseAverage?: number;
     noiseMinimum?: number;
     noiseMaximum?: number;
+    devices: Array<{
+      address: string;
+      name: string;
+      serial?: string;
+      type?: string;
+      telegrams: number;
+      dutyCycle: number;
+      dutyShare: number;
+      sendTimeMs: number;
+      avgRssi?: number;
+    }>;
   }>;
   diagnostics: string[];
 };
