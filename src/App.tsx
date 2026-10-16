@@ -1104,7 +1104,7 @@ function App() {
   function scheduleReloadAfterUpdate(reason: string) {
     if (updateReloadStarted.current) return;
     updateReloadStarted.current = true;
-    console.info("[Homematic Analyzer][Update] waiting for new server version", {
+    console.info("[Homematic Analyzer][Update] waiting for updated server", {
       reason,
       currentVersion: appVersion
     });
@@ -1129,8 +1129,11 @@ function App() {
             versionChanged
           });
 
-          if (versionChanged) {
-            console.info("[Homematic Analyzer][Update] new version reachable, reloading page");
+          if (versionChanged || analyzerWasUnavailable) {
+            console.info("[Homematic Analyzer][Update] updated server reachable, reloading page", {
+              versionChanged,
+              analyzerWasUnavailable
+            });
             window.setTimeout(() => window.location.reload(), 700);
             return;
           }
