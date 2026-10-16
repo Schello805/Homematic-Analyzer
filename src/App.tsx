@@ -3891,6 +3891,15 @@ function App() {
                   },
                   {
                     group: "storage",
+                    label: "Backup-Mounts",
+                    value: analysis.systemDashboard.backupMountPoints?.join(" · ") || "keine Netzwerkfreigabe erkannt",
+                    hint: analysis.systemDashboard.backupMountPoints?.length
+                      ? "Auf der CCU erkannte NFS-/SMB-Freigabe – auch ohne vorhandene Backup-Datei."
+                      : "Keine eingehängte NFS-/SMB-Freigabe wurde vom CCU Add-on gemeldet.",
+                    help: "Der Mountpunkt wird direkt aus der CCU-Mount-Tabelle gelesen. Nur Freigaben vom Typ NFS, NFS4, CIFS oder SMB werden angezeigt."
+                  },
+                  {
+                    group: "storage",
                     label: "Backups",
                     value: formatBackups(
                       analysis.systemDashboard.backups,

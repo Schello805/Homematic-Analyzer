@@ -1329,6 +1329,8 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
   const backupItems = collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems;
   const backupPaths = (stringArrayFromRecord(collector?.backups, "paths") ?? stringArrayFromRecord(ccuBackups, "paths") ?? [])
     .filter(isRealCcuBackupPath);
+  const backupMountPoints = (stringArrayFromRecord(collector?.backups, "mountPoints") ?? stringArrayFromRecord(ccuBackups, "mountPoints") ?? [])
+    .filter((mountPoint) => mountPoint.startsWith("/"));
   const fallbackBackupCount = stringFromRecord(collector?.backups, "count") ?? stringFromRecord(ccuBackups, "count");
   const rawLatestBackupPath = stringFromRecord(collector?.backups, "latestPath") ?? stringFromRecord(ccuBackups, "latestPath");
   const latestBackupPath = backupItems[0]?.path ?? (isRealCcuBackupPath(rawLatestBackupPath) ? rawLatestBackupPath : undefined);
@@ -1357,6 +1359,7 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
     backupLatestDirectory: latestBackupDirectory,
     backupLatestAt: latestBackupAt,
     backupDisk: stringFromRecord(collector?.backups, "disk") ?? stringFromRecord(ccuBackups, "disk"),
+    backupMountPoints: backupMountPoints.length > 0 ? backupMountPoints : undefined,
     backupItems,
     logs: collector?.logs?.length ?? 0,
     connections: collector?.network?.connections?.length ?? 0,

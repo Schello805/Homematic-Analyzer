@@ -35,6 +35,7 @@ export type SystemDashboard = {
   backupLatestDirectory?: string;
   backupLatestAt?: string;
   backupDisk?: string;
+  backupMountPoints?: string[];
   backupItems?: BackupItem[];
   logs: number;
   connections: number;
