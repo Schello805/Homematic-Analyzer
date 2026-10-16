@@ -14,7 +14,7 @@ TMP_DIR="${TMPDIR:-/tmp}"
 CRON_MARKER="Homematic Analyzer system snapshot"
 HMIP_LOG_SOURCE="${HMIP_LOG_SOURCE:-/var/log/hmserver.log}"
 SYSTEM_LOG_SOURCE="${SYSTEM_LOG_SOURCE:-}"
-COLLECTOR_SCRIPT_VERSION="2026-06-19.1"
+COLLECTOR_SCRIPT_VERSION="2026-10-16.1"
 
 make_tmp_file() {
   mktemp "$TMP_DIR/homematic-analyzer-$1.XXXXXX" 2>/dev/null || echo "$TMP_DIR/homematic-analyzer-$1.$$.tmp"
@@ -202,7 +202,13 @@ fi
 if [ -z "$CENTRAL_PRODUCT_VALUE" ] && [ -r /etc/os-release ]; then
   CENTRAL_PRODUCT_VALUE="$(sed -n 's/^PRETTY_NAME=[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /etc/os-release 2>/dev/null | head -n 1 || true)"
 fi
-for backup_dir in /usr/local/backup /media /mnt /run/media /backup; do
+{
+  printf '%s\n' /usr/local/backup /media /mnt /run/media /backup
+  # NAS-Freigaben können an einem frei gewählten Pfad eingehängt sein, nicht nur unter /mnt.
+  # Das CCU-Image nutzt je nach Version unterschiedliche mount-Ausgabeformate; die Position
+  # hinter "on" ist bei NFS, CIFS/SMB und smbfs jedoch gleich.
+  mount 2>/dev/null | awk '$0 ~ / type (cifs|smbfs|nfs|nfs4) / { for (field = 1; field <= NF; field++) if ($field == "on") { print $(field + 1); break } }'
+} | awk 'NF && !seen[$0]++' | while IFS= read -r backup_dir; do
   if [ -d "$backup_dir" ]; then
     find "$backup_dir" -type f 2>/dev/null \
       | grep -Ei '(\.sbk$|\.tar\.gz$|\.tgz$|\.zip$)' \
@@ -225,7 +231,10 @@ BACKUP_DISK_VALUE=""
 if [ -n "$LATEST_BACKUP_DIR" ]; then
   BACKUP_DISK_VALUE="$(df -h "$LATEST_BACKUP_DIR" 2>/dev/null | tail -n 1 | json_escape || true)"
 else
-  BACKUP_MOUNT="$(df -h 2>/dev/null | awk '$1 !~ /^tmpfs$/ && (index($6, "/media/") == 1 || index($6, "/mnt/") == 1 || index($6, "/run/media/") == 1) { print $6; exit }' || true)"
+  BACKUP_MOUNT="$(mount 2>/dev/null | awk '$0 ~ / type (cifs|smbfs|nfs|nfs4) / { for (field = 1; field <= NF; field++) if ($field == "on") { print $(field + 1); exit } }' || true)"
+  if [ -z "$BACKUP_MOUNT" ]; then
+    BACKUP_MOUNT="$(df -h 2>/dev/null | awk '$1 !~ /^tmpfs$/ && (index($6, "/media/") == 1 || index($6, "/mnt/") == 1 || index($6, "/run/media/") == 1) { print $6; exit }' || true)"
+  fi
   if [ -n "$BACKUP_MOUNT" ]; then
     BACKUP_DISK_VALUE="$(df -h "$BACKUP_MOUNT" 2>/dev/null | tail -n 1 | json_escape || true)"
   fi

@@ -83,7 +83,44 @@ export function getSecretIcon(_visible?: boolean) { return "🔒"; }
 export const statusLabel: Record<CheckStatus, string> = { ok: "OK", improvement: "Verbesserung", warning: "Warnung", critical: "Kritisch", unavailable: "Nicht verfügbar" };
 export function getStatusIcon(_status?: CheckStatus, _className?: string) { return null; }
 export const statusOrder: CheckStatus[] = ["ok", "improvement", "warning", "critical", "unavailable"];
-export const checkThemes: Array<{ id: string; checkIds: string[]; title?: string; description?: string; checks?: any[] }> = [];
+export const checkThemes: Array<{ id: string; checkIds: string[]; title: string; description: string }> = [
+  {
+    id: "foundation",
+    title: "Verbindung & Datenquellen",
+    description: "Erreichbarkeit der Zentrale und Datenbasis der Analyse.",
+    checkIds: ["ccu-connection", "xml-api", "ccu-masterdata"]
+  },
+  {
+    id: "security",
+    title: "Sicherheit & Zugriffe",
+    description: "Öffentliche Erreichbarkeit und bekannte externe Zugriffe.",
+    checkIds: ["remote-exposure", "external-access", "notifications"]
+  },
+  {
+    id: "devices",
+    title: "Geräte & Erreichbarkeit",
+    description: "Servicemeldungen, Batterien und Gerätestatus.",
+    checkIds: ["alarm-messages", "service-messages", "batteries", "reachability", "config-pending"]
+  },
+  {
+    id: "radio",
+    title: "Funk & Topologie",
+    description: "Funklast, Empfangsqualität und Routing.",
+    checkIds: ["duty-cycle", "signal-strength", "routing-topology"]
+  },
+  {
+    id: "maintenance",
+    title: "Wartung & Updates",
+    description: "Firmware und verfügbare Aktualisierungen.",
+    checkIds: ["firmware-overview", "app-release", "central-release"]
+  },
+  {
+    id: "system",
+    title: "System & Protokolle",
+    description: "Systemwerte und belegte Hinweise aus Logs.",
+    checkIds: ["system-health", "logs"]
+  }
+];
 
 export function hasShellSystemData(dashboard?: SystemDashboard | null) { return Boolean(dashboard?.available); }
 

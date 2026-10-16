@@ -1257,10 +1257,27 @@ function App() {
     });
   }
 
+  const resolvedCheckThemes = useMemo(() => {
+    if (!displayedAnalysis) return checkThemes;
+    const assignedCheckIds = new Set(checkThemes.flatMap((theme) => theme.checkIds));
+    const additionalCheckIds = displayedAnalysis.checks
+      .filter((check) => !assignedCheckIds.has(check.id))
+      .map((check) => check.id);
+
+    return additionalCheckIds.length > 0
+      ? [...checkThemes, {
+          id: "additional",
+          title: "Weitere Prüfpunkte",
+          description: "Zusätzliche Ergebnisse aus installierten Erweiterungen.",
+          checkIds: additionalCheckIds
+        }]
+      : checkThemes;
+  }, [displayedAnalysis]);
+
   const groupedChecks = useMemo(() => {
     if (!displayedAnalysis) return [];
 
-    return checkThemes
+    return resolvedCheckThemes
       .map((theme) => {
         const allChecks = theme.checkIds
           .map((checkId) => displayedAnalysis.checks.find((check) => check.id === checkId))
@@ -1289,7 +1306,7 @@ function App() {
         };
       })
       .filter((theme) => theme.checks.length > 0);
-  }, [displayedAnalysis, selectedStatusFilter, showHealthyChecks]);
+  }, [displayedAnalysis, resolvedCheckThemes, selectedStatusFilter, showHealthyChecks]);
 
   const summary = useMemo(() => {
     if (!displayedAnalysis) return null;
@@ -1310,18 +1327,18 @@ function App() {
       return;
     }
 
-    const attentionThemes = checkThemes
+    const attentionThemes = resolvedCheckThemes
       .filter((theme) => theme.checkIds.some((checkId) => {
         const check = displayedAnalysis.checks.find((item) => item.id === checkId);
         return check && ["critical", "warning", "improvement"].includes(check.status);
       }))
       .map((theme) => theme.id);
     setExpandedCheckThemes(new Set(attentionThemes));
-  }, [analysis?.generatedAt, analysisSnifferMode, displayedAnalysis]);
+  }, [analysis?.generatedAt, analysisSnifferMode, displayedAnalysis, resolvedCheckThemes]);
 
   useEffect(() => {
     if (!activeCheck) return;
-    const activeTheme = checkThemes.find((theme) => (theme.checkIds as readonly string[]).includes(activeCheck));
+    const activeTheme = resolvedCheckThemes.find((theme) => (theme.checkIds as readonly string[]).includes(activeCheck));
     if (!activeTheme) return;
     setExpandedCheckThemes((current) => {
       if (current.has(activeTheme.id)) return current;
@@ -1329,7 +1346,7 @@ function App() {
       next.add(activeTheme.id);
       return next;
     });
-  }, [activeCheck]);
+  }, [activeCheck, resolvedCheckThemes]);
 
   const guidedActions = useMemo(() => {
     if (!displayedAnalysis) return [];
@@ -3859,10 +3876,10 @@ function App() {
                   },
                   {
                     group: "storage",
-                    label: "USB/Backup-Speicher",
+                    label: "Backup-Speicher",
                     value: formatDisk(analysis.systemDashboard.backupDisk),
-                    hint: "Speicherplatz des Backup-Mediums, falls ein USB-Stick erkannt wurde.",
-                    help: "Der Wert kommt vom Dateisystem, auf dem das neueste Backup liegt. Wenn nicht verfügbar: CCU Add-on nach dem Update erneut installieren oder abwarten und prüfen, ob der Stick unter `/media`, `/mnt` oder `/run/media` gemountet ist.",
+                    hint: "Speicherplatz des Dateisystems, auf dem das neueste Backup liegt – USB-Stick oder gemountetes NAS.",
+                    help: "Der Wert kommt vom Dateisystem, auf dem das neueste Backup liegt. Das Add-on durchsucht die üblichen CCU-Pfade sowie eingehängte NFS- und SMB/CIFS-Freigaben. Wenn nichts erscheint: Mount auf der CCU und Lesezugriff prüfen.",
                     usageStatus: (() => {
                       const usage = parseDiskUsagePercent(analysis.systemDashboard.backupDisk);
                       return usage === undefined ? "" : usage >= 95 ? "danger" : usage >= 80 ? "warning" : "";
@@ -3883,7 +3900,7 @@ function App() {
                       analysis.systemDashboard.backupLatestPath
                     ),
                     hint: Number(analysis.systemDashboard.backups ?? 0) > 0 ? "Backup-Ordner und Datum des neuesten Backups." : "Keine Backup-Dateien in den bekannten CCU-Pfaden gefunden.",
-                    help: "Bekannte Pfade: `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard`. Per SSH suchen: `find /usr/local/backup /media /mnt /run/media /usr/local/sdcard -type f 2>/dev/null | grep -Ei '(\\.sbk$|\\.tar\\.gz$|\\.tgz$|\\.zip$)'`.",
+                    help: "Durchsucht werden `/usr/local/backup`, `/media`, `/mnt`, `/run/media`, `/usr/local/sdcard` sowie eingehängte NFS- und SMB/CIFS-Freigaben. Per SSH prüfen: `mount | grep -Ei ' type (cifs|smbfs|nfs|nfs4) '`.",
                     onClick: Number(analysis.systemDashboard.backups ?? 0) > 0 ? () => {
                       setBackupPage(0);
                       setShowBackupModal(true);
@@ -4101,7 +4118,7 @@ function App() {
               {displayedAnalysis?.checks
                 .filter((check) => check.id === activeCheck)
                 .map((check) => {
-                  const relatedTheme = checkThemes.find((theme) => (theme.checkIds as readonly string[]).includes(check.id));
+                  const relatedTheme = resolvedCheckThemes.find((theme) => (theme.checkIds as readonly string[]).includes(check.id));
                   const relatedChecks = relatedTheme
                     ? relatedTheme.checkIds
                       .filter((checkId) => checkId !== check.id)

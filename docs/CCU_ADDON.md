@@ -14,7 +14,7 @@ Das CCU Add-on ist der empfohlene Weg, um Zusatzdaten direkt von der CCU/OpenCCU
 ## Was liefert das Add-on?
 
 - Systemwerte der CCU: CPU, RAM, Temperatur, Speicher und Uptime
-- Backup-Infos inklusive Backup-Pfad und letztem Backup
+- Backup-Infos inklusive Backup-Pfad und letztem Backup; neben USB-Speichern werden auch auf der CCU eingehängte NFS- sowie SMB/CIFS-Freigaben durchsucht
 - Logauszüge für lokale und optionale KI-Loganalyse
 - aktive Verbindungen zu CCU-Diensten
 - Gerätenamen und AskSin-kompatible Namensliste
