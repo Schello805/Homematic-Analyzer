@@ -4067,14 +4067,17 @@ function App() {
                   <button
                     type="button"
                     className={`check-item status-${check.status} ${activeCheck === check.id ? "is-active" : ""}`}
-                    onClick={() => setActiveCheck(check.id)}
+                    onClick={() => {
+                      setActiveCheck(check.id);
+                      if (check.id === "logs") setCurrentPage("logs");
+                    }}
                     key={check.id}
                   >
                     <div className="check-item-head">
                       {getStatusIcon(check.status, "check-item-icon")}
                       <span>{check.title}</span>
                     </div>
-                    <small>{check.category}</small>
+                    <small>{check.id === "logs" ? "Logs öffnen" : check.category}</small>
                   </button>
                 ));
                 const containsActiveCheck = group.checks.some((check) => check.id === activeCheck);

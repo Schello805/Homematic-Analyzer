@@ -30,3 +30,24 @@ Das Add-on über `Systemsteuerung → Zusatzsoftware` deinstallieren. Es entfern
 ## Fallback
 
 Die alten Copy-Paste-Scripts bleiben vorerst für Sonderfälle vorhanden, sind aber nicht mehr der Standardweg.
+
+### Backup auf zeitweise eingehängtem NAS
+
+Wenn ein eigenes Backup-Skript ein NAS nur während des Backups unter `/mnt` einhängt, kann es nach dem Aushängen einen Status für den Analyzer hinterlegen. Das CCU Add-on zeigt danach Mountpoint, letztes Backup und zuletzt bekannten Speicherstand, obwohl die Freigabe wieder getrennt ist. Die Statusdatei gehört auf das persistente `/usr/local`.
+
+Füge nach dem erfolgreichen Kopieren auf das NAS und **vor** `umount /mnt` ein:
+
+```sh
+BACKUP_STATUS_FILE="/usr/local/addons/homematic-analyzer-backup-status"
+BACKUP_STATUS_TMP="${BACKUP_STATUS_FILE}.$$"
+LATEST_BACKUP="$(ls -1t /mnt/*.sbk 2>/dev/null | head -n 1)"
+{
+  printf 'mountPoint=/mnt\n'
+  printf 'latestPath=%s\n' "$LATEST_BACKUP"
+  printf 'latestAt=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf 'disk=%s\n' "$(df -h /mnt 2>/dev/null | tail -n 1)"
+} > "$BACKUP_STATUS_TMP" && mv "$BACKUP_STATUS_TMP" "$BACKUP_STATUS_FILE"
+chmod 600 "$BACKUP_STATUS_FILE"
+```
+
+Die Datei enthält keine NAS-Zugangsdaten.

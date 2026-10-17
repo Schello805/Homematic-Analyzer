@@ -14,7 +14,14 @@ TMP_DIR="${TMPDIR:-/tmp}"
 CRON_MARKER="Homematic Analyzer system snapshot"
 HMIP_LOG_SOURCE="${HMIP_LOG_SOURCE:-/var/log/hmserver.log}"
 SYSTEM_LOG_SOURCE="${SYSTEM_LOG_SOURCE:-}"
-COLLECTOR_SCRIPT_VERSION="2026-10-16.2"
+COLLECTOR_SCRIPT_VERSION="2026-10-17.1"
+BACKUP_STATUS_FILE="/usr/local/addons/homematic-analyzer-backup-status"
+
+backup_status_value() {
+  status_key="$1"
+  [ -r "$BACKUP_STATUS_FILE" ] || return 0
+  sed -n "s/^${status_key}=//p" "$BACKUP_STATUS_FILE" 2>/dev/null | head -n 1
+}
 
 make_tmp_file() {
   mktemp "$TMP_DIR/homematic-analyzer-$1.XXXXXX" 2>/dev/null || echo "$TMP_DIR/homematic-analyzer-$1.$$.tmp"
@@ -203,6 +210,11 @@ if [ -z "$CENTRAL_PRODUCT_VALUE" ] && [ -r /etc/os-release ]; then
   CENTRAL_PRODUCT_VALUE="$(sed -n 's/^PRETTY_NAME=[\"'\"']\\{0,1\\}\\([^\"'\"']*\\).*/\\1/p' /etc/os-release 2>/dev/null | head -n 1 || true)"
 fi
 BACKUP_NETWORK_MOUNTS="$(mount 2>/dev/null | awk '$0 ~ / type (cifs|smbfs|nfs|nfs4) / { for (field = 1; field <= NF; field++) if ($field == "on") { print $(field + 1); break } }' || true)"
+BACKUP_STATUS_MOUNT="$(backup_status_value mountPoint)"
+BACKUP_STATUS_PATH="$(backup_status_value latestPath)"
+BACKUP_STATUS_AT="$(backup_status_value latestAt)"
+BACKUP_STATUS_DISK="$(backup_status_value disk)"
+BACKUP_MOUNT_POINTS="$({ printf '%s\n' "$BACKUP_NETWORK_MOUNTS"; printf '%s\n' "$BACKUP_STATUS_MOUNT"; } | awk 'NF && !seen[$0]++')"
 {
   printf '%s\n' /usr/local/backup /media /mnt /run/media /backup
   # NAS-Freigaben können an einem frei gewählten Pfad eingehängt sein, nicht nur unter /mnt.
@@ -228,6 +240,11 @@ if [ -n "$LATEST_BACKUP_PATH" ]; then
   LATEST_BACKUP_DIR="$(dirname "$LATEST_BACKUP_PATH" 2>/dev/null || true)"
   LATEST_BACKUP_AT="$(date -r "$LATEST_BACKUP_PATH" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || true)"
 fi
+if [ -z "$LATEST_BACKUP_PATH" ] && [ -n "$BACKUP_STATUS_PATH" ]; then
+  LATEST_BACKUP_PATH="$BACKUP_STATUS_PATH"
+  LATEST_BACKUP_DIR="$(dirname "$BACKUP_STATUS_PATH" 2>/dev/null || true)"
+  LATEST_BACKUP_AT="$BACKUP_STATUS_AT"
+fi
 BACKUP_DISK_VALUE=""
 if [ -n "$LATEST_BACKUP_DIR" ]; then
   BACKUP_DISK_VALUE="$(df -h "$LATEST_BACKUP_DIR" 2>/dev/null | tail -n 1 | json_escape || true)"
@@ -239,6 +256,9 @@ else
   if [ -n "$BACKUP_MOUNT" ]; then
     BACKUP_DISK_VALUE="$(df -h "$BACKUP_MOUNT" 2>/dev/null | tail -n 1 | json_escape || true)"
   fi
+fi
+if [ -z "$BACKUP_DISK_VALUE" ] && [ -n "$BACKUP_STATUS_DISK" ]; then
+  BACKUP_DISK_VALUE="$(printf '%s' "$BACKUP_STATUS_DISK" | json_escape)"
 fi
 
 echo "Homematic Analyzer: Systemwerte gesammelt."
@@ -471,7 +491,7 @@ fi
     "$(printf '%s' "$LATEST_BACKUP_AT" | json_escape)" \
     "$BACKUP_DISK_VALUE"
   FIRST=1
-  printf '%s\n' "$BACKUP_NETWORK_MOUNTS" | while IFS= read -r mount_point; do
+  printf '%s\n' "$BACKUP_MOUNT_POINTS" | while IFS= read -r mount_point; do
     [ -z "$mount_point" ] && continue
     if [ "$FIRST" = "1" ]; then
       FIRST=0

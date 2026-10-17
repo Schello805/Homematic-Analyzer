@@ -1326,18 +1326,28 @@ function createSystemDashboard(masterdata: CcuMasterdataPayload | undefined, col
   const ccuTarget = normalizeCcuUiTarget(ccuHost);
   const collectorBackupItems = backupItemsFromRecord(collector?.backups);
   const ccuBackupItems = backupItemsFromRecord(ccuBackups);
-  const backupItems = collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems;
+  const listedBackupItems = collectorBackupItems.length > 0 ? collectorBackupItems : ccuBackupItems;
   const backupPaths = (stringArrayFromRecord(collector?.backups, "paths") ?? stringArrayFromRecord(ccuBackups, "paths") ?? [])
     .filter(isRealCcuBackupPath);
   const backupMountPoints = (stringArrayFromRecord(collector?.backups, "mountPoints") ?? stringArrayFromRecord(ccuBackups, "mountPoints") ?? [])
     .filter((mountPoint) => mountPoint.startsWith("/"));
   const fallbackBackupCount = stringFromRecord(collector?.backups, "count") ?? stringFromRecord(ccuBackups, "count");
   const rawLatestBackupPath = stringFromRecord(collector?.backups, "latestPath") ?? stringFromRecord(ccuBackups, "latestPath");
+  const rawLatestBackupAt = stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt");
+  const fallbackBackupItem = rawLatestBackupPath && isRealCcuBackupPath(rawLatestBackupPath)
+    ? [{
+        name: rawLatestBackupPath.split("/").at(-1) ?? rawLatestBackupPath,
+        path: rawLatestBackupPath,
+        size: "",
+        modifiedAt: rawLatestBackupAt ?? ""
+      }]
+    : [];
+  const backupItems = listedBackupItems.length > 0 ? listedBackupItems : fallbackBackupItem;
   const latestBackupPath = backupItems[0]?.path ?? (isRealCcuBackupPath(rawLatestBackupPath) ? rawLatestBackupPath : undefined);
   const latestBackupDirectory = latestBackupPath
     ? latestBackupPath.split("/").slice(0, -1).join("/")
     : stringFromRecord(collector?.backups, "latestDirectory") ?? stringFromRecord(ccuBackups, "latestDirectory");
-  const latestBackupAt = backupItems[0]?.modifiedAt ?? (latestBackupPath ? stringFromRecord(collector?.backups, "latestAt") ?? stringFromRecord(ccuBackups, "latestAt") : undefined);
+  const latestBackupAt = backupItems[0]?.modifiedAt ?? (latestBackupPath ? rawLatestBackupAt : undefined);
 
   if (!hasCcuSystemData && !collector) {
     return { available: false, logs: 0, connections: 0, ...ccuTarget };
