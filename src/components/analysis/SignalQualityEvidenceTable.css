@@ -1,0 +1,16 @@
+.signal-evidence-table { display: grid; gap: 10px; margin: 8px 0; padding: 12px; border: 1px solid rgba(106, 123, 154, .16); border-radius: 14px; background: #fdfeff; }
+.signal-evidence-table__toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; }
+.signal-evidence-table__toolbar label { display: grid; gap: 4px; min-width: 170px; color: #536883; font-size: .72rem; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; }
+.signal-evidence-table__toolbar input, .signal-evidence-table__toolbar select { min-height: 34px; padding: 5px 8px; border: 1px solid #c8d9ef; border-radius: 8px; background: #fff; color: #17233b; font: inherit; font-size: .85rem; text-transform: none; letter-spacing: normal; }
+.signal-evidence-table__toolbar output { margin-left: auto; padding-bottom: 7px; color: #667085; font-size: .8rem; }
+.signal-evidence-table__scroll { overflow-x: auto; }
+.signal-evidence-table table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.signal-evidence-table th { padding: 0 8px 7px; border-bottom: 1px solid #dce7f5; text-align: left; color: #536883; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
+.signal-evidence-table th button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 800; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.signal-evidence-table th button:hover { color: #185ac0; }
+.signal-evidence-table td { padding: 8px; border-bottom: 1px solid #edf2f8; vertical-align: middle; }
+.signal-evidence-table tbody tr:last-child td { border-bottom: 0; }
+.signal-evidence-table__name { max-width: 270px; color: #24324a; font-weight: 720; }
+.signal-evidence-table .evidence-action { min-height: 30px; white-space: nowrap; }
+.signal-evidence-table__empty { margin: 12px 0 2px; color: #667085; font-size: .9rem; }
+@media (max-width: 640px) { .signal-evidence-table { padding: 10px; } .signal-evidence-table__toolbar label { flex: 1 1 150px; } .signal-evidence-table__toolbar output { width: 100%; margin-left: 0; padding-bottom: 0; } }

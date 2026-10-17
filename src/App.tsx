@@ -2,14 +2,13 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import packageInfo from "../package.json";
 import { EvidenceDetail, SourceBadge } from "./components/analysis/EvidenceDetail";
 import { SignalQualityDeviceList, type SignalReceiverOption } from "./components/analysis/SignalQualityDeviceList";
+import { isSignalQualityEvidence, SignalQualityEvidenceTable } from "./components/analysis/SignalQualityEvidenceTable";
 import { InfoTooltip } from "./components/ui/InfoTooltip";
 import { RadioInfrastructureView } from "./components/routing/RadioInfrastructureView";
 import { RoutingTopologyView } from "./components/routing/RoutingTopologyView";
 import {
   DualRssiAssessment,
   normalizeRadioIdentifier,
-  parseCentralRssi,
-  parseRssiComparison,
   RssiAssessment,
   rssiClass
 } from "./components/radio/RssiAssessment";
@@ -4230,19 +4229,14 @@ function App() {
                     </div>
                     <h4>Belege</h4>
                     {check.evidence.length > 0 ? (
+                      <>
                       <ul className="evidence">
-                        {check.evidence.map((item, index) => (
+                        {check.evidence
+                          .filter((item) => check.id !== "signal-strength" || !isSignalQualityEvidence(item))
+                          .map((item, index) => (
                           <li key={`${item.source}-${index}`}>
                             <strong><SourceBadge source={item.source} />{item.source}</strong>
                             <EvidenceDetail item={item} />
-                            {check.id === "signal-strength" && (() => {
-                              const comparison = parseRssiComparison(item.detail) ?? parseCentralRssi(item.detail);
-                              return comparison?.name ? (
-                                <button type="button" className="evidence-action" onClick={() => openSignalImprovement(comparison.name)}>
-                                  Empfang verbessern
-                                </button>
-                              ) : null;
-                            })()}
                             {item.url && (
                               <a href={item.url} target="_blank" rel="noreferrer">
                                 Anleitung öffnen
@@ -4251,6 +4245,13 @@ function App() {
                           </li>
                         ))}
                       </ul>
+                      {check.id === "signal-strength" && (
+                        <SignalQualityEvidenceTable
+                          evidence={check.evidence.filter(isSignalQualityEvidence)}
+                          onImprove={openSignalImprovement}
+                        />
+                      )}
+                      </>
                     ) : (
                       <p className="muted">
                         {check.status === "unavailable"
