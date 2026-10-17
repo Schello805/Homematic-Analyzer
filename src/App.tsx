@@ -443,6 +443,8 @@ function App() {
     return `${apiBaseUrl}/addon/download?${params.toString()}`;
   }, []);
 
+  const backupScriptDownloadUrl = useMemo(() => `${getApiBaseUrl()}/backup/script`, []);
+
   const ccuMasterdataScriptUrl = useMemo(() => {
     const apiBaseUrl = getApiBaseUrl();
     const analyzerUrl = getAnalyzerBaseUrl();
@@ -2512,6 +2514,23 @@ function App() {
                   <textarea readOnly value={ccuScriptPreview} onFocus={(event) => event.target.select()} />
                 </label>
               )}
+            </details>
+            <details className="secondary-details">
+              <summary>NAS-Backup per Script einrichten</summary>
+              <p>
+                Für Backups auf einer nur kurz eingehängten SMB-Freigabe steht eine vollständige Vorlage bereit. Sie schreibt nach Erfolg auch den Status für die Backup-Karten im Analyzer.
+              </p>
+              <div className="script-actions">
+                <a className="button-link" href={backupScriptDownloadUrl} download>
+                  Vorlage makeBackup.sh herunterladen
+                </a>
+              </div>
+              <ol>
+                <li>Datei nach <code>/usr/local/addons/makeBackup.sh</code> kopieren und ausführbar machen.</li>
+                <li>Oben im Script <code>NAS_SHARE</code>, <code>SMB_OPTIONS</code> und bei Bedarf <code>NOTIFY_URL</code> eintragen.</li>
+                <li>Einmal manuell starten und danach im Analyzer neu analysieren.</li>
+              </ol>
+              <p className="setup-note">Die Vorlage enthält keine Zugangsdaten. Das NAS wird nach dem Backup wieder ausgehängt; Mountpoint und letztes Backup bleiben im Analyzer sichtbar.</p>
             </details>
           </div>
         </details>

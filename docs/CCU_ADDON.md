@@ -33,6 +33,8 @@ Die alten Copy-Paste-Scripts bleiben vorerst für Sonderfälle vorhanden, sind a
 
 ### Backup auf zeitweise eingehängtem NAS
 
+Die vollständige Vorlage kann im Analyzer unter `Setup → CCU Add-on installieren → NAS-Backup per Script einrichten` heruntergeladen werden. Vor der ersten Ausführung müssen darin NAS-Freigabe und Zugangsdaten eingetragen werden.
+
 Wenn ein eigenes Backup-Skript ein NAS nur während des Backups unter `/mnt` einhängt, kann es nach dem Aushängen einen Status für den Analyzer hinterlegen. Das CCU Add-on zeigt danach Mountpoint, letztes Backup und zuletzt bekannten Speicherstand, obwohl die Freigabe wieder getrennt ist. Die Statusdatei gehört auf das persistente `/usr/local`.
 
 Füge nach dem erfolgreichen Kopieren auf das NAS und **vor** `umount /mnt` ein:

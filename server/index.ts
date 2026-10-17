@@ -2589,6 +2589,21 @@ app.get("/api/collector/script", async (request, response) => {
   );
 });
 
+app.get(["/api/backup/script", "/api/api/backup/script"], async (_request, response) => {
+  try {
+    const script = await readFile(join(root, "scripts", "ccu", "makeBackup.sh"), "utf8");
+    response.setHeader("Content-Type", "text/x-shellscript; charset=utf-8");
+    response.setHeader("Content-Disposition", "attachment; filename=makeBackup.sh");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.send(script);
+  } catch (error) {
+    response.status(500).json({
+      error: "Backup-Skript konnte nicht geladen werden.",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 app.get(["/api/addon/download", "/api/api/addon/download"], async (request, response) => {
   try {
     const analyzerUrl = analyzerUrlFromDownloadRequest(request);
